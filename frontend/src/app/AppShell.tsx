@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 
 import { api } from '../lib/api'
 import { settleQueuedProgress } from '../lib/queuedProgress'
-import { useJobEvents } from '../lib/useEvents'
+import { useEventStreamStatus, useJobEvents } from '../lib/useEvents'
 import { PROVIDER_LABEL } from '../lib/format'
 import { useNotice } from '../lib/useNotice'
 import { syncLists } from '../lib/sync'
@@ -72,6 +72,11 @@ export function AppShell() {
     refresh()
   })
 
+  // Said once, in the shell, because it is true of every screen at the same
+  // time. A dead stream and an idle queue look identical otherwise: progress
+  // simply stops arriving, and nothing tells you which one you are looking at.
+  const stream = useEventStreamStatus()
+
   // The shell's own primary action. Home's "Force scan" is the same act
   // against the same providers, so the request itself lives in lib/sync.ts.
   const syncAll = async () => {
@@ -127,6 +132,15 @@ export function AppShell() {
                 width it was designed for. Below md the header has room for the
                 brand and the primary action only; the same states are on the
                 Settings screen. */}
+            {stream === 'reconnecting' && (
+              <span
+                role="status"
+                className="flex shrink-0 items-center gap-1.5 rounded bg-surface-container-lowest px-space-sm py-space-xs font-mono text-label-sm text-warning"
+              >
+                <span aria-hidden="true" className="h-2 w-2 rounded-full bg-warning" />
+                Reconnecting
+              </span>
+            )}
             <div className="hidden min-w-0 items-center gap-space-xs overflow-hidden rounded bg-surface-container-lowest px-space-sm py-space-xs md:flex">
               {integrations.map((item, index) => (
                 <span key={item.name} className="flex shrink-0 items-center gap-1.5 font-mono text-label-sm text-on-surface-variant">
