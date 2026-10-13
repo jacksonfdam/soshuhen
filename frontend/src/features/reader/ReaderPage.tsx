@@ -21,7 +21,20 @@ const PRELOAD_AHEAD = 3
 
 export type Panel = 'settings' | 'chapters' | null
 
-export function ReaderPage() {
+/**
+ * A fresh reader per chapter.
+ *
+ * Kept mounted across /read/A to /read/B, the page, prefs and end state of A
+ * survived into B's first render: a long strip scrolled B to A's page before
+ * the manifest effect could reset it, and the observer then saved that page
+ * as B's position.
+ */
+export function ReaderRoute() {
+  const { chapterId } = useParams()
+  return <ReaderPage key={chapterId} />
+}
+
+function ReaderPage() {
   const chapterId = Number(useParams().chapterId)
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
