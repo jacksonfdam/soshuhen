@@ -156,17 +156,22 @@ function ReaderPage() {
     else void document.documentElement.requestFullscreen().catch(() => undefined)
   }, [])
 
+  const previousChapter = () => {
+    if (manifest?.previous) openChapter(manifest.previous.id)
+  }
+  const nextChapter = () => {
+    if (manifest?.next) openChapter(manifest.next.id)
+  }
+
   useReaderKeys({
-    left: rtl ? forward : back,
-    right: rtl ? back : forward,
+    // Down a strip the sideways arrows have no page to turn, so they change
+    // chapter the way MangaFire's do; up and down are left to scroll.
+    left: strip ? previousChapter : rtl ? forward : back,
+    right: strip ? nextChapter : rtl ? back : forward,
     forward,
     back,
-    previousChapter: () => {
-      if (manifest?.previous) openChapter(manifest.previous.id)
-    },
-    nextChapter: () => {
-      if (manifest?.next) openChapter(manifest.next.id)
-    },
+    previousChapter,
+    nextChapter,
     fullscreen: toggleFullscreen,
     escape: () => setPanel(null),
   })

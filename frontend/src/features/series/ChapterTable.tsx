@@ -5,6 +5,7 @@ import { Button, Icon } from '../../ui'
 import type { SeriesChapter } from '../../lib/api'
 import { externalBase } from '../../lib/externalUrl'
 import { formatChapter } from '../../lib/format'
+import { useUrlState } from '../../lib/useUrlState'
 
 /**
  * How many rows the table shows before the disclosure.
@@ -65,18 +66,25 @@ function ChapterStateBadge({ state }: { state: string }) {
 // The reference's release-date column stays dropped — this pipeline has no
 // release calendar — but its reader action is now real: Komga is the reader,
 // and a chapter it has indexed can be opened straight into it.
+type Order = 'newest' | 'oldest'
+
 export function ChapterTable({
   chapters,
   komgaBaseUrl,
+  progress,
 }: {
   chapters: SeriesChapter[]
   /** Where Komga is served to a browser. Empty means no reader links at all. */
   komgaBaseUrl: string
+  /** The furthest chapter any list records as read. Lists count whole
+      chapters, so 23.5 is read once progress reaches 24, not at 23. */
+  progress: number
 }) {
   // Checked here rather than trusted from the prop: this is where the href is
   // built, so this is where a scheme the browser would execute has to stop.
   const komgaHref = externalBase(komgaBaseUrl)
   const [showAll, setShowAll] = useState(false)
+  const [order, setOrder] = useUrlState<Order>('order', 'newest', ['newest', 'oldest'])
 
   if (chapters.length === 0) {
     return (
@@ -87,13 +95,35 @@ export function ChapterTable({
   }
 
   const bounded = chapters.length > PREVIEW_ROWS && !showAll
-  // The newest chapters, not the oldest: chapter 1 of 313 is the end a reader
-  // has already left behind, and it is what the pipeline touched least
-  // recently.
-  const visible = bounded ? chapters.slice(-PREVIEW_ROWS) : chapters
+  // Newest first by default: chapter 1 of 313 is the end a reader has already
+  // left behind, and it is what the pipeline touched least recently. Oldest
+  // first is for starting a series, and its preview is the first chapters.
+  const ordered = order === 'newest' ? [...chapters].reverse() : chapters
+  const visible = bounded ? ordered.slice(0, PREVIEW_ROWS) : ordered
+  // Read is derived, never marked: the lists already know how far reading
+  // got, and a second record here would disagree with them by the next sync.
+  const isRead = (chapter: SeriesChapter) => chapter.number <= progress
+  const next = chapters.find((chapter) => !isRead(chapter))
+  // The furthest chapter actually held, not `progress` itself: a series with a
+  // gap in its numbering may have no chapter carrying that exact number.
+  const lastRead = chapters.filter(isRead).at(-1)
+  const edge = order === 'newest' ? 'last' : 'first'
 
   return (
     <div className="flex flex-col gap-space-sm">
+    {/* One button that names the order in force, rather than the segmented
+        control: that one drops its labels below sm, and these options have no
+        icon to fall back on, so on a phone it rendered two empty pills. */}
+    <div className="flex justify-end">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setOrder(order === 'newest' ? 'oldest' : 'newest')}
+        aria-label={`Sorted ${order} first. Switch order`}
+      >
+        {order === 'newest' ? 'Newest first' : 'Oldest first'}
+      </Button>
+    </div>
     <div className="overflow-x-auto rounded-xl bg-surface-container-low shadow-card">
       <table className="w-full min-w-[520px] border-collapse">
         <thead>
@@ -106,7 +136,9 @@ export function ChapterTable({
           </tr>
         </thead>
         <tbody>
-          {visible.map((chapter) => (
+          {visible.map((chapter) => {
+            const read = isRead(chapter)
+            return (
             <tr
               key={chapter.id}
               className="border-b border-surface-container-highest/20 last:border-0 hover:bg-surface-container-high/40"
@@ -120,11 +152,29 @@ export function ChapterTable({
                 title={chapter.file_path ?? undefined}
               >
                 <div className="flex flex-col">
-                  <span className="text-body-sm font-semibold text-on-surface">
+                  <span
+                    className={`inline-flex items-center gap-space-xs text-body-sm font-semibold ${
+                      read ? 'text-secondary' : 'text-on-surface'
+                    }`}
+                  >
                     Ch {formatChapter(chapter.number)}
+                    {chapter === lastRead && (
+                      <span title="Last chapter read" aria-label="Last chapter read" className="text-tertiary">
+                        <Icon name="bookmark" className="h-3.5 w-3.5" />
+                      </span>
+                    )}
+                    {chapter === next && (
+                      <span className="rounded-full bg-primary/[0.12] px-space-sm py-0.5 font-mono text-label-sm text-primary">
+                        Next
+                      </span>
+                    )}
                   </span>
                   {chapter.title && (
-                    <span className="truncate font-mono text-label-sm text-outline">
+                    <span
+                      className={`truncate font-mono text-label-sm ${
+                        read ? 'text-secondary/70' : 'text-outline'
+                      }`}
+                    >
                       {chapter.title}
                     </span>
                   )}
@@ -159,7 +209,8 @@ export function ChapterTable({
                 </div>
               </td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -171,11 +222,11 @@ export function ChapterTable({
             aria-expanded={showAll}
             onClick={() => setShowAll(!showAll)}
           >
-            {showAll ? `Show the last ${PREVIEW_ROWS}` : `Show all ${chapters.length} chapters`}
+            {showAll ? `Show the ${edge} ${PREVIEW_ROWS}` : `Show all ${chapters.length} chapters`}
           </Button>
           {bounded && (
             <span className="font-mono text-label-sm text-outline">
-              Showing the last {PREVIEW_ROWS} of {chapters.length}
+              Showing the {edge} {PREVIEW_ROWS} of {chapters.length}
             </span>
           )}
         </div>
