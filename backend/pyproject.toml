@@ -11,7 +11,10 @@ dependencies = [
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "httpx>=0.27",
-    "selectolax>=0.3",
+    # 1.0 removed selectolax.parser (the Modest backend) that six sources import,
+    # and an unbounded range let a fresh image install it: every process that
+    # loads the source registry died on import. Lift this with a move to lexbor.
+    "selectolax>=0.3,<1.0",
     "apscheduler>=3.10",
     "sse-starlette>=2.1",
     "pillow>=11.0",
