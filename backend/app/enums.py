@@ -26,6 +26,9 @@ class ChapterState(StrEnum):
     DOWNLOADED = "downloaded"
     FAILED = "failed"
     SKIPPED = "skipped"
+    #: Pages are arriving in the reader cache because someone is reading it.
+    #: Batches leave it alone so the source is not asked for it twice.
+    STREAMING = "streaming"
 
 
 class JobState(StrEnum):
@@ -50,6 +53,7 @@ class JobType(StrEnum):
     MEDIA_ENRICH = "media_enrich"
     STATUS_WRITE = "status_write"
     NOTES_WRITE = "notes_write"
+    KOMGA_READ_PROGRESS = "komga_read_progress"
 
 
 class Lane(StrEnum):
@@ -92,3 +96,4 @@ class ProgressSource(StrEnum):
 
     KOMGA = "komga"
     MANUAL = "manual"
+    READER = "reader"

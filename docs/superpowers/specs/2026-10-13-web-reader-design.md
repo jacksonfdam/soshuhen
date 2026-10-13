@@ -56,7 +56,6 @@ One migration adds three tables, one chapter state and one progress event source
 | `series_id` | int, PK, FK `series` | |
 | `chapter_id` | int, FK `chapter` | |
 | `page` | int | Zero-based. |
-| `page_count` | int | As served by the manifest when the position was saved. |
 | `updated_at` | timestamptz | |
 
 This is kept apart from `list_entry.user_progress_chapter`. That column is a list's view of
@@ -104,6 +103,8 @@ A new router, `app/api/routes_reader.py`, under `/api/reader`.
 | `PUT /series/{id}/position` | Saves `{chapter_id, page}`. The reader calls it debounced. |
 | `POST /chapters/{id}/complete` | Marks a chapter finished. |
 | `GET /series/{id}/prefs`, `PUT /series/{id}/prefs` | Per-series preferences. |
+| `PUT /defaults` | The global default, from the settings panel's "use for every series". |
+| `GET /series/{id}/resume` | Where *Continue reading* opens: the saved position, else the first chapter past the furthest one read. |
 
 ### Serving a page
 
@@ -128,8 +129,10 @@ changes once fetched.
   chapter ceiling of the manual progress path, so completing chapter 10 while a list says 15 does
   nothing.
 - `komga_read_progress`, when the chapter has a `komga_book_id`. It is a new job in the fetch lane
-  that calls `set_read_progress` with `completed: true`. A chapter not yet indexed by Komga is marked
-  there by `komga_scan` once it is, using `progress_event` to learn that it was read in Soshuhen.
+  that calls `set_read_progress` with `completed: true`. A chapter not yet indexed by Komga gets there through `komga_scan`. After it adopts book
+ids, it marks read in Komga every book at or below the series' furthest list progress. That covers
+chapters read here while they were still streaming, and chapters read in Mihon too. `progress_write`
+records the reader as the event source (`progress_event.source = reader`) for the stats.
 
 ## From the cache to the library
 
@@ -137,8 +140,12 @@ The reader cache is a new named volume, `reader-cache`.
 
 | Service | Mount |
 |---|---|
-| `api` | `/reader-cache`, read-write |
+| `api` | `/reader-cache`, read-write, running as `PUID:PGID` |
 | `worker-download` | `/reader-cache`, read-write |
+
+`api` runs as the same user as `worker-download`, because the worker deletes what `api` wrote once
+it has become an archive. The image creates `/reader-cache` world-writable, so a fresh named volume
+inherits that mode.
 
 Layout: `/reader-cache/{chapter_id}/{n}.{ext}`.
 
@@ -160,25 +167,20 @@ for the missing pages only.
 `worker-download` stays the only process that writes the library. `api` writes the cache, never
 `/manga`, which keeps the library mounted read-only everywhere except the download lane.
 
-**Abandoned chapters.** A chapter opened and left half read keeps its cache. The cron scheduler in
-`worker` runs a cleanup daily. It deletes cache directories untouched for seven days and returns
-their chapters from `streaming` to `known`. Because `worker` does not mount the cache, the cleanup
-is a job in the download lane.
+**Abandoned chapters.** A chapter opened and left half read keeps its cache. `worker-download`'s
+existing reclaim loop, the only worker that mounts the cache, deletes cache directories untouched for
+seven days and returns their chapters from `streaming` to `known`. There is no new cron entry or job
+type.
 
-## A per-site limit shared across processes
+## A reader slot per site
 
-`app/downloader/limits.py` keeps one `asyncio.Semaphore` per site, in memory. That was enough while
-one process reached each site. With `api` streaming pages, `worker` searching and listing, and
-`worker-download` downloading, three processes can each hold the full limit against the same site.
+`app/downloader/limits.py` keeps one `asyncio.Semaphore` per site, in memory, and only the download
+lane uses it. A download batch holds its slot for every chapter in the batch, so a reader queueing
+for the same slots would wait minutes for a page.
 
-The limit moves to Postgres. Each site has N slots, N being the limit configured today. A slot is
-taken with `pg_try_advisory_lock(hash(site), slot)`, iterating the slots and waiting briefly when
-all are held. Released on exit, and released by Postgres if the connection dies. The function
-signature stays as it is, so callers do not change.
-
-The reader gets priority without a priority mechanism. It only asks for the page being read and a
-short preload of three to five pages, so a download backlog cannot take every slot from it for
-long.
+The reader gets one slot of its own per site instead, in-process in `api` (`reader_semaphore`). A
+site sees at most `per_source_concurrency + 1`: a person reading on top of the backlog, not a second
+backlog. Page lists and pages the reader fetches are human-paced, with a preload of three pages.
 
 ## Errors
 
@@ -210,7 +212,7 @@ Changes elsewhere:
 |---|---|
 | `ReaderPage` | Loads the manifest through `useAsyncData`, owns the current page, saves the position debounced. |
 | `PagedView` | Paged left-to-right, right-to-left and double. |
-| `StripView` | Long strip. Virtualised by page; the current page is the one an `IntersectionObserver` reports most visible. |
+| `StripView` | Long strip. Every page is rendered with native lazy loading; the current page is the one an `IntersectionObserver` reports most visible. |
 | `ReaderChrome` | Picks the tablet or desktop chrome by breakpoint. |
 | `SettingsPanel`, `ChapterPanel`, `PageSlider` | The panels and the slider. |
 | `lib/` (inside the feature) | Preloading and keyboard handling, used only by the reader. |
@@ -248,7 +250,9 @@ The split follows `AppShell`, which already treats everything below `xl` as the 
 - **Preloading.** Three pages ahead. When three pages remain, the first three pages of the next
   chapter are preloaded too.
 - **Failed page.** A placeholder the size of the page, with a retry.
-- **Streaming chapter.** A small indicator reads "saving to library 12/40", fed by the existing SSE
+- **Streaming chapter.** A note says the chapter is streamed from the source and will be saved to
+  the library once every page has loaded. No count: a job progress tick carries no chapter id, so a
+  number there would be invented.
   stream.
 
 ### Rules that apply
@@ -278,8 +282,7 @@ The split follows `AppShell`, which already treats everything below `xl` as the 
 - **Batches.** `download_batch` skips a chapter in `streaming`.
 - **Completion.** `/complete` is forward-only against the lists, and enqueues the Komga write only
   when `komga_book_id` is set.
-- **Shared limit.** Two engines, standing in for two processes, never hold more than N slots for one
-  site.
+- **Reader slot.** The reader's semaphore is one slot per site, separate from the downloads' slots.
 - **Cleanup.** A cache directory older than seven days is deleted and its chapter returns to `known`.
 
 **Frontend.** There is no component test suite today, and this does not add one.
@@ -296,6 +299,6 @@ The split follows `AppShell`, which already treats everything below `xl` as the 
 | `docs/features.md` | "Reading" stops saying there is no reader. It describes the reader, its modes, and that Komga and Mihon remain valid. |
 | `docs/configuration.md` | "Reading on your phone" stops claiming progress syncs both ways. It states the real flow: reader to lists and Komga; Komga to lists through `progress_push`. |
 | `docs/data-model.md` | The three tables, the `streaming` state and the `reader` event source. |
-| `docs/architecture.md` | `api` now reaches source sites. Documents the `reader-cache` volume, the per-site limit in Postgres, and why `worker-download` stays the only writer of the library. |
+| `docs/architecture.md` | `api` now reaches source sites. Documents the `reader-cache` volume, the reader slot per site, and why `worker-download` stays the only writer of the library. |
 | `docs/jobs.md` | `download_chapter{from_cache}`, the cache cleanup, `komga_read_progress`. |
 | `CLAUDE.md` | The lane notes and the rebuild instructions mention the new volume. |
