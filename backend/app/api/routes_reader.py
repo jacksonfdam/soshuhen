@@ -1,5 +1,6 @@
 """The reader: pages, where reading stands, and how a series is shown."""
 
+import math
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Annotated, Any, Literal
@@ -10,6 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import reader_service as service
 from app.api.deps import db_session
+from app.api.progress_queue import progress_bounds, queue_progress_write
+from app.enums import JobType, ProgressSource
+from app.handlers.progress_write import forward_only
+from app.queue import repo
 
 router = APIRouter(prefix="/api/reader", tags=["reader"])
 
@@ -127,3 +132,42 @@ async def save_defaults(body: PrefsIn, session: Session) -> dict[str, bool]:
 async def resume(series_id: int, session: Session) -> dict[str, int]:
     with service_errors():
         return await service.resume(session, series_id)
+
+
+@router.post("/chapters/{chapter_id}/complete")
+async def complete(chapter_id: int, session: Session) -> dict[str, bool]:
+    """Finishing a chapter here says the same thing finishing it in Komga does.
+
+    A refusal is not an error. Rereading an old chapter, or reading a series on
+    no list, must not interrupt the reader; it only moves nothing.
+    """
+    with service_errors():
+        row = await service.chapter(session, chapter_id)
+
+    # Lists count whole chapters. 23.5 finished means 23 is, and 24 is not.
+    chapter = math.floor(row.number)
+    bounds = await progress_bounds(session, row.series_id)
+    # No ceiling here, unlike the progress button. The ceiling counts chapter
+    # rows to catch a mistyped number; a chapter someone just finished reading
+    # exists, and a source listing only chapters 100 to 120 has 21 rows.
+    progress_queued = (
+        bounds.has_entries
+        and chapter >= 1
+        and forward_only(bounds.current, chapter) is not None
+    )
+    if progress_queued:
+        await queue_progress_write(session, row.series_id, chapter, source=ProgressSource.READER)
+
+    komga_queued = False
+    if row.komga_book_id is not None:
+        await repo.enqueue(
+            session,
+            JobType.KOMGA_READ_PROGRESS,
+            {"book_id": row.komga_book_id},
+            series_id=row.series_id,
+            dedupe_key=f"komga_read_progress:{row.komga_book_id}",
+        )
+        komga_queued = True
+
+    await session.commit()
+    return {"progress_queued": progress_queued, "komga_queued": komga_queued}

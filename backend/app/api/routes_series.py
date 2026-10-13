@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import settings_store
 from app.api.deps import db_session
 from app.api.list_raw import display_fields, metadata_of
+from app.api.progress_queue import progress_bounds, queue_progress_write
 from app.api.reading_frequency import reading_frequency
-from app.enums import JobType, ListStatus, Provider
+from app.enums import JobType, ListStatus, ProgressSource, Provider
 from app.handlers.batching import queue_batches
 from app.handlers.media_enrich import is_stale
 from app.handlers.progress_write import forward_only
@@ -632,27 +633,6 @@ async def research(series_id: int, session: Session) -> dict[str, Any]:
     return {"ok": True, "job_id": job_id}
 
 
-def chapter_ceiling(total_chapters: int | None, known: int | None) -> int | None:
-    """The highest chapter a progress write may claim, or None when nothing knows.
-
-    The forward-only guard stops progress moving backwards; nothing bounded it
-    upwards, so a mistyped number or a +1 on a stale page was pushed to
-    MyAnimeList and AniList, and no correction to this database takes that back.
-
-    Two numbers can bound it and neither is authoritative alone: the provider's
-    own total_chapters lags a release, and the discovered chapter count is
-    whatever the source had indexed the last time we looked. The higher of the
-    two is the ceiling, so a write is only refused when it is past both.
-
-    An unmapped series with a provider that never stated a total has neither,
-    and this returns None rather than inventing a bound: refusing every write
-    on a series nobody has counted would make the +1 button dead on exactly the
-    entries a user is most likely to be tracking by hand.
-    """
-    candidates = [value for value in (total_chapters, known) if value]
-    return max(candidates) if candidates else None
-
-
 class RemoveIn(BaseModel):
     ids: list[int]
 
@@ -769,73 +749,18 @@ async def set_progress(series_id: int, body: ProgressIn, session: Session) -> di
     if exists.first() is None:
         raise HTTPException(status_code=404, detail="series not found")
 
-    # An aggregate with no group-by always returns one row, coalesced to 0, even
-    # when the series has no list_entry yet — so this alone cannot tell "no
-    # rows" apart from "genuinely at chapter 0", which is why existence is
-    # checked separately above.
-    #
-    # min(), not max(): a series with two providers at different chapters (say
-    # AniList 140, MyAnimeList 100) must still accept a write of 120 — it moves
-    # MyAnimeList forward and the handler leaves AniList alone. Comparing
-    # against the furthest-along provider would refuse a write the handler
-    # would have partially, correctly, applied.
-    result = await session.execute(
-        text(
-            """
-            select coalesce(min(e.user_progress_chapter), 0) as current,
-                   max(e.total_chapters) as total_chapters,
-                   (select count(*) from chapter where series_id = :id) as known
-              from list_entry e
-             where e.series_id = :id
-            """
-        ),
-        {"id": series_id},
-    )
-    row = result.one()
-    if forward_only(row.current, body.chapter) is None:
+    # min(), not max(), lives in progress_bounds: see the comment there.
+    bounds = await progress_bounds(session, series_id)
+    if forward_only(bounds.current, body.chapter) is None:
         raise HTTPException(status_code=409, detail="progress cannot move backwards")
 
-    ceiling = chapter_ceiling(row.total_chapters, row.known)
-    if ceiling is not None and body.chapter > ceiling:
+    if bounds.ceiling is not None and body.chapter > bounds.ceiling:
         raise HTTPException(
             status_code=409,
-            detail=f"this series is only known to have {ceiling} chapters",
+            detail=f"this series is only known to have {bounds.ceiling} chapters",
         )
 
-    queued = await repo.enqueue(
-        session,
-        JobType.PROGRESS_WRITE,
-        {"series_id": series_id, "chapter": body.chapter},
-        priority=0,
-        series_id=series_id,
-        dedupe_key=f"progress_write:{series_id}",
-    )
-    if queued is None:
-        # Two of these for one series is how a backwards write reaches someone
-        # else's list: the grid card and the Continue-reading row each render
-        # their own +1 with their own busy state, two workers lease both jobs,
-        # both read the same pre-commit user_progress_chapter, and the higher
-        # chapter can land at the provider first. The dedupe key refuses the
-        # second job, so the request raises the chapter on the one already
-        # waiting instead — the handler re-reads it before pushing, which is
-        # what keeps this from silently dropping the click.
-        await session.execute(
-            text(
-                """
-                update job
-                   set payload = jsonb_set(payload, '{chapter}',
-                                           to_jsonb(cast(:chapter as integer)))
-                 where type = :type and series_id = :series_id
-                   and state in ('pending', 'leased')
-                   and (payload->>'chapter')::int < cast(:chapter as integer)
-                """
-            ),
-            {
-                "type": str(JobType.PROGRESS_WRITE),
-                "series_id": series_id,
-                "chapter": body.chapter,
-            },
-        )
+    await queue_progress_write(session, series_id, body.chapter, source=ProgressSource.MANUAL)
     await session.commit()
     return {"progress": body.chapter, "queued": True}
 
