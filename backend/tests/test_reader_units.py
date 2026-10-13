@@ -187,3 +187,18 @@ async def test_a_stored_page_list_round_trips():
         await session.commit()
 
         assert await reader_cache.stored_page_list(session, chapter_id) == listed[:1]
+
+
+def test_mac_metadata_and_hidden_files_are_not_pages(tmp_path):
+    """An archive zipped on a Mac carries __MACOSX/._001.jpg beside every page.
+    Counted as pages they shift the order and are not images at all."""
+    path = _cbz(
+        tmp_path / "c.cbz",
+        {
+            "001.jpg": JPEG,
+            "__MACOSX/._001.jpg": b"\x00\x05\x16\x07",
+            ".hidden.jpg": b"junk",
+            "002.jpg": PNG,
+        },
+    )
+    assert archive.page_names(path) == ["001.jpg", "002.jpg"]

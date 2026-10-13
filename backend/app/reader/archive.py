@@ -21,12 +21,19 @@ def _natural(name: str) -> list[object]:
 
 def page_names(path: Path) -> list[str]:
     with zipfile.ZipFile(path) as archive:
-        names = [
-            name
-            for name in archive.namelist()
-            if not name.endswith("/") and name.lower().endswith(_IMAGE_SUFFIXES)
-        ]
+        names = [name for name in archive.namelist() if _is_page(name)]
     return sorted(names, key=_natural)
+
+
+def _is_page(name: str) -> bool:
+    # An archive zipped on a Mac carries __MACOSX/._001.jpg beside every page:
+    # resource forks with an image's name and no image inside. Counted, they
+    # shift every page after them by one.
+    if name.endswith("/") or name.startswith("__MACOSX/"):
+        return False
+    if name.rsplit("/", 1)[-1].startswith("."):
+        return False
+    return name.lower().endswith(_IMAGE_SUFFIXES)
 
 
 def read_page(path: Path, index: int) -> tuple[bytes, str]:

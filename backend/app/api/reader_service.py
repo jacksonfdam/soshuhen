@@ -119,7 +119,12 @@ async def serve_page(session: AsyncSession, row: ChapterRow, index: int) -> tupl
         raise IndexError(index)
     found = archive_of(row)
     if found is not None:
-        return archive.read_page(found, index)
+        try:
+            return archive.read_page(found, index)
+        except ValueError as exc:
+            # A member named like an image that is not one. That page is
+            # broken; the pages around it are not.
+            raise PageFailed(f"page {index} of chapter {row.id} is not an image") from exc
 
     root = cache_root()
     cached = cache.find_page(root, row.id, index)

@@ -434,3 +434,18 @@ async def test_series_detail_chapters_carry_their_id(client, tmp_path):
     series_id, ids = await _three_archived_chapters(tmp_path)
     detail = (await client.get(f"/api/series/{series_id}")).json()
     assert [chapter["id"] for chapter in detail["chapters"]] == ids
+
+
+async def test_a_page_that_is_not_an_image_is_a_page_failure_not_a_crash(client, tmp_path):
+    path = tmp_path / "manga" / "teto" / "c1.cbz"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("001.jpg", JPEG)
+        zf.writestr("002.jpg", b"not an image")
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session)
+        chapter_id = await _chapter(
+            session, series_id, "1", file_path=str(path), state="downloaded"
+        )
+    response = await client.get(f"/api/reader/chapters/{chapter_id}/pages/1")
+    assert response.status_code == 502
