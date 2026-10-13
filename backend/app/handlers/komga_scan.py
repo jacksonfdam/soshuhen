@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.enums import JobType
+from app.handlers import progress_events
 from app.handlers.base import JobContext, PermanentError, register
 from app.komga import from_settings
 
@@ -341,6 +342,40 @@ async def ensure_book_covers(ctx: JobContext, client, series_id: int, books) -> 
         await ctx.log(f"{from_series} book covers taken from the series artwork")
 
 
+async def mark_read_up_to_lists(ctx: JobContext, client, series_id: int, books) -> int:
+    """Mark read in Komga every indexed book the lists already count as read.
+
+    The reader marks a book itself when Komga already knows it. A chapter read
+    while it was still streaming had no book to mark, and one read in Mihon
+    never reached Komga at all. Both are behind the lists' progress, which only
+    moves forward, so the lists are what Komga is brought up to.
+    """
+    furthest = await progress_events.furthest_read(ctx.session, series_id)
+    if furthest <= 0:
+        return 0
+    result = await ctx.session.execute(
+        text(
+            """
+            select komga_book_id from chapter
+             where series_id = :s and komga_book_id is not null and number <= :furthest
+            """
+        ),
+        {"s": series_id, "furthest": furthest},
+    )
+    behind = {row[0] for row in result.all()}
+    marked = 0
+    for book in books:
+        if book.id not in behind or book.completed:
+            continue
+        try:
+            await client.set_read_progress(book.id, page=1, completed=True)
+        except Exception as exc:  # noqa: BLE001 - one book is not the whole series
+            await ctx.log(f"could not mark {book.filename} read: {exc}", level="warning")
+            continue
+        marked += 1
+    return marked
+
+
 @register(JobType.KOMGA_SCAN)
 async def handle(ctx: JobContext) -> None:
     settings = get_settings()
@@ -381,6 +416,10 @@ async def handle(ctx: JobContext) -> None:
     # The book ids are what progress_push reads; a later failure against Komga
     # must not roll them back and leave the series without them forever.
     await ctx.session.commit()
+
+    caught_up = await mark_read_up_to_lists(ctx, client, series_id, books)
+    if caught_up:
+        await ctx.log(f"marked {caught_up} books read to match the lists")
 
     await ensure_series_cover(ctx, client, komga_series_id, series_id)
     await ensure_book_covers(ctx, client, series_id, books)
