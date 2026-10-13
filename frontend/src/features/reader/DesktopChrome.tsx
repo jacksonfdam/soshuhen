@@ -60,7 +60,7 @@ export function DesktopChrome({
       <div className="fixed left-1/2 top-space-md z-30 flex -translate-x-1/2 items-center gap-space-sm rounded-full bg-surface-container/90 px-space-sm py-space-xs shadow-card">
         <ToolButton
           icon="chevron_left"
-          label="Previous chapter ([)"
+          label={strip ? "Previous chapter (← or [)" : "Previous chapter ([)"}
           disabled={!previous}
           onClick={() => previous && onOpenChapter(previous.id)}
         />
@@ -69,7 +69,7 @@ export function DesktopChrome({
         </span>
         <ToolButton
           icon="chevron_right"
-          label="Next chapter (])"
+          label={strip ? "Next chapter (→ or ])" : "Next chapter (])"}
           disabled={!next}
           onClick={() => next && onOpenChapter(next.id)}
         />
