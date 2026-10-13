@@ -19,7 +19,9 @@ from app.db import get_sessionmaker
 from app.enums import JobType, Lane, types_for
 from app.handlers import download_chapter
 from app.handlers.base import JobContext, PermanentError
+from app.handlers.reader_cache import store_page_list
 from app.queue import repo
+from app.reader import cache as reader_cache_files
 from app.sources.base import ChapterUnavailable, PageRef, RegisteredSource, install_registry
 
 pytestmark = pytest.mark.asyncio
@@ -293,5 +295,138 @@ async def test_progress_reports_pages_fetched_over_pages_total():
         # The old path counted .cbz files on disk; nothing here should still
         # say "downloaded" as a file count, since pages are what is tracked now.
         assert "0/0" not in log
+    finally:
+        stub.close()
+
+
+async def _context_from_cache(session, chapter_id: int) -> JobContext:
+    await repo.enqueue(
+        session, JobType.DOWNLOAD_CHAPTER, {"chapter_id": chapter_id, "from_cache": True}
+    )
+    await session.commit()
+    job = await repo.lease(session, types=EVERY_TYPE)
+    await session.commit()
+    return JobContext(session=session, job=job)
+
+
+def _use_cache(tmp_path, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("READER_CACHE_PATH", str(tmp_path / "cache"))
+    get_settings.cache_clear()
+    return tmp_path / "cache"
+
+
+async def test_a_chapter_read_in_the_reader_is_assembled_from_the_cache_without_the_network(
+    tmp_path, monkeypatch
+):
+    root = _use_cache(tmp_path, monkeypatch)
+    hits: list[str] = []
+
+    def router(path):
+        hits.append(path)
+        return 200, "image/jpeg", JPEG
+
+    stub = Stub(router)
+    try:
+        chapter_url = f"{stub.base_url}/manga/1/chapter/1"
+        listed = [PageRef(url="/p1.jpg"), PageRef(url="/p2.jpg")]
+        source = FakeSource(stub.key, pages={chapter_url: listed})
+        install_registry({stub.key: RegisteredSource(source=source, base_url=stub.base_url)})
+
+        async with get_sessionmaker()() as session:
+            series_id = await _series(session, stub.key)
+            await _catalogue(session, stub.key, stub.base_url)
+            chapter_id = await _chapter(session, series_id, "1", chapter_url)
+            await session.execute(
+                text("update chapter set state = 'streaming' where id = :id"), {"id": chapter_id}
+            )
+            await store_page_list(session, chapter_id, listed)
+            await session.commit()
+            for index in range(2):
+                reader_cache_files.write_page(root, chapter_id, index, JPEG)
+
+            ctx = await _context_from_cache(session, chapter_id)
+            await download_chapter.handle(ctx)
+            await session.commit()
+            row = (
+                await session.execute(
+                    text("select state, file_path from chapter where id = :id"), {"id": chapter_id}
+                )
+            ).first()
+
+        assert hits == []
+        assert row.state == "downloaded"
+        with zipfile.ZipFile(row.file_path) as archive:
+            pages = sorted(name for name in archive.namelist() if name.endswith(".jpg"))
+            assert pages == ["001.jpg", "002.jpg"]
+            assert "ComicInfo.xml" in archive.namelist()
+        assert not (root / str(chapter_id)).exists()
+    finally:
+        stub.close()
+
+
+async def test_a_page_missing_from_the_cache_is_fetched_and_the_rest_are_not(
+    tmp_path, monkeypatch
+):
+    root = _use_cache(tmp_path, monkeypatch)
+    hits: list[str] = []
+
+    def router(path):
+        hits.append(path)
+        return 200, "image/jpeg", JPEG
+
+    stub = Stub(router)
+    try:
+        chapter_url = f"{stub.base_url}/manga/1/chapter/1"
+        listed = [PageRef(url="/p1.jpg"), PageRef(url="/p2.jpg")]
+        source = FakeSource(stub.key, pages={chapter_url: listed})
+        install_registry({stub.key: RegisteredSource(source=source, base_url=stub.base_url)})
+
+        async with get_sessionmaker()() as session:
+            series_id = await _series(session, stub.key)
+            await _catalogue(session, stub.key, stub.base_url)
+            chapter_id = await _chapter(session, series_id, "1", chapter_url)
+            await store_page_list(session, chapter_id, listed)
+            await session.commit()
+            reader_cache_files.write_page(root, chapter_id, 0, JPEG)
+
+            ctx = await _context_from_cache(session, chapter_id)
+            await download_chapter.handle(ctx)
+            await session.commit()
+
+        assert hits == ["/p2.jpg"]
+    finally:
+        stub.close()
+
+
+async def test_assembly_of_a_chapter_already_in_the_library_only_clears_the_cache(
+    tmp_path, monkeypatch
+):
+    from app.downloader.paths import chapter_path
+
+    root = _use_cache(tmp_path, monkeypatch)
+    stub = Stub(lambda path: (200, "image/jpeg", JPEG))
+    try:
+        chapter_url = f"{stub.base_url}/manga/1/chapter/1"
+        source = FakeSource(stub.key, pages={})
+        install_registry({stub.key: RegisteredSource(source=source, base_url=stub.base_url)})
+        async with get_sessionmaker()() as session:
+            series_id = await _series(session, stub.key)
+            await _catalogue(session, stub.key, stub.base_url)
+            chapter_id = await _chapter(session, series_id, "1", chapter_url)
+            destination = chapter_path(
+                tmp_path, "rebirth-monarch-of-the-dead", Decimal("1"), "Chapter 1"
+            )
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(b"already here")
+            reader_cache_files.write_page(root, chapter_id, 0, JPEG)
+
+            ctx = await _context_from_cache(session, chapter_id)
+            await download_chapter.handle(ctx)
+            await session.commit()
+
+        assert destination.read_bytes() == b"already here"
+        assert not (root / str(chapter_id)).exists()
     finally:
         stub.close()
