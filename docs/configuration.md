@@ -194,8 +194,23 @@ not look like the site itself being unreachable.
 Komga on port 25600 is what your reader connects to. Install any Komga-compatible reader, point
 it at your machine's address, and sign in with your Komga account.
 
-Progress syncs both ways: your reader tells Komga, Komga tells Soshuhen, and Soshuhen tells
-your lists.
+Progress meets in your lists rather than syncing everywhere at once:
+
+- What you finish in Soshuhen's reader moves your lists forward, and marks the book read in Komga
+  when Komga has indexed it.
+- What Komga records as read reaches your lists through `progress_push`, hourly.
+- When Komga indexes a series, every book at or below your list progress is marked read in it, so a
+  chapter read in Soshuhen before Komga had it, or read in an app that tracks to your lists, does not
+  stay unread there.
+
+## The reader cache
+
+Pages of a chapter you read before it was downloaded wait in the `reader-cache` volume until every
+page has loaded, then become the chapter's archive and are removed. A chapter left half read keeps
+its pages for a week.
+
+`READER_CACHE_PATH` names the directory inside the containers, `/reader-cache` by default. `api`
+runs as `PUID:PGID` because `worker-download` deletes what it wrote.
 
 ## The stack has no authentication of its own
 

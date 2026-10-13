@@ -71,6 +71,10 @@ downloads and is the only one that runs the cron scheduler; `worker-download` ta
 `download_batch` and `download_chapter` and is the only one that writes archives. Neither can take
 the other's work, which is what stops a download backlog starving the jobs a user is waiting on.
 
+`api` and `worker-download` share the `reader-cache` volume and both run as `PUID:PGID`. The reader
+streams pages there through `api`, and the download lane turns a complete cache into an archive and
+deletes it. `api` never writes `/manga`.
+
 ## Architecture
 
 ### The chain
@@ -107,9 +111,10 @@ the ladder. Progress is announced with `pg_notify` and reaches the browser over 
 
 ### Module boundaries
 
-`providers/`, `sources/`, `downloader/` and `komga/` are pure at their edges: they take arguments
-and return values, and never touch the database. Only `handlers/` writes. That is what lets the
-first four be tested from recorded fixtures with no network.
+`providers/`, `sources/`, `downloader/`, `komga/` and `reader/` are pure at their edges: they take
+arguments and return values, and never touch the database. Only `handlers/` writes, plus the reader's
+routes through `api/reader_service.py`. That is what lets the edges be tested from recorded
+fixtures with no network.
 
 A provider is not required to use OAuth. `uses_oauth` says which kind it is, and
 `static_credential()` lets a configured key answer before the token table is consulted. `writable`

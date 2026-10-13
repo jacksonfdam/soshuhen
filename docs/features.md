@@ -7,7 +7,7 @@ your lists  ──>  one canonical series  ──>  you confirm the source  ─�
 (MAL, AniList, MangaBaka)                                                   │
                                                      CBZ + metadata  <──────┘
                                                             │
-                                                    Komga  ──>  any reader
+                                     Soshuhen's reader, Komga  ──>  any reader
 ```
 
 Everything runs as background jobs. Nothing blocks the interface, and every step reports what it
@@ -221,6 +221,27 @@ running, and MangaFire additionally raises a challenge only a person can clear �
 
 ## Reading
 
-Soshuhen does not include a reader, because Komga already is one and a good one. It serves a web
-reader, and any Komga-compatible app on iOS or Android connects to the same library — with your
-progress shared across all of them.
+Soshuhen has a reader of its own, so the place that fetches chapters is also a place to read
+them. Open any chapter from a series page, or **Continue** from Home to land where you stopped.
+
+- **Any chapter, downloaded or not.** A chapter already in the library is read from its archive. One
+  that is not is streamed from its source, and the pages you read become the download: once every
+  page has loaded, the chapter is saved to the library without asking the source again.
+- **Four modes.** Paged right to left, paged left to right, double page (the cover alone, then
+  spreads) and long strip. Scale and background are yours to pick too.
+- **Remembered per series.** A webtoon stays a long strip and a manga stays right to left. "Use
+  for every series" makes the current choice the default.
+- **Your place is kept.** The page you are on is saved as you read, on any device that opens the
+  same Soshuhen.
+- **Tablet and desktop.** Below desktop width the controls hide until you tap the middle of the
+  page, with a page slider and a settings sheet at the bottom. On a desktop they stay on screen as a
+  chapter pill and a tool bar, with the keyboard: arrows turn pages and follow the reading
+  direction, space scrolls, `[` and `]` change chapter, `f` goes fullscreen.
+
+Finishing a chapter moves your lists forward, never back, and marks the book read in Komga when
+Komga has it.
+
+Komga and any Komga-compatible app on iOS or Android remain readers of the same library. Progress
+meets in your lists: what you read in Komga reaches them through `progress_push`, what you read
+elsewhere reaches them through that app's own tracker, and Komga is brought up to the lists each time
+it indexes the series.
