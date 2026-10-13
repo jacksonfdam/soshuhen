@@ -151,7 +151,11 @@ export function SeriesDetailPage() {
               onChange={setPanel}
             />
             <div hidden={panel !== 'chapters'}>
-              <ChapterTable chapters={chapters} komgaBaseUrl={detail.komga_public_url} />
+              <ChapterTable
+                chapters={chapters}
+                komgaBaseUrl={detail.komga_public_url}
+                progress={series.progress}
+              />
             </div>
             <div hidden={panel !== 'notes'}>
               {/* Mounted even while hidden: NotesPanel holds an unsaved draft in local
