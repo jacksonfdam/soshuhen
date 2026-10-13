@@ -82,6 +82,10 @@ async def handle(ctx: JobContext) -> None:
     already = 0
     for row in rows:
         number = Decimal(str(row["number"]))
+        # Someone is reading it, and the reader's cache becomes this chapter's
+        # archive. Fetching it here as well would ask the source twice.
+        if row["state"] == "streaming":
+            continue
         destination = chapter_path(library_root, slug, number, row["title"])
         if destination.exists():
             await mark_downloaded(ctx.session, row["id"], destination)
