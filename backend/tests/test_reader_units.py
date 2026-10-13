@@ -9,8 +9,12 @@ from sqlalchemy import text
 
 from app import settings_store
 from app.db import get_sessionmaker
+from app.downloader.limits import reader_semaphore, source_semaphore
 from app.enums import ChapterState, JobType, Lane, ProgressSource, lane_of
+from app.handlers import reader_cache
 from app.reader import archive, cache
+from app.reader import pages as page_json
+from app.sources.base import PageRef
 
 
 async def test_the_reader_tables_exist():
@@ -136,3 +140,50 @@ def test_stale_chapters_are_judged_by_their_newest_page(tmp_path):
 
 def test_stale_chapters_of_a_missing_root_is_empty(tmp_path):
     assert cache.stale_chapters(tmp_path / "absent", 1) == []
+
+
+def test_page_refs_round_trip_through_json():
+    original = [
+        PageRef(url="https://a/1.jpg", headers={"Referer": "https://a/"}),
+        PageRef(url="/2.jpg"),
+    ]
+    assert page_json.load(page_json.dump(original)) == original
+
+
+async def test_the_reader_has_one_slot_of_its_own_per_site():
+    """A download batch holds its slot for the whole batch; sharing those would
+    leave someone staring at a blank page for minutes."""
+    reader = await reader_semaphore("site-a")
+    assert reader is await reader_semaphore("site-a")
+    assert reader is not await source_semaphore("site-a", 2)
+    assert reader._value == 1
+
+
+async def test_a_stored_page_list_round_trips():
+    async with get_sessionmaker()() as session:
+        await session.execute(text("truncate series restart identity cascade"))
+        series_id = (
+            await session.execute(
+                text(
+                    "insert into series (canonical_title, slug, needs_review, meta)"
+                    " values ('S', 's-pages', false, '{}'::jsonb) returning id"
+                )
+            )
+        ).scalar_one()
+        chapter_id = (
+            await session.execute(
+                text(
+                    "insert into chapter (series_id, number, state)"
+                    " values (:s, 1, 'known') returning id"
+                ),
+                {"s": series_id},
+            )
+        ).scalar_one()
+        assert await reader_cache.stored_page_list(session, chapter_id) is None
+
+        listed = [PageRef(url="/1.jpg"), PageRef(url="/2.jpg", headers={"Referer": "x"})]
+        await reader_cache.store_page_list(session, chapter_id, listed)
+        await reader_cache.store_page_list(session, chapter_id, listed[:1])
+        await session.commit()
+
+        assert await reader_cache.stored_page_list(session, chapter_id) == listed[:1]
