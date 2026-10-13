@@ -104,6 +104,9 @@ export function ChapterTable({
   // got, and a second record here would disagree with them by the next sync.
   const isRead = (chapter: SeriesChapter) => chapter.number <= progress
   const next = chapters.find((chapter) => !isRead(chapter))
+  // The furthest chapter actually held, not `progress` itself: a series with a
+  // gap in its numbering may have no chapter carrying that exact number.
+  const lastRead = chapters.filter(isRead).at(-1)
   const edge = order === 'newest' ? 'last' : 'first'
 
   return (
@@ -151,14 +154,13 @@ export function ChapterTable({
                 <div className="flex flex-col">
                   <span
                     className={`inline-flex items-center gap-space-xs text-body-sm font-semibold ${
-                      read ? 'text-outline' : 'text-on-surface'
+                      read ? 'text-secondary' : 'text-on-surface'
                     }`}
                   >
                     Ch {formatChapter(chapter.number)}
-                    {read && (
-                      <span className="inline-flex items-center gap-1 font-mono text-label-sm text-secondary">
-                        <Icon name="check" className="h-3.5 w-3.5" />
-                        Read
+                    {chapter === lastRead && (
+                      <span title="Last chapter read" aria-label="Last chapter read" className="text-tertiary">
+                        <Icon name="bookmark" className="h-3.5 w-3.5" />
                       </span>
                     )}
                     {chapter === next && (
@@ -168,7 +170,11 @@ export function ChapterTable({
                     )}
                   </span>
                   {chapter.title && (
-                    <span className="truncate font-mono text-label-sm text-outline">
+                    <span
+                      className={`truncate font-mono text-label-sm ${
+                        read ? 'text-secondary/70' : 'text-outline'
+                      }`}
+                    >
                       {chapter.title}
                     </span>
                   )}
