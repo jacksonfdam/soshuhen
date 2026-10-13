@@ -3,6 +3,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { api, readerPageUrl, type ReaderPrefs } from '../../lib/api'
 import { useAsyncData } from '../../lib/useAsyncData'
+import { ChapterPanel } from './ChapterPanel'
+import { DesktopChrome } from './DesktopChrome'
 import { EndOfChapter } from './EndOfChapter'
 import { clampPage, spreadOf, spreads } from './lib/spreads'
 import { BACKGROUND } from './lib/styles'
@@ -11,7 +13,9 @@ import { usePreload } from './lib/usePreload'
 import { useReaderKeys } from './lib/useReaderKeys'
 import { PagedView, type Zone } from './PagedView'
 import { ReaderMessage } from './ReaderMessage'
+import { SettingsPanel } from './SettingsPanel'
 import { StripView } from './StripView'
+import { TabletChrome } from './TabletChrome'
 
 const PRELOAD_AHEAD = 3
 
@@ -29,6 +33,7 @@ export function ReaderPage() {
   const [atEnd, setAtEnd] = useState(false)
   const [chromeVisible, setChromeVisible] = useState(true)
   const [panel, setPanel] = useState<Panel>(null)
+  const [prefsError, setPrefsError] = useState<string | null>(null)
   const completed = useRef(new Set<number>())
 
   const save = usePositionSaver(manifest?.series.id ?? null, manifest?.chapter.id ?? null)
@@ -106,6 +111,33 @@ export function ReaderPage() {
     else if (manifest.previous) openChapter(manifest.previous.id)
   }, [manifest, strip, atEnd, step, groups, goTo, openChapter])
 
+  const changePrefs = useCallback(
+    (next: Omit<ReaderPrefs, 'custom'>) => {
+      if (!manifest || !prefs) return
+      const before = prefs
+      setPrefs({ ...next, custom: true })
+      setPrefsError(null)
+      api
+        .saveReaderPrefs(manifest.series.id, next)
+        .then(setPrefs)
+        .catch((failure: unknown) => {
+          setPrefs(before)
+          setPrefsError(failure instanceof Error ? failure.message : 'Could not save.')
+        })
+    },
+    [manifest, prefs],
+  )
+
+  const makeDefault = useCallback(() => {
+    if (!prefs) return
+    setPrefsError(null)
+    api
+      .saveReaderDefaults({ mode: prefs.mode, scale: prefs.scale, background: prefs.background })
+      .catch((failure: unknown) => {
+        setPrefsError(failure instanceof Error ? failure.message : 'Could not save.')
+      })
+  }, [prefs])
+
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined)
     else void document.documentElement.requestFullscreen().catch(() => undefined)
@@ -162,6 +194,11 @@ export function ReaderPage() {
   }
 
   const toggleChrome = () => setChromeVisible((visible) => !visible)
+  // Down a strip a page is a place in the scroll, not a state to set.
+  const seek = (index: number) => {
+    if (strip) document.querySelector(`[data-index="${index}"]`)?.scrollIntoView()
+    else goTo(index)
+  }
   const end = (
     <EndOfChapter
       current={manifest.chapter}
@@ -200,8 +237,45 @@ export function ReaderPage() {
           onZone={onZone}
         />
       )}
-      {/* chrome and panels: chromeVisible, panel, setPanel are wired in by the next commit */}
-      <span hidden data-chrome={chromeVisible} data-panel={panel ?? ''} />
+      <TabletChrome
+        manifest={manifest}
+        page={page}
+        rtl={rtl}
+        visible={chromeVisible}
+        onSeek={seek}
+        onOpenChapter={openChapter}
+        onPanel={setPanel}
+      />
+      <DesktopChrome
+        manifest={manifest}
+        page={page}
+        rtl={rtl}
+        strip={strip}
+        onSeek={seek}
+        onOpenChapter={openChapter}
+        onPanel={setPanel}
+        onFullscreen={toggleFullscreen}
+      />
+      {panel === 'settings' && (
+        <SettingsPanel
+          prefs={prefs}
+          error={prefsError}
+          onChange={changePrefs}
+          onMakeDefault={makeDefault}
+          onClose={() => setPanel(null)}
+        />
+      )}
+      {panel === 'chapters' && (
+        <ChapterPanel
+          seriesId={manifest.series.id}
+          currentId={manifest.chapter.id}
+          onOpen={(id) => {
+            setPanel(null)
+            openChapter(id)
+          }}
+          onClose={() => setPanel(null)}
+        />
+      )}
     </main>
   )
 }
