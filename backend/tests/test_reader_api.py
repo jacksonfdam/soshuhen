@@ -305,3 +305,132 @@ async def test_a_file_path_outside_the_library_is_not_served(client, tmp_path):
         chapter_id = await _chapter(session, series_id, "1", file_path=path, state="downloaded")
     # Not in the library and no source to stream from.
     assert (await client.get(f"/api/reader/chapters/{chapter_id}")).status_code == 409
+
+
+async def _three_archived_chapters(tmp_path) -> tuple[int, list[int]]:
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session)
+        ids = []
+        for number in ("1", "2", "3"):
+            path = _cbz(tmp_path / "manga" / "teto" / f"c{number}.cbz", [JPEG, JPEG])
+            ids.append(
+                await _chapter(session, series_id, number, file_path=path, state="downloaded")
+            )
+    return series_id, ids
+
+
+async def test_manifest_names_the_chapters_either_side(client, tmp_path):
+    _, (first, middle, last) = await _three_archived_chapters(tmp_path)
+    body = (await client.get(f"/api/reader/chapters/{middle}")).json()
+    assert body["previous"]["id"] == first
+    assert body["next"]["id"] == last
+    edge = (await client.get(f"/api/reader/chapters/{first}")).json()
+    assert edge["previous"] is None
+
+
+async def test_position_round_trips_and_only_applies_to_its_chapter(client, tmp_path):
+    series_id, (first, middle, _) = await _three_archived_chapters(tmp_path)
+    saved = await client.put(
+        f"/api/reader/series/{series_id}/position", json={"chapter_id": middle, "page": 1}
+    )
+    assert saved.status_code == 200
+    assert (await client.get(f"/api/reader/chapters/{middle}")).json()["position"] == 1
+    assert (await client.get(f"/api/reader/chapters/{first}")).json()["position"] is None
+
+
+async def test_a_position_for_another_series_chapter_is_refused(client, tmp_path):
+    _, (first, _, _) = await _three_archived_chapters(tmp_path)
+    async with get_sessionmaker()() as session:
+        other = await _series(session, slug="other")
+    response = await client.put(
+        f"/api/reader/series/{other}/position", json={"chapter_id": first, "page": 0}
+    )
+    assert response.status_code == 404
+
+
+async def test_prefs_fall_back_to_the_defaults_then_stick_per_series(client, tmp_path):
+    series_id, (first, _, _) = await _three_archived_chapters(tmp_path)
+    prefs = (await client.get(f"/api/reader/series/{series_id}/prefs")).json()
+    assert prefs == {
+        "mode": "paged_rtl",
+        "scale": "fit_screen",
+        "background": "black",
+        "custom": False,
+    }
+
+    stored = await client.put(
+        f"/api/reader/series/{series_id}/prefs",
+        json={"mode": "long_strip", "scale": "fit_width", "background": "white"},
+    )
+    assert stored.json()["custom"] is True
+    manifest = (await client.get(f"/api/reader/chapters/{first}")).json()
+    assert manifest["prefs"]["mode"] == "long_strip"
+
+
+async def test_an_unknown_mode_is_refused(client, tmp_path):
+    series_id, _ = await _three_archived_chapters(tmp_path)
+    response = await client.put(
+        f"/api/reader/series/{series_id}/prefs",
+        json={"mode": "sideways", "scale": "fit_width", "background": "white"},
+    )
+    assert response.status_code == 422
+
+
+async def test_prefs_for_an_unknown_series_are_404(client):
+    response = await client.put(
+        "/api/reader/series/999999/prefs",
+        json={"mode": "long_strip", "scale": "fit_width", "background": "white"},
+    )
+    assert response.status_code == 404
+
+
+async def test_defaults_change_what_an_uncustomised_series_gets(client, tmp_path):
+    series_id, _ = await _three_archived_chapters(tmp_path)
+    await client.put(
+        "/api/reader/defaults",
+        json={"mode": "long_strip", "scale": "fit_width", "background": "gray"},
+    )
+    prefs = (await client.get(f"/api/reader/series/{series_id}/prefs")).json()
+    assert prefs["mode"] == "long_strip"
+    assert prefs["custom"] is False
+
+
+async def test_resume_opens_the_saved_position(client, tmp_path):
+    series_id, (_, middle, _) = await _three_archived_chapters(tmp_path)
+    await client.put(
+        f"/api/reader/series/{series_id}/position", json={"chapter_id": middle, "page": 1}
+    )
+    assert (await client.get(f"/api/reader/series/{series_id}/resume")).json() == {
+        "chapter_id": middle,
+        "page": 1,
+    }
+
+
+async def test_resume_without_a_position_opens_the_first_unread_chapter(client, tmp_path):
+    series_id, (_, middle, _) = await _three_archived_chapters(tmp_path)
+    async with get_sessionmaker()() as session:
+        await session.execute(
+            text(
+                "insert into list_entry (provider, provider_media_id, series_id, title_romaji,"
+                " synonyms, raw, status, user_progress_chapter)"
+                " values ('local', :m, :s, 'Teto', '[]'::jsonb, '{}'::jsonb, 'reading', 1)"
+            ),
+            {"m": str(series_id), "s": series_id},
+        )
+        await session.commit()
+    assert (await client.get(f"/api/reader/series/{series_id}/resume")).json() == {
+        "chapter_id": middle,
+        "page": 0,
+    }
+
+
+async def test_resume_of_a_series_with_no_chapters_is_404(client):
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session)
+    assert (await client.get(f"/api/reader/series/{series_id}/resume")).status_code == 404
+
+
+async def test_series_detail_chapters_carry_their_id(client, tmp_path):
+    series_id, ids = await _three_archived_chapters(tmp_path)
+    detail = (await client.get(f"/api/series/{series_id}")).json()
+    assert [chapter["id"] for chapter in detail["chapters"]] == ids

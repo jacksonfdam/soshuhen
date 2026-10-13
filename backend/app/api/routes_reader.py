@@ -2,9 +2,10 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import reader_service as service
@@ -49,18 +50,35 @@ def _chapter_ref(row: service.ChapterRow) -> dict[str, Any]:
     return {"id": row.id, "number": float(row.number), "title": row.title, "state": row.state}
 
 
+class PositionIn(BaseModel):
+    chapter_id: int
+    page: int = Field(ge=0)
+
+
+class PrefsIn(BaseModel):
+    mode: Literal["paged_ltr", "paged_rtl", "long_strip", "double"]
+    scale: Literal["fit_width", "fit_height", "fit_screen"]
+    background: Literal["black", "gray", "white"]
+
+
 @router.get("/chapters/{chapter_id}")
 async def manifest(chapter_id: int, session: Session) -> dict[str, Any]:
     with service_errors():
         row = await service.chapter(session, chapter_id)
         origin, count = await service.page_count(session, row)
-    await session.commit()
-    return {
+    previous, following = await service.neighbours(session, row)
+    body = {
         "chapter": _chapter_ref(row),
         "series": {"id": row.series_id, "title": row.series_title},
         "origin": origin,
         "page_count": count,
+        "previous": previous,
+        "next": following,
+        "position": await service.position_in(session, row),
+        "prefs": await service.effective_prefs(session, row.series_id),
     }
+    await session.commit()
+    return body
 
 
 @router.get("/chapters/{chapter_id}/pages/{index}")
@@ -74,3 +92,38 @@ async def page(chapter_id: int, index: int, session: Session) -> Response:
         media_type=MEDIA_TYPES.get(extension, "application/octet-stream"),
         headers={"Cache-Control": IMMUTABLE},
     )
+
+
+@router.put("/series/{series_id}/position")
+async def save_position(series_id: int, body: PositionIn, session: Session) -> dict[str, bool]:
+    with service_errors():
+        await service.save_position(session, series_id, body.chapter_id, body.page)
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get("/series/{series_id}/prefs")
+async def prefs(series_id: int, session: Session) -> dict[str, Any]:
+    return await service.effective_prefs(session, series_id)
+
+
+@router.put("/series/{series_id}/prefs")
+async def save_prefs(series_id: int, body: PrefsIn, session: Session) -> dict[str, Any]:
+    if not await service.series_exists(session, series_id):
+        raise HTTPException(status_code=404, detail="series not found")
+    await service.save_prefs(session, series_id, body.mode, body.scale, body.background)
+    await session.commit()
+    return await service.effective_prefs(session, series_id)
+
+
+@router.put("/defaults")
+async def save_defaults(body: PrefsIn, session: Session) -> dict[str, bool]:
+    await service.save_defaults(session, body.mode, body.scale, body.background)
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get("/series/{series_id}/resume")
+async def resume(series_id: int, session: Session) -> dict[str, int]:
+    with service_errors():
+        return await service.resume(session, series_id)

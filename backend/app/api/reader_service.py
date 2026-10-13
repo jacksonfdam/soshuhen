@@ -15,11 +15,13 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import settings_store
 from app.config import get_settings
 from app.downloader.cbz import page_extension
 from app.downloader.fetcher import PageFetchError, fetch_pages
 from app.downloader.limits import reader_semaphore
 from app.enums import JobType
+from app.handlers import progress_events
 from app.handlers.base import PermanentError
 from app.handlers.download_chapter import load_catalogue_row
 from app.handlers.reader_cache import store_page_list, stored_page_list
@@ -243,3 +245,140 @@ async def _queue_assembly_when_complete(session: AsyncSession, row: ChapterRow) 
         series_id=row.series_id,
         dedupe_key=f"download_chapter:{row.id}",
     )
+
+
+async def series_exists(session: AsyncSession, series_id: int) -> bool:
+    found = await session.execute(text("select 1 from series where id = :id"), {"id": series_id})
+    return found.first() is not None
+
+
+async def neighbours(
+    session: AsyncSession, row: ChapterRow
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    async def one(query: str) -> dict[str, Any] | None:
+        found = (await session.execute(text(query), {"s": row.series_id, "n": row.number})).first()
+        if found is None:
+            return None
+        return {"id": found.id, "number": float(found.number), "title": found.title}
+
+    previous = await one(
+        "select id, number, title from chapter"
+        " where series_id = :s and number < :n order by number desc limit 1"
+    )
+    following = await one(
+        "select id, number, title from chapter"
+        " where series_id = :s and number > :n order by number asc limit 1"
+    )
+    return previous, following
+
+
+async def position_in(session: AsyncSession, row: ChapterRow) -> int | None:
+    result = await session.execute(
+        text("select chapter_id, page from reading_position where series_id = :s"),
+        {"s": row.series_id},
+    )
+    found = result.first()
+    return found.page if found is not None and found.chapter_id == row.id else None
+
+
+async def save_position(
+    session: AsyncSession, series_id: int, chapter_id: int, page: int
+) -> None:
+    owner = await session.execute(
+        text("select 1 from chapter where id = :c and series_id = :s"),
+        {"c": chapter_id, "s": series_id},
+    )
+    if owner.first() is None:
+        raise ChapterMissing(f"chapter {chapter_id} is not part of series {series_id}")
+    await session.execute(
+        text(
+            """
+            insert into reading_position (series_id, chapter_id, page, updated_at)
+            values (:s, :c, :p, now())
+            on conflict (series_id) do update
+               set chapter_id = excluded.chapter_id, page = excluded.page,
+                   updated_at = excluded.updated_at
+            """
+        ),
+        {"s": series_id, "c": chapter_id, "p": page},
+    )
+
+
+async def effective_prefs(session: AsyncSession, series_id: int) -> dict[str, Any]:
+    result = await session.execute(
+        text("select mode, scale, background from series_reader_pref where series_id = :s"),
+        {"s": series_id},
+    )
+    found = result.first()
+    if found is not None:
+        return {
+            "mode": found.mode,
+            "scale": found.scale,
+            "background": found.background,
+            "custom": True,
+        }
+    return {
+        "mode": await settings_store.get(session, settings_store.READER_DEFAULT_MODE),
+        "scale": await settings_store.get(session, settings_store.READER_DEFAULT_SCALE),
+        "background": await settings_store.get(
+            session, settings_store.READER_DEFAULT_BACKGROUND
+        ),
+        "custom": False,
+    }
+
+
+async def save_prefs(
+    session: AsyncSession, series_id: int, mode: str, scale: str, background: str
+) -> None:
+    await session.execute(
+        text(
+            """
+            insert into series_reader_pref (series_id, mode, scale, background)
+            values (:s, :m, :sc, :b)
+            on conflict (series_id) do update
+               set mode = excluded.mode, scale = excluded.scale,
+                   background = excluded.background
+            """
+        ),
+        {"s": series_id, "m": mode, "sc": scale, "b": background},
+    )
+
+
+async def save_defaults(session: AsyncSession, mode: str, scale: str, background: str) -> None:
+    await settings_store.set_value(session, settings_store.READER_DEFAULT_MODE, mode)
+    await settings_store.set_value(session, settings_store.READER_DEFAULT_SCALE, scale)
+    await settings_store.set_value(session, settings_store.READER_DEFAULT_BACKGROUND, background)
+
+
+async def resume(session: AsyncSession, series_id: int) -> dict[str, int]:
+    saved = await session.execute(
+        text(
+            """
+            select p.chapter_id, p.page from reading_position p
+              join chapter c on c.id = p.chapter_id
+             where p.series_id = :s
+            """
+        ),
+        {"s": series_id},
+    )
+    found = saved.first()
+    if found is not None:
+        return {"chapter_id": found.chapter_id, "page": found.page}
+
+    # The first chapter past the furthest one read, or the first chapter at
+    # all when none is past it, so a series read to the end still opens.
+    furthest = await progress_events.furthest_read(session, series_id)
+    result = await session.execute(
+        text(
+            """
+            select id from chapter where series_id = :s
+             order by (number > :furthest) desc, number asc
+             limit 1
+            """
+        ),
+        {"s": series_id, "furthest": furthest},
+    )
+    chapter_id = result.scalar_one_or_none()
+    if chapter_id is None:
+        raise ChapterMissing(f"series {series_id} has no chapters")
+    return {"chapter_id": chapter_id, "page": 0}

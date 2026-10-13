@@ -347,7 +347,7 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
     chapters = await session.execute(
         text(
             """
-            select number, title, state, file_path, komga_book_id
+            select id, number, title, state, file_path, komga_book_id
               from chapter where series_id = :id order by number
             """
         ),
@@ -381,6 +381,7 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
         else None,
         "chapters": [
             {
+                "id": c.id,
                 "number": float(c.number),
                 "title": c.title,
                 "state": c.state,
