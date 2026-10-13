@@ -132,8 +132,9 @@ Four rules, each of which cost time when broken:
 - **A Tailwind class is only real if the built CSS contains it.** A class can look right, typecheck,
   build clean and generate nothing — a name built by string interpolation is never seen by the
   scanner; `font-label-md` does not exist where the scale lives under `fontSize`, so `text-label-md`
-  already carries size and weight; `bg-secondary/12` needs `/[0.12]` because the modifier takes scale
-  steps. All three fail identically and silently. Verification is `grep` over `frontend/dist/` after
+  already carries size and weight; under Tailwind 3, `bg-secondary/12` needed `/[0.12]` because the
+  modifier took scale steps (Tailwind 4 accepts any integer). All three fail identically and
+  silently. Verification is `grep` over `frontend/dist/` after
   a build: **the source is what lies, the build output is what tells the truth.**
 - **Feature folders never import from each other.** Anything two screens need goes in `ui/` or
   `lib/`. A small duplicated helper is cheaper than a cross-feature edge.
