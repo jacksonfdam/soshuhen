@@ -28,8 +28,11 @@ async def queue_batches(
     if not chapter_ids:
         return 0
 
+    handed = await queue_from_reader(session, series_id, chapter_ids, priority=priority)
+    queued = len(handed)
+    chapter_ids = [chapter_id for chapter_id in chapter_ids if chapter_id not in handed]
+
     size = await settings_store.get_int(session, settings_store.DOWNLOAD_BATCH_SIZE)
-    queued = 0
     for batch in chunk(list(chapter_ids), size):
         payload: dict[str, Any] = {"series_id": series_id, "chapter_ids": batch}
         job_id = await repo.enqueue(
@@ -48,3 +51,37 @@ async def queue_batches(
         )
         queued += len(batch)
     return queued
+
+
+async def queue_from_reader(
+    session: AsyncSession, series_id: int, chapter_ids: Sequence[int], *, priority: int = 100
+) -> set[int]:
+    """Hand chapters the reader is streaming to the job that builds them from its cache.
+
+    Not into a batch: a batch would fetch every page from the source while the
+    reader's cache already holds some of them, and marking them `queued` would
+    take away the state that tells the reader's pages where to go. Left out
+    entirely, a chapter someone opened and put down would silently miss every
+    download asked for that week.
+
+    Returns the chapters handed on. One already waiting counts: the caller
+    asked for it and it is on its way.
+    """
+    result = await session.execute(
+        text(
+            "select id from chapter"
+            " where id = any(cast(:ids as bigint[])) and state = 'streaming'"
+        ),
+        {"ids": list(chapter_ids)},
+    )
+    handed = {int(chapter_id) for chapter_id in result.scalars()}
+    for chapter_id in sorted(handed):
+        await repo.enqueue(
+            session,
+            JobType.DOWNLOAD_CHAPTER,
+            {"chapter_id": chapter_id, "from_cache": True},
+            priority=priority,
+            series_id=series_id,
+            dedupe_key=f"download_chapter:{chapter_id}",
+        )
+    return handed

@@ -476,5 +476,19 @@ async def test_a_chapter_being_streamed_is_left_to_the_reader():
 
         assert hits == ["/a.jpg"]
         assert (await _states([first, second]))[second] == "streaming"
+        # Left to the reader's cache, not dropped: the batch hands it to the
+        # job that builds the archive from what the reader fetched.
+        async with get_sessionmaker()() as session:
+            handed = (
+                await session.execute(
+                    text(
+                        "select count(*) from job where type = 'download_chapter'"
+                        " and (payload->>'chapter_id')::bigint = :id"
+                        " and (payload->>'from_cache')::boolean"
+                    ),
+                    {"id": second},
+                )
+            ).scalar_one()
+        assert handed == 1
     finally:
         stub.close()

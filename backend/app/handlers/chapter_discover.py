@@ -165,7 +165,7 @@ async def queue_missing(ctx: JobContext, series_id: int) -> int:
         text(
             """
             select id from chapter
-             where series_id = :series_id and state = 'known'
+             where series_id = :series_id and state in ('known', 'streaming')
              order by number
             """
         ),

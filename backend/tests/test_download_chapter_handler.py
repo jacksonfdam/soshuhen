@@ -430,3 +430,46 @@ async def test_assembly_of_a_chapter_already_in_the_library_only_clears_the_cach
         assert not (root / str(chapter_id)).exists()
     finally:
         stub.close()
+
+
+async def test_a_stale_stored_list_falls_back_to_a_fresh_one_for_the_gaps(tmp_path, monkeypatch):
+    """A stored list can be days old, and CDN addresses rotate."""
+    root = _use_cache(tmp_path, monkeypatch)
+    hits: list[str] = []
+
+    def router(path):
+        hits.append(path)
+        if path == "/old-2.jpg":
+            return 404, "text/plain", b"gone"
+        return 200, "image/jpeg", JPEG
+
+    stub = Stub(router)
+    try:
+        chapter_url = f"{stub.base_url}/manga/1/chapter/1"
+        fresh = [PageRef(url="/new-1.jpg"), PageRef(url="/new-2.jpg")]
+        source = FakeSource(stub.key, pages={chapter_url: fresh})
+        install_registry({stub.key: RegisteredSource(source=source, base_url=stub.base_url)})
+
+        async with get_sessionmaker()() as session:
+            series_id = await _series(session, stub.key)
+            await _catalogue(session, stub.key, stub.base_url)
+            chapter_id = await _chapter(session, series_id, "1", chapter_url)
+            await store_page_list(
+                session, chapter_id, [PageRef(url="/old-1.jpg"), PageRef(url="/old-2.jpg")]
+            )
+            await session.commit()
+            reader_cache_files.write_page(root, chapter_id, 0, JPEG)
+
+            ctx = await _context_from_cache(session, chapter_id)
+            await download_chapter.handle(ctx)
+            await session.commit()
+            state = (
+                await session.execute(
+                    text("select state from chapter where id = :id"), {"id": chapter_id}
+                )
+            ).scalar_one()
+
+        assert state == "downloaded"
+        assert "/new-2.jpg" in hits
+    finally:
+        stub.close()

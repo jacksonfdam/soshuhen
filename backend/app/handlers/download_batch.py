@@ -25,6 +25,7 @@ from app.downloader.limits import source_semaphore
 from app.downloader.paths import chapter_path
 from app.enums import JobType
 from app.handlers.base import JobContext, PermanentError, register
+from app.handlers.batching import queue_from_reader
 from app.handlers.download_chapter import build_comicinfo, load_catalogue_row
 from app.queue import repo
 from app.sources import source_for_url
@@ -83,8 +84,10 @@ async def handle(ctx: JobContext) -> None:
     for row in rows:
         number = Decimal(str(row["number"]))
         # Someone is reading it, and the reader's cache becomes this chapter's
-        # archive. Fetching it here as well would ask the source twice.
+        # archive. Fetching it here as well would ask the source twice, so it is
+        # handed to the job that builds it from the cache instead.
         if row["state"] == "streaming":
+            await queue_from_reader(ctx.session, row["series_id"], [row["id"]])
             continue
         destination = chapter_path(library_root, slug, number, row["title"])
         if destination.exists():

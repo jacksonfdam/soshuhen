@@ -12,6 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -285,10 +286,20 @@ async def pages_from_cache(
     missing = [index for index, data in enumerate(pages) if data is None]
     if missing:
         source, client, semaphore = await _site(ctx, row)
-        async with semaphore:
-            fetched = await fetch_pages(
-                client, [listed[index] for index in missing], transform=source.descramble
-            )
+        try:
+            async with semaphore:
+                fetched = await fetch_pages(
+                    client, [listed[index] for index in missing], transform=source.descramble
+                )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in (404, 410):
+                raise
+            # The stored list is as old as the first page the reader opened,
+            # which can be days, and CDN addresses rotate. A fresh list names
+            # the same pages at addresses that work, so the whole chapter is
+            # fetched from it rather than mixing two lists' page orders.
+            await ctx.log(f"chapter {number}: the reader's page list went stale, listing again")
+            return await pages_from_source(ctx, row, chapter_id, number)
         for index, data in zip(missing, fetched, strict=True):
             pages[index] = data
     await ctx.log(

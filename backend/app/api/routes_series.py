@@ -544,7 +544,10 @@ async def confirm_mapping(series_id: int, body: MappingIn, session: Session) -> 
 @router.post("/{series_id}/download")
 async def download_range(series_id: int, body: DownloadIn, session: Session) -> dict[str, Any]:
     """Manual download. Priority 0 puts it ahead of whatever the cron queued."""
-    clauses = ["series_id = :series_id", "state in ('known', 'failed', 'skipped')"]
+    clauses = [
+        "series_id = :series_id",
+        "state in ('known', 'failed', 'skipped', 'streaming')",
+    ]
     params: dict[str, Any] = {"series_id": series_id}
     if body.from_chapter is not None:
         clauses.append("number >= :from_chapter")
@@ -583,7 +586,7 @@ async def set_auto_download(
             text(
                 """
                 select id from chapter
-                 where series_id = :series_id and state = 'known'
+                 where series_id = :series_id and state in ('known', 'streaming')
                  order by number
                 """
             ),
