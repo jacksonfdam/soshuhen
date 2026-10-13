@@ -7,9 +7,33 @@
 @import '@fontsource/jetbrains-mono/500.css';
 @import '@fontsource/jetbrains-mono/600.css';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+/* tailwind.config.ts stays the one place a colour, size, radius or spacing
+   value lives (CLAUDE.md), so v4 reads it rather than an @theme block here. */
+@config '../../tailwind.config.ts';
+
+/* v4 changed three preflight defaults that every screen was built against:
+   borders now take currentColor instead of gray-200, buttons lost their
+   pointer cursor, and placeholders became half-opacity text. Restored here
+   so the upgrade changes the toolchain and not the interface. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+}
 
 @layer base {
   html {

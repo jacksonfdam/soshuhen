@@ -56,13 +56,13 @@ export function SourcesPanel() {
           placeholder="Search by name or key"
           value={query}
           onChange={(event) => search(event.target.value)}
-          className="min-w-0 flex-1 rounded-lg bg-surface-container-lowest px-space-md py-space-sm text-body-md text-on-surface shadow-inner focus:outline-none focus:ring-2 focus:ring-primary"
+          className="min-w-0 flex-1 rounded-lg bg-surface-container-lowest px-space-md py-space-sm text-body-md text-on-surface shadow-inner focus:outline-hidden focus:ring-2 focus:ring-primary"
         />
         <select
           aria-label="Filter by language"
           value={lang}
           onChange={(event) => filterLanguage(event.target.value)}
-          className="rounded-lg bg-surface-container-lowest px-space-md py-space-sm text-body-md text-on-surface shadow-inner focus:outline-none focus:ring-2 focus:ring-primary"
+          className="rounded-lg bg-surface-container-lowest px-space-md py-space-sm text-body-md text-on-surface shadow-inner focus:outline-hidden focus:ring-2 focus:ring-primary"
         >
           {LANGUAGES.map((option) => (
             <option key={option.value} value={option.value}>

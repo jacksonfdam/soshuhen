@@ -60,7 +60,7 @@ export function NotesPanel({
           setDraft(event.target.value)
         }}
         aria-label="Your note on this series"
-        className="w-full rounded-lg bg-surface-container-lowest p-space-md text-body-md text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary"
+        className="w-full rounded-lg bg-surface-container-lowest p-space-md text-body-md text-on-surface placeholder:text-outline focus:outline-hidden focus:ring-1 focus:ring-primary"
         placeholder="Kept on your own list entry, not on this server."
       />
 

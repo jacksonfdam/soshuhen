@@ -16,7 +16,7 @@ function hoursHint(cron: string): string | null {
 
 function FieldCard({ label, hint, description, children }: { label: string; hint?: string | null; description: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex flex-col justify-between gap-space-sm rounded-xl bg-surface-container p-space-lg shadow-sm">
+    <div className="flex flex-col justify-between gap-space-sm rounded-xl bg-surface-container p-space-lg shadow-xs">
       <div>
         <div className="mb-1 flex items-center justify-between gap-space-sm">
           <span className="text-title-md font-semibold text-on-surface">{label}</span>
@@ -64,7 +64,7 @@ function NumberInput({
         step={step}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-on-surface shadow-inner focus:outline-none focus:ring-2 focus:ring-primary"
+        className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-on-surface shadow-inner focus:outline-hidden focus:ring-2 focus:ring-primary"
       />
       <span className="shrink-0 font-mono text-label-sm text-on-surface-variant">{unit}</span>
     </div>
@@ -92,7 +92,7 @@ function CronInput({
         aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-primary shadow-inner focus:outline-none focus:ring-2 focus:ring-primary"
+        className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-primary shadow-inner focus:outline-hidden focus:ring-2 focus:ring-primary"
       />
     </div>
   )

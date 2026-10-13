@@ -66,7 +66,7 @@ export function StorageFields({
               aria-label="Progress push schedule"
               value={draft.cron_progress_push ?? ''}
               onChange={(event) => onChange('cron_progress_push', event.target.value)}
-              className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-primary shadow-inner focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-primary shadow-inner focus:outline-hidden focus:ring-2 focus:ring-primary"
             />
           </div>
         </div>
@@ -89,7 +89,7 @@ export function StorageFields({
               aria-label="Komga address"
               value={draft.komga_public_url ?? ''}
               onChange={(event) => onChange('komga_public_url', event.target.value)}
-              className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-primary shadow-inner focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-primary shadow-inner focus:outline-hidden focus:ring-2 focus:ring-primary"
             />
           </div>
         </div>

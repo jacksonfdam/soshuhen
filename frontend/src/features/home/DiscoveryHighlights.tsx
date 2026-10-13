@@ -41,7 +41,7 @@ function Highlight({
   const watched = watchedLine(item)
 
   return (
-    <article className="flex gap-space-md rounded-xl bg-surface-container-low p-space-md shadow-sm">
+    <article className="flex gap-space-md rounded-xl bg-surface-container-low p-space-md shadow-xs">
       <div className="h-24 w-16 shrink-0 overflow-hidden rounded-lg bg-surface-container-highest">
         {item.cover_url && (
           <img src={item.cover_url} alt={`Cover of ${item.title}`} loading="lazy" className="h-full w-full object-cover" />

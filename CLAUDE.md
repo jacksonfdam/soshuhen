@@ -147,12 +147,16 @@ release and a migration to undo (`0014`).
 there because breaking it cost real time:
 
 - **`frontend/tailwind.config.ts` is the only place a colour, size, radius or spacing value
-  lives.** No hex, px or rem literal belongs in a component.
+  lives.** No hex, px or rem literal belongs in a component. Tailwind 4 reads it through `@config` in
+  `src/styles/index.css`; tokens stay in the config rather than moving into an `@theme` block, and
+  the same file restores the three v3 preflight defaults (border colour, button cursor,
+  placeholder colour) the screens were built against.
 - **A Tailwind class is only real if the built CSS contains it.** Three times a class looked right,
   typechecked, built clean and generated nothing: a name built by string interpolation, which the
   scanner never sees; `font-label-md`, where the scale exists only under `fontSize` so
-  `text-label-md` already carries size *and* weight; and `bg-secondary/12`, where the opacity
-  modifier takes scale steps and 12 needed `/[0.12]`. They fail identically and silently.
+  `text-label-md` already carries size *and* weight; and `bg-secondary/12` under Tailwind 3, whose
+  opacity modifier took scale steps so 12 needed `/[0.12]` (Tailwind 4 accepts any integer). They
+  fail identically and silently.
   Verification is `grep` over `frontend/dist/` after a build — the source is what lies, the build
   output is what tells the truth.
 - **Feature folders never import from each other.** Anything two screens need lives in `ui/` or

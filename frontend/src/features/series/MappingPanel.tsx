@@ -131,7 +131,7 @@ export function MappingPanel({
               if (event.key === 'Escape') setDraft(null)
             }}
             placeholder="https://mangadex.org/title/..."
-            className="w-full rounded-lg bg-surface-container-highest px-space-sm py-2 font-mono text-body-sm text-on-surface outline-none ring-1 ring-outline-variant/40 focus:ring-primary"
+            className="w-full rounded-lg bg-surface-container-highest px-space-sm py-2 font-mono text-body-sm text-on-surface outline-hidden ring-1 ring-outline-variant/40 focus:ring-primary"
           />
           {/* Said before the button is pressed: this is not an edit to a label,
               it re-reads the chapter list from the new source. */}
