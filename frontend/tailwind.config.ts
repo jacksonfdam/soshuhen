@@ -55,6 +55,12 @@ export default {
         'on-warning': '#4a2600',
         'warning-container': '#c2691a',
         'on-warning-container': '#3a1d00',
+        // The reader's page backgrounds. Not surface roles: a page is a
+        // scanned image, and pure black or white around it is what the
+        // reading apps use so the page edge does not read as a frame.
+        'reader-black': '#000000',
+        'reader-gray': '#2b2b2b',
+        'reader-white': '#ffffff',
       },
       fontFamily: {
         sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],

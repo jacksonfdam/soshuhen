@@ -42,12 +42,55 @@ export interface Candidate {
 }
 
 export interface SeriesChapter {
+  /** The reader opens a chapter by this. */
+  id: number
   number: number
   title: string | null
   state: string
   file_path: string | null
   /** Komga's own id for the book, once it has indexed the downloaded file. */
   komga_book_id: string | null
+}
+
+export type ReaderMode = 'paged_ltr' | 'paged_rtl' | 'long_strip' | 'double'
+export type ReaderScale = 'fit_width' | 'fit_height' | 'fit_screen'
+export type ReaderBackground = 'black' | 'gray' | 'white'
+
+export interface ReaderPrefs {
+  mode: ReaderMode
+  scale: ReaderScale
+  background: ReaderBackground
+  /** False while the series follows the default for every series. */
+  custom: boolean
+}
+
+export interface ReaderChapterRef {
+  id: number
+  number: number
+  title: string | null
+}
+
+export interface ReaderChapter extends ReaderChapterRef {
+  state: string
+}
+
+export interface ReaderManifest {
+  chapter: ReaderChapter
+  series: { id: number; title: string }
+  /** `stream` means the pages come from the source and are saved to the
+      library once every one of them has loaded. */
+  origin: 'archive' | 'stream'
+  page_count: number
+  previous: ReaderChapterRef | null
+  next: ReaderChapterRef | null
+  /** The saved page, only when the saved position is in this chapter. */
+  position: number | null
+  prefs: ReaderPrefs
+}
+
+/** An address, not a request: the browser loads it as an image. */
+export function readerPageUrl(chapterId: number, index: number): string {
+  return `/api/reader/chapters/${chapterId}/pages/${index}`
 }
 
 export interface SeriesEntry {
@@ -777,6 +820,32 @@ export const api = {
     request<Series[]>(`/api/series${state ? `?state=${state}` : ''}`),
   chapters: (id: number) => request<unknown[]>(`/api/series/${id}/chapters`),
   seriesDetail: (id: number) => request<SeriesDetail>(`/api/series/${id}`),
+  readerManifest: (chapterId: number) =>
+    request<ReaderManifest>(`/api/reader/chapters/${chapterId}`),
+  readerResume: (seriesId: number) =>
+    request<{ chapter_id: number; page: number }>(`/api/reader/series/${seriesId}/resume`),
+  readerChapters: (seriesId: number) =>
+    request<ReaderChapter[]>(`/api/series/${seriesId}/chapters`),
+  saveReaderPosition: (seriesId: number, chapterId: number, page: number) =>
+    request<{ ok: boolean }>(`/api/reader/series/${seriesId}/position`, {
+      method: 'PUT',
+      body: JSON.stringify({ chapter_id: chapterId, page }),
+    }),
+  completeChapter: (chapterId: number) =>
+    request<{ progress_queued: boolean; komga_queued: boolean }>(
+      `/api/reader/chapters/${chapterId}/complete`,
+      { method: 'POST' },
+    ),
+  saveReaderPrefs: (seriesId: number, prefs: Omit<ReaderPrefs, 'custom'>) =>
+    request<ReaderPrefs>(`/api/reader/series/${seriesId}/prefs`, {
+      method: 'PUT',
+      body: JSON.stringify(prefs),
+    }),
+  saveReaderDefaults: (prefs: Omit<ReaderPrefs, 'custom'>) =>
+    request<{ ok: boolean }>('/api/reader/defaults', {
+      method: 'PUT',
+      body: JSON.stringify(prefs),
+    }),
   candidates: (id: number) => request<ReviewPayload>(`/api/series/${id}/candidates`),
   reviewQueue: () => request<ReviewQueue>('/api/series/review/queue'),
   reviewIgnored: () => request<ReviewQueue>('/api/series/review/ignored'),

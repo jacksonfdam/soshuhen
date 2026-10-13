@@ -4,6 +4,8 @@ import { DiscoverPage } from '../features/discover/DiscoverPage'
 import { DownloadsPage } from '../features/downloads/DownloadsPage'
 import { HomePage } from '../features/home/HomePage'
 import { LibraryPage } from '../features/library/LibraryPage'
+import { ReaderPage } from '../features/reader/ReaderPage'
+import { ResumePage } from '../features/reader/ResumePage'
 import { SeriesDetailPage } from '../features/series/SeriesDetailPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { StatsPage } from '../features/stats/StatsPage'
@@ -23,6 +25,10 @@ import { AppShell } from './AppShell'
 export function AppRoutes() {
   return (
     <Routes>
+      {/* Outside the shell: the reader is the whole screen, and the header and
+          bottom navigation would sit on top of the page being read. */}
+      <Route path="read/series/:seriesId" element={<ResumePage />} />
+      <Route path="read/:chapterId" element={<ReaderPage />} />
       <Route element={<AppShell />}>
         <Route index element={<HomePage />} />
         <Route path="stats" element={<StatsPage />} />

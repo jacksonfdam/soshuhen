@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { Button, Icon } from '../../ui'
 import type { SeriesChapter } from '../../lib/api'
@@ -107,7 +108,7 @@ export function ChapterTable({
         <tbody>
           {visible.map((chapter) => (
             <tr
-              key={chapter.number}
+              key={chapter.id}
               className="border-b border-surface-container-highest/20 last:border-0 hover:bg-surface-container-high/40"
             >
               {/* The file path moved into this cell's tooltip. It was a column
@@ -133,22 +134,29 @@ export function ChapterTable({
                 <ChapterStateBadge state={chapter.state} />
               </td>
               <td className="w-0 whitespace-nowrap px-space-md py-space-sm text-right">
-                {komgaHref && chapter.komga_book_id ? (
-                  <a
-                    href={`${komgaHref}/book/${chapter.komga_book_id}/read?page=1&incognito=false`}
-                    target="_blank"
-                    rel="noreferrer"
+                <div className="inline-flex items-center gap-space-xs">
+                  {/* Every chapter can be read now: one not downloaded yet is
+                      streamed from its source and saved as it is read. */}
+                  <Link
+                    to={`/read/${chapter.id}`}
                     className="inline-flex items-center gap-1.5 rounded-lg px-space-sm py-1 font-mono text-label-sm text-primary transition-colors hover:bg-primary/[0.12]"
                   >
                     <Icon name="book" className="h-3.5 w-3.5" />
                     Read
-                  </a>
-                ) : (
-                  // No book id means Komga has not indexed this chapter, and no
-                  // base URL means nobody has said where Komga is. Either way
-                  // the link would 404, which is worse than the dash.
-                  <span className="font-mono text-label-sm text-outline">—</span>
-                )}
+                  </Link>
+                  {komgaHref && chapter.komga_book_id && (
+                    <a
+                      href={`${komgaHref}/book/${chapter.komga_book_id}/read?page=1&incognito=false`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Open in Komga"
+                      aria-label="Open in Komga"
+                      className="inline-flex items-center rounded-lg px-space-xs py-1 text-outline transition-colors hover:bg-surface-container-high hover:text-on-surface"
+                    >
+                      <Icon name="link" className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
               </td>
             </tr>
           ))}
