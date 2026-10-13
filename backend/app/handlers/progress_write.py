@@ -104,7 +104,9 @@ async def handle(ctx: JobContext) -> None:
             series_id,
             before=before,
             chapter=chapter,
-            source=ProgressSource.MANUAL,
+            # Payloads queued before the reader existed carry no source, and
+            # every one of them came from the progress button.
+            source=ProgressSource(ctx.payload.get("source", ProgressSource.MANUAL)),
         )
 
     await ctx.log(f"chapter {chapter} recorded, {pushed} lists updated", pct=100)

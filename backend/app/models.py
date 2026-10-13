@@ -310,3 +310,49 @@ class ProgressEvent(Base):
     delta: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     source: Mapped[ProgressSource] = mapped_column(String(20), nullable=False)
     created_at: Mapped[datetime] = _now()
+
+
+class ReadingPosition(Base):
+    """Where reading stands inside a chapter, kept by this installation only.
+
+    Apart from list_entry.user_progress_chapter on purpose: that column is a
+    list's view of progress and every sync overwrites it, and no list holds a
+    page number.
+    """
+
+    __tablename__ = "reading_position"
+
+    series_id: Mapped[int] = mapped_column(
+        ForeignKey("series.id", ondelete="CASCADE"), primary_key=True
+    )
+    chapter_id: Mapped[int] = mapped_column(
+        ForeignKey("chapter.id", ondelete="CASCADE"), nullable=False
+    )
+    page: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = _now()
+
+
+class SeriesReaderPref(Base):
+    """How one series is shown. No row means the global default applies."""
+
+    __tablename__ = "series_reader_pref"
+
+    series_id: Mapped[int] = mapped_column(
+        ForeignKey("series.id", ondelete="CASCADE"), primary_key=True
+    )
+    mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    scale: Mapped[str] = mapped_column(String(20), nullable=False)
+    background: Mapped[str] = mapped_column(String(20), nullable=False)
+
+
+class ChapterPageList(Base):
+    """A streamed chapter's page list, kept so a restart of `api` does not
+    spend the rate limit asking for it again."""
+
+    __tablename__ = "chapter_page_list"
+
+    chapter_id: Mapped[int] = mapped_column(
+        ForeignKey("chapter.id", ondelete="CASCADE"), primary_key=True
+    )
+    pages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    fetched_at: Mapped[datetime] = _now()

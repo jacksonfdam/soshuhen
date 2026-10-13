@@ -70,6 +70,14 @@ function Entry({
           {total !== null && <span className="text-outline"> of {total}</span>}
         </p>
 
+        <Link
+          to={`/read/series/${row.series_id}`}
+          className="mt-space-xs inline-flex w-fit items-center gap-1.5 rounded-lg px-space-sm py-1 font-mono text-label-sm text-primary transition-colors hover:bg-primary/[0.12]"
+        >
+          <Icon name="book" className="h-3.5 w-3.5" />
+          Continue
+        </Link>
+
         {/* A bar needs a denominator. Nothing said how long this manga is, so
             there is no share of it to draw. */}
         {total !== null && (

@@ -5,7 +5,9 @@ import logging
 import traceback
 from collections.abc import Sequence
 
+from app.config import get_settings
 from app.db import get_sessionmaker
+from app.handlers import reader_cache
 from app.handlers.base import JobContext, PermanentError, get_handler
 from app.queue import repo
 
@@ -76,11 +78,16 @@ async def reclaim_loop(stop: asyncio.Event, types: Sequence[str]) -> None:
                 # reclaimed on the same pass rather than only at boot: a lease
                 # that expires here is exactly the event that strands one.
                 chapters = await repo.reclaim_orphaned_chapters(session)
+                # Only worker-download mounts the cache; on the fetch lane the
+                # directory does not exist and this finds nothing.
+                pruned = await reader_cache.prune(session, get_settings().reader_cache_path)
                 await session.commit()
             if reclaimed:
                 log.info("reclaimed %d expired job leases", reclaimed)
             if chapters:
                 log.info("reclaimed %d chapters left in flight by a job that is gone", chapters)
+            if pruned:
+                log.info("removed %d reader caches nobody came back to", pruned)
         except Exception:
             log.exception("reclaim pass failed")
         await _wait(stop, RECLAIM_INTERVAL_SECONDS)

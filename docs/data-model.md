@@ -92,7 +92,33 @@ moving files by hand does not cause a redownload.
 `known` → `queued` → `downloading` → `downloaded`, with `failed` and `skipped` as ends. `skipped`
 means the source will not serve it in the requested language; it does not return to retry.
 
+`streaming` sits beside `known`: someone is reading the chapter before it was downloaded, and its
+pages are arriving in the reader cache. `download_batch` leaves it alone, because the cache becomes
+its archive. A chapter left half read for a week returns to `known`.
+
 `number` is `Numeric`, not an integer — half chapters are real and `12.5` must survive.
+
+## Reading
+
+### `reading_position`
+`series_id` (key), `chapter_id`, `page`, `updated_at`. One row per series.
+
+Where reading stands inside a chapter, kept by this installation only. Apart from
+`list_entry.user_progress_chapter` on purpose: that is a list's view of progress, every sync
+overwrites it, and no list holds a page number. Pages are zero-based.
+
+### `series_reader_pref`
+`series_id` (key), `mode`, `scale`, `background`.
+
+Only for a series that differs from the default. With no row, the `reader_default_*` keys in
+`setting` apply.
+
+### `chapter_page_list`
+`chapter_id` (key), `pages` (JSONB of `{url, headers}`), `fetched_at`.
+
+A streamed chapter's page list, stored so a restart of `api` does not ask the source again. It can
+go stale — a CDN stops serving the addresses it named — and a page that 404s asks for the list once
+more.
 
 ## The queue
 
@@ -144,7 +170,8 @@ is the work the feature exists to remove.
 ### `progress_event`
 `series_id`, `chapter`, `delta`, `source`, `created_at`.
 
-Written by `progress_push` and by the manual increment path. It exists because
+Written by `progress_push`, by the manual increment path and by the reader finishing a chapter;
+`source` says which (`komga`, `manual`, `reader`). It exists because
 `user_progress_chapter` is a current value with no history, so chapters-per-day cannot be computed
 from it.
 

@@ -8,11 +8,11 @@ gated behind Compose profiles and start only when asked for by name.
 | Service | What it is |
 |---|---|
 | `postgres` | The only datastore. Domain, queue and history |
-| `api` | FastAPI. REST and the SSE stream. Runs migrations on start |
+| `api` | FastAPI. REST and the SSE stream. Runs migrations on start. Fetches pages from source sites for the reader |
 | `worker` | The fetch lane: every job type but the two downloads, plus the cron that feeds them. The only process running the scheduler |
-| `worker-download` | The download lane: `download_batch` and `download_chapter`. The only process that writes archives |
+| `worker-download` | The download lane: `download_batch` and `download_chapter`. The only process that writes archives, and the one that empties the reader cache |
 | `web` | Caddy, serving the built interface and proxying `/api` |
-| `komga` | The library server and reader |
+| `komga` | The library server, and one reader of several |
 | `bootstrap` | One-shot: claims Komga if needed, creates the library, exits |
 | `comick` | A second chapter source, built from source. Profile `comick` |
 | `flaresolverr` | Headless Chrome, for sites behind a Cloudflare challenge. Profile `flaresolverr` |
@@ -36,6 +36,20 @@ docker compose build api && docker compose up -d --force-recreate api worker
 They are separate processes so that restarting the API does not kill a download in flight, and so
 the worker can scale independently.
 
+## The reader and the library
+
+The reader reads a chapter from its archive when it is in the library, and otherwise streams it:
+`api` asks the source for the page list and the page, writes the page to the `reader-cache` volume
+and serves it. When the cache holds every page, `api` queues `download_chapter` with `from_cache`,
+and `worker-download` builds the archive from the cache.
+
+So `api` writes the cache and never `/manga`, which stays read-only everywhere but the download
+lane. `api` runs as `PUID:PGID` like the download lane, because the lane deletes what `api` wrote.
+
+The reader has one slot of its own per site, in `api`'s process. A download batch holds its slot for
+every chapter in it, and a reader queueing behind that would wait minutes for a page; a site sees
+at most `per_source_concurrency + 1`.
+
 ## Module boundaries
 
 ```
@@ -44,12 +58,13 @@ backend/app/
   sources/     chapter sources, and the registry built from the site catalogue
   downloader/  page fetching, CBZ writing, ComicInfo
   komga/       the library server client and bootstrap
+  reader/      archive pages, the page cache, page lists as JSON
   queue/       enqueue, lease, complete, fail, notify
   handlers/    one per job type; stitches the above together
   api/         routes and SSE
 ```
 
-**The four edges — `providers/`, `sources/`, `downloader/`, `komga/` — are pure.** They take
+**The edges — `providers/`, `sources/`, `downloader/`, `komga/`, `reader/` — are pure.** They take
 arguments, return values, and never touch the database. Only `handlers/` writes.
 
 That boundary is what makes the source layer testable at all. A source answers three questions —

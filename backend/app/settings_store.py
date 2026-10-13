@@ -28,6 +28,9 @@ COMICK_ENABLED = "comick_enabled"
 READING_MINUTES_PER_CHAPTER = "reading_minutes_per_chapter"
 KOMGA_PUBLIC_URL = "komga_public_url"
 MANGAFIRE_WAF_PASS = "mangafire_waf_pass"
+READER_DEFAULT_MODE = "reader_default_mode"
+READER_DEFAULT_SCALE = "reader_default_scale"
+READER_DEFAULT_BACKGROUND = "reader_default_background"
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,11 @@ class Defaults:
     # challenge that is solved in a browser by a human; the cookie that solving
     # it produces is what this holds. Nothing here solves the challenge.
     mangafire_waf_pass: str = ""
+    # Right to left because most of what this library holds is manga; a
+    # webtoon is one tap away and remembered per series after that.
+    reader_default_mode: str = "paged_rtl"
+    reader_default_scale: str = "fit_screen"
+    reader_default_background: str = "black"
 
 
 DEFAULTS = Defaults()
@@ -104,6 +112,12 @@ def _fallback(key: str) -> str:
             return DEFAULTS.komga_public_url
         case k if k == MANGAFIRE_WAF_PASS:
             return DEFAULTS.mangafire_waf_pass
+        case k if k == READER_DEFAULT_MODE:
+            return DEFAULTS.reader_default_mode
+        case k if k == READER_DEFAULT_SCALE:
+            return DEFAULTS.reader_default_scale
+        case k if k == READER_DEFAULT_BACKGROUND:
+            return DEFAULTS.reader_default_background
         case _:
             return ""
 

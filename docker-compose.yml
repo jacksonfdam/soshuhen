@@ -52,6 +52,9 @@ services:
   api:
     build: ./backend
     image: soshuhen:local
+    # Same uid as worker-download, which deletes the pages this writes once
+    # they have become an archive.
+    user: "${PUID:-1000}:${PGID:-1000}"
     restart: unless-stopped
     environment:
       POSTGRES_HOST: postgres
@@ -68,9 +71,9 @@ services:
       ANILIST_CLIENT_SECRET: ${ANILIST_CLIENT_SECRET:-}
       MANGABAKA_TOKEN: ${MANGABAKA_TOKEN:-}
       # Kept in step with x-worker-env by hand, because this service lists its
-      # environment rather than sharing that anchor. The API only resolves a
-      # source from a URL today and never fetches, so a missing solver URL was
-      # invisible - which is exactly how the two lists drift apart.
+      # environment rather than sharing that anchor. The API fetches pages for
+      # the reader now, so a solver URL missing here fails a streamed chapter
+      # that the download lane would have fetched fine.
       FLARESOLVERR_URL: ${FLARESOLVERR_URL:-}
       MANGADEX_CLIENT_ID: ${MANGADEX_CLIENT_ID:-}
       MANGADEX_CLIENT_SECRET: ${MANGADEX_CLIENT_SECRET:-}
@@ -82,6 +85,7 @@ services:
       KOMGA_PASS: ${KOMGA_PASS:-}
       KOMGA_LIBRARY_NAME: ${KOMGA_LIBRARY_NAME:-Manga}
       COMICK_API_URL: ${COMICK_API_URL:-http://comick:3000}
+      READER_CACHE_PATH: /reader-cache
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.api.main:app --host 0.0.0.0 --port 8000"
@@ -90,6 +94,7 @@ services:
         condition: service_healthy
     volumes:
       - ${LIBRARY_PATH_HOST:-./data/manga}:/manga:ro
+      - reader-cache:/reader-cache
     logging: *logging
 
   worker:
@@ -132,6 +137,7 @@ services:
         condition: service_started
     volumes:
       - ${LIBRARY_PATH_HOST:-./data/manga}:/manga
+      - reader-cache:/reader-cache
     logging: *logging
 
   web:
@@ -207,3 +213,4 @@ services:
 volumes:
   pgdata:
   komga_config:
+  reader-cache:

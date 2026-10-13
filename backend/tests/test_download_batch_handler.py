@@ -444,3 +444,51 @@ async def test_chapters_already_in_the_library_are_not_downloaded_again():
         assert states[chapter_ids[1]] == "downloaded"
     finally:
         stub.close()
+
+
+async def test_a_chapter_being_streamed_is_left_to_the_reader():
+    hits: list[str] = []
+
+    def router(path):
+        hits.append(path)
+        return 200, "image/jpeg", JPEG
+
+    stub = Stub(router)
+    try:
+        url_1 = f"{stub.base_url}/manga/1/chapter/1"
+        url_2 = f"{stub.base_url}/manga/1/chapter/2"
+        source = FakeSource(
+            stub.key, pages={url_1: [PageRef(url="/a.jpg")], url_2: [PageRef(url="/b.jpg")]}
+        )
+        install_registry({stub.key: RegisteredSource(source=source, base_url=stub.base_url)})
+        async with get_sessionmaker()() as session:
+            series_id = await _series(session, stub.key)
+            await _catalogue(session, stub.key, stub.base_url)
+            first = await _chapter(session, series_id, "1", url_1)
+            second = await _chapter(session, series_id, "2", url_2)
+            await session.execute(
+                text("update chapter set state = 'streaming' where id = :id"), {"id": second}
+            )
+            await session.commit()
+            ctx = await _context(session, [first, second])
+            await download_batch.handle(ctx)
+            await session.commit()
+
+        assert hits == ["/a.jpg"]
+        assert (await _states([first, second]))[second] == "streaming"
+        # Left to the reader's cache, not dropped: the batch hands it to the
+        # job that builds the archive from what the reader fetched.
+        async with get_sessionmaker()() as session:
+            handed = (
+                await session.execute(
+                    text(
+                        "select count(*) from job where type = 'download_chapter'"
+                        " and (payload->>'chapter_id')::bigint = :id"
+                        " and (payload->>'from_cache')::boolean"
+                    ),
+                    {"id": second},
+                )
+            ).scalar_one()
+        assert handed == 1
+    finally:
+        stub.close()

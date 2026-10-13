@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
 
     library_path: Path = Path("/manga")
+    # Pages a reader streamed before the chapter was downloaded. Written by
+    # `api`, turned into an archive and emptied by `worker-download`.
+    reader_cache_path: Path = Path("/reader-cache")
     download_concurrency: int = 3
 
     komga_url: str = "http://komga:25600"

@@ -13,6 +13,7 @@ from app.api import (
     routes_discovery,
     routes_health,
     routes_jobs,
+    routes_reader,
     routes_series,
     routes_settings,
     routes_sources,
@@ -52,6 +53,7 @@ app.include_router(routes_health.router)
 app.include_router(routes_dashboard.router)
 app.include_router(routes_stats.router)
 app.include_router(routes_sources.router)
+app.include_router(routes_reader.router)
 
 
 @app.get("/api/health")

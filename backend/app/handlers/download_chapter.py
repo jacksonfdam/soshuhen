@@ -6,11 +6,13 @@ a scratch file next to the destination and renames it into place, so Komga
 never indexes a half-written file.
 """
 
+import asyncio
 import re
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,13 +20,15 @@ from app import settings_store
 from app.config import get_settings
 from app.downloader.cbz import write_cbz
 from app.downloader.comicinfo import ComicInfo
-from app.downloader.fetcher import fetch_chapter
+from app.downloader.fetcher import fetch_chapter, fetch_pages
 from app.downloader.limits import source_semaphore
 from app.downloader.paths import chapter_path
 from app.enums import JobType, Provider
 from app.handlers.base import JobContext, PermanentError, register
+from app.handlers.reader_cache import stored_page_list
 from app.providers import mangabaka
 from app.queue import repo
+from app.reader import cache as reader_cache_files
 from app.sources import source_for_url
 from app.sources.base import ChapterUnavailable
 from app.sources.net import CatalogueRow, get_client
@@ -206,19 +210,51 @@ def _strip_markup(value: str) -> str:
 @register(JobType.DOWNLOAD_CHAPTER)
 async def handle(ctx: JobContext) -> None:
     chapter_id = int(ctx.payload["chapter_id"])
+    from_cache = bool(ctx.payload.get("from_cache"))
     row = await load_context(ctx.session, chapter_id)
     number = Decimal(str(row["number"]))
+    settings = get_settings()
 
-    library_root = Path(get_settings().library_path)
-    destination = chapter_path(library_root, row["slug"], number, row["title"])
+    destination = chapter_path(Path(settings.library_path), row["slug"], number, row["title"])
     if destination.exists():
         await ctx.log(f"chapter {number} already in the library", pct=100)
         await mark_downloaded(ctx.session, chapter_id, destination)
+        if from_cache:
+            reader_cache_files.remove(settings.reader_cache_path, chapter_id)
         return
 
     if row["chapter_url"] is None:
         raise PermanentError(f"chapter {chapter_id} has no source url of its own")
 
+    await ctx.session.execute(
+        text("update chapter set state = 'downloading' where id = :id"), {"id": chapter_id}
+    )
+    await ctx.session.commit()
+
+    if from_cache:
+        page_bytes = await pages_from_cache(ctx, row, chapter_id, number)
+    else:
+        page_bytes = await pages_from_source(ctx, row, chapter_id, number)
+
+    info = await build_comicinfo(ctx.session, row)
+    await write_cbz(page_bytes, destination, info)
+
+    await mark_downloaded(ctx.session, chapter_id, destination)
+    if from_cache:
+        reader_cache_files.remove(settings.reader_cache_path, chapter_id)
+    await ctx.log(f"saved {destination.name}", pct=100)
+
+    # One scan per series, not one per chapter: the dedupe key collapses a burst
+    # of finished downloads into a single indexing pass.
+    await ctx.enqueue(
+        JobType.KOMGA_SCAN,
+        {"series_id": row["series_id"]},
+        series_id=row["series_id"],
+        dedupe_key=f"komga_scan:{row['series_id']}",
+    )
+
+
+async def _site(ctx: JobContext, row: dict[str, Any]) -> tuple[Any, Any, asyncio.Semaphore]:
     source = source_for_url(row["chapter_url"])
     catalogue_row = await load_catalogue_row(ctx.session, row["source_site"])
     # Images are frequently served from a different host than the site itself
@@ -227,14 +263,56 @@ async def handle(ctx: JobContext) -> None:
     # rather than one per image CDN. Deliberate simplification, not an
     # oversight: the CDN is fronting the same site's own capacity.
     client = get_client(catalogue_row)
-
     limit = await settings_store.get_int(ctx.session, settings_store.PER_SOURCE_CONCURRENCY)
     semaphore = await source_semaphore(row["source_site"], limit)
+    return source, client, semaphore
 
-    await ctx.session.execute(
-        text("update chapter set state = 'downloading' where id = :id"), {"id": chapter_id}
+
+async def pages_from_cache(
+    ctx: JobContext, row: dict[str, Any], chapter_id: int, number: Decimal
+) -> list[bytes]:
+    """The pages a reader already fetched, plus whatever it skipped.
+
+    A reader can jump from page 3 to page 30, and the slider makes that easy,
+    so a chapter that reached "every page cached" by count can still be asked
+    to assemble after the cache lost a page to cleanup. Only the gaps go to the
+    network.
+    """
+    listed = await stored_page_list(ctx.session, chapter_id)
+    if listed is None:
+        return await pages_from_source(ctx, row, chapter_id, number)
+
+    pages = reader_cache_files.read_all(get_settings().reader_cache_path, chapter_id, len(listed))
+    missing = [index for index, data in enumerate(pages) if data is None]
+    if missing:
+        source, client, semaphore = await _site(ctx, row)
+        try:
+            async with semaphore:
+                fetched = await fetch_pages(
+                    client, [listed[index] for index in missing], transform=source.descramble
+                )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in (404, 410):
+                raise
+            # The stored list is as old as the first page the reader opened,
+            # which can be days, and CDN addresses rotate. A fresh list names
+            # the same pages at addresses that work, so the whole chapter is
+            # fetched from it rather than mixing two lists' page orders.
+            await ctx.log(f"chapter {number}: the reader's page list went stale, listing again")
+            return await pages_from_source(ctx, row, chapter_id, number)
+        for index, data in zip(missing, fetched, strict=True):
+            pages[index] = data
+    await ctx.log(
+        f"chapter {number}: {len(listed) - len(missing)}/{len(listed)} pages from the reader",
+        pct=80,
     )
-    await ctx.session.commit()
+    return [data for data in pages if data is not None]
+
+
+async def pages_from_source(
+    ctx: JobContext, row: dict[str, Any], chapter_id: int, number: Decimal
+) -> list[bytes]:
+    source, client, semaphore = await _site(ctx, row)
 
     await ctx.log(f"chapter {number}: listing pages from {row['source_site']}", pct=0)
 
@@ -277,21 +355,7 @@ async def handle(ctx: JobContext) -> None:
         await repo.renew_lease(ctx.session, ctx.job.id)
 
     await ctx.log(f"chapter {number}: {len(page_bytes)}/{total} pages fetched", pct=90)
-
-    info = await build_comicinfo(ctx.session, row)
-    await write_cbz(page_bytes, destination, info)
-
-    await mark_downloaded(ctx.session, chapter_id, destination)
-    await ctx.log(f"saved {destination.name}", pct=100)
-
-    # One scan per series, not one per chapter: the dedupe key collapses a burst
-    # of finished downloads into a single indexing pass.
-    await ctx.enqueue(
-        JobType.KOMGA_SCAN,
-        {"series_id": row["series_id"]},
-        series_id=row["series_id"],
-        dedupe_key=f"komga_scan:{row['series_id']}",
-    )
+    return page_bytes
 
 
 async def mark_downloaded(session: AsyncSession, chapter_id: int, path: Path) -> None:

@@ -116,9 +116,14 @@ enough: two hundred pages against a site that declared one request every ten sec
 fifteen-minute lease on its own, and an expired lease hands the same batch to a second worker.
 
 ### `download_chapter`
-**Payload** `{chapter_id}` · **Enqueues** `komga_scan`
+**Payload** `{chapter_id, from_cache?}` · **Enqueues** `komga_scan`
 
 One chapter. Retained for a manual single retry; the pipeline uses `download_batch`.
+
+With `from_cache`, it is the reader's chapter becoming an archive. `api` queues it once the reader
+cache holds every page, and it builds the archive from the cache without asking the source, fetching
+only pages the cache lost. It then empties the cache. If the archive is already in the library, it
+only empties the cache.
 
 Both handlers take the same path: resolve the source from the registry by the chapter's own URL, list
 its pages, fetch them through the site's client, write the archive, place it, mark it. A chapter the
@@ -132,6 +137,16 @@ Triggers a Komga library scan, polls until the series appears, then copies Komga
 `chapter` rows, matching by file path. Debounced by `dedupe_key`, so a burst of finished downloads
 becomes one indexing pass.
 
+It then marks read in Komga every book at or below the series' list progress that Komga does not
+already have as read. That is how a chapter read in Soshuhen before Komga indexed it, or read in an
+app that tracks to the lists, reaches Komga.
+
+### `komga_read_progress`
+**Payload** `{book_id}` · **Enqueues** nothing
+
+Marks one Komga book read because the reader finished its chapter. A job rather than a call from
+the route, so Komga being down lands on the retry ladder instead of on the page turn.
+
 ### `progress_push`
 **Payload** `{series_id}` · **Enqueues** nothing
 
@@ -139,10 +154,12 @@ Reads what Komga records as read and writes it to every connected list. **Forwar
 that would lower a provider's recorded progress is dropped, never sent.
 
 ### `progress_write`
-**Payload** `{series_id, chapter}` · **Enqueues** nothing
+**Payload** `{series_id, chapter, source}` · **Enqueues** nothing
 
-Writes an explicit chapter number, from the interface rather than from Komga. Shares the forward-only
-guard.
+Writes an explicit chapter number, from the interface rather than from Komga: the progress button
+(`source: manual`) or the reader finishing a chapter (`source: reader`). Shares the forward-only
+guard. The reader's write skips the chapter ceiling, which counts chapter rows to catch a typed
+number; a chapter someone just finished exists.
 
 ### `status_write`
 **Payload** `{series_id, status}` · **Enqueues** nothing
