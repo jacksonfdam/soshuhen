@@ -111,7 +111,7 @@ export function BatchActionBar({
                   onClick={() => setStatus(choice)}
                   className={
                     active
-                      ? 'rounded-lg bg-violet-600 px-2.5 py-1 text-label-sm font-semibold text-white shadow-sm'
+                      ? 'rounded-lg bg-violet-600 px-2.5 py-1 text-label-sm font-semibold text-white shadow-xs'
                       : 'rounded-lg px-2.5 py-1 text-label-sm text-on-surface-variant transition-colors hover:text-on-surface'
                   }
                 >

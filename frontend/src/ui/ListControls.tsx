@@ -32,7 +32,7 @@ export function SearchField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-lg bg-surface-container-low py-2 pl-9 pr-4 text-body-sm text-on-surface placeholder:text-outline focus:bg-surface-container focus:outline-none"
+        className="w-full rounded-lg bg-surface-container-low py-2 pl-9 pr-4 text-body-sm text-on-surface placeholder:text-outline focus:bg-surface-container focus:outline-hidden"
       />
     </div>
   )
@@ -57,7 +57,7 @@ export function SelectField<T extends string>({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value as T)}
-        className="rounded-lg bg-surface-container-low px-space-sm py-2 text-body-sm text-on-surface focus:bg-surface-container focus:outline-none"
+        className="rounded-lg bg-surface-container-low px-space-sm py-2 text-body-sm text-on-surface focus:bg-surface-container focus:outline-hidden"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

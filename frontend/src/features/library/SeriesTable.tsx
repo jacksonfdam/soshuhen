@@ -31,7 +31,7 @@ const STATE_LABEL: Record<SeriesState, string> = {
   failed: 'Failed',
 }
 
-// Bracket form again: 12 is not on Tailwind's opacity scale (see StatusPill).
+// Bracket form again, from Tailwind 3's opacity scale (see StatusPill).
 const STATE_TINT: Record<SeriesState, string> = {
   mapped: 'bg-secondary/[0.12] text-secondary',
   needs_review: 'bg-warning/[0.12] text-warning',
@@ -102,7 +102,7 @@ function SeriesRow({
           state={originState(location)}
           className="flex items-center gap-3 hover:underline"
         >
-          <div className="h-14 w-10 shrink-0 overflow-hidden rounded-lg bg-surface-container-highest shadow-sm">
+          <div className="h-14 w-10 shrink-0 overflow-hidden rounded-lg bg-surface-container-highest shadow-xs">
             {row.cover_url && <img src={row.cover_url} alt="" className="h-full w-full object-cover" />}
           </div>
           <div className="flex min-w-0 flex-col">

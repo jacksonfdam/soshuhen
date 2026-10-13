@@ -16,7 +16,7 @@ export function Card({
 }) {
   const As = as as ElementType
   return (
-    <As className={`rounded-xl bg-surface-container p-space-lg ${elevated ? 'shadow-card' : 'shadow-sm'} ${className}`}>
+    <As className={`rounded-xl bg-surface-container p-space-lg ${elevated ? 'shadow-card' : 'shadow-xs'} ${className}`}>
       {children}
     </As>
   )

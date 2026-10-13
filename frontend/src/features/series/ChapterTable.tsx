@@ -40,8 +40,8 @@ const LABEL: Record<string, string> = {
   skipped: 'Skipped',
 }
 
-// The bracket form is load-bearing: 12 isn't on Tailwind's opacity scale, so a
-// plain `/12` modifier compiles to no rule (see StatusPill.tsx).
+// The bracket form dates from Tailwind 3, where a plain `/12` compiled to no
+// rule (see StatusPill.tsx).
 const TINT: Record<string, string> = {
   secondary: 'bg-secondary/[0.12] text-secondary',
   tertiary: 'bg-tertiary/[0.12] text-tertiary',

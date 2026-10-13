@@ -46,7 +46,7 @@ export function ContinueReading({
               state={originState(location)}
               className="group flex items-center gap-4 rounded-xl bg-surface-container-low p-4 shadow-card transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-glow"
             >
-              <div className="relative h-28 w-20 shrink-0 overflow-hidden rounded-lg bg-surface-container-highest shadow-sm">
+              <div className="relative h-28 w-20 shrink-0 overflow-hidden rounded-lg bg-surface-container-highest shadow-xs">
                 {row.cover_url && <img src={row.cover_url} alt="" className="h-full w-full object-cover" />}
                 {format && (
                   <span className="absolute left-1 top-1 rounded bg-surface-container-lowest/85 px-1 py-0.5 font-mono text-label-sm font-bold text-on-surface-variant backdrop-blur-md">

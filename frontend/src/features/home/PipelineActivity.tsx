@@ -22,7 +22,7 @@ const OUTCOME: Record<string, { label: string; tint: string }> = {
 
 function Running({ job }: { job: Job }) {
   return (
-    <div className="flex flex-col gap-space-xs rounded-xl bg-surface-container-low p-space-md shadow-sm">
+    <div className="flex flex-col gap-space-xs rounded-xl bg-surface-container-low p-space-md shadow-xs">
       <div className="flex items-baseline gap-space-sm">
         <span className="min-w-0 flex-1 truncate text-body-md font-bold text-on-surface">
           {jobLabel(job) ?? job.type}

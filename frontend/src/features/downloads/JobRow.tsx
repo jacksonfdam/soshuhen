@@ -21,9 +21,9 @@ const LABEL: Record<string, string> = {
   done: 'Done',
 }
 
-// The bracket form is load-bearing: 12 isn't on Tailwind's opacity scale
-// (0, 5, 10, 15, ...), so a plain `/12` modifier compiles to no rule and the
-// badge renders with no fill at all.
+// The bracket form dates from Tailwind 3, whose opacity scale (0, 5, 10, 15,
+// ...) left a plain `/12` with no rule and the badge with no fill at all (see
+// StatusPill.tsx).
 const TINT: Record<string, string> = {
   secondary: 'bg-secondary/[0.12] text-secondary',
   tertiary: 'bg-tertiary/[0.12] text-tertiary',

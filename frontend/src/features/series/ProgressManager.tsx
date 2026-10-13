@@ -182,7 +182,7 @@ export function ProgressManager({
                   event.currentTarget.blur()
                 }
               }}
-              className="w-20 rounded-lg bg-surface-container-high text-center text-headline-lg text-on-surface focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:bg-transparent disabled:text-outline"
+              className="w-20 rounded-lg bg-surface-container-high text-center text-headline-lg text-on-surface focus:outline-hidden focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:bg-transparent disabled:text-outline"
             />
             <button
               type="button"

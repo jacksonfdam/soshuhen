@@ -51,7 +51,7 @@ export function AddToList({
           // (Discovery's suggestion grid) but stops growing once the column
           // is wider than a status word needs, rather than reading its size
           // off whatever column a caller happens to give it.
-          className="w-full max-w-xs rounded-lg bg-surface-container-lowest px-space-sm py-space-xs text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+          className="w-full max-w-xs rounded-lg bg-surface-container-lowest px-space-sm py-space-xs text-body-sm text-on-surface focus:outline-hidden focus:ring-1 focus:ring-primary disabled:opacity-50"
         >
           {STATUS_ORDER.map((value) => (
             <option key={value} value={value}>

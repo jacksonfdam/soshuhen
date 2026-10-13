@@ -6,7 +6,7 @@ import { Icon, type IconName } from './Icon'
 // buttons in .redesign/home_dashboard_de_entrada_controle_homelab/code.html.
 const VARIANT: Record<string, string> = {
   primary: 'bg-primary text-on-primary hover:bg-primary-container',
-  surface: 'bg-surface-container-high text-on-surface shadow-sm hover:bg-surface-bright',
+  surface: 'bg-surface-container-high text-on-surface shadow-xs hover:bg-surface-bright',
   ghost: 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface',
   // The 12%-tint-over-solid pairing StatusPill already uses for a state that
   // needs to read as a warning rather than a neutral action.

@@ -22,7 +22,7 @@ export function Chip({
       // fontFamily one) — font-semibold is the weight it was standing in for.
       className={`flex shrink-0 items-center gap-space-xs rounded-xl px-space-md py-space-sm text-body-sm font-semibold transition-all ${
         active
-          ? 'bg-primary text-on-primary shadow-sm'
+          ? 'bg-primary text-on-primary shadow-xs'
           : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
       }`}
     >

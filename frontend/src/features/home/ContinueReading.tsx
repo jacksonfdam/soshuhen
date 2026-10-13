@@ -32,7 +32,7 @@ function Entry({
       <Link
         to={`/series/${row.series_id}`}
         state={originState(location)}
-        className="h-28 w-20 shrink-0 overflow-hidden rounded-lg bg-surface-container-highest shadow-sm"
+        className="h-28 w-20 shrink-0 overflow-hidden rounded-lg bg-surface-container-highest shadow-xs"
       >
         {row.cover_url && (
           <img src={row.cover_url} alt={`Cover of ${row.title}`} loading="lazy" className="h-full w-full object-cover" />

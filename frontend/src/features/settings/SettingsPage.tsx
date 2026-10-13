@@ -198,7 +198,7 @@ export function SettingsPage() {
                 placeholder="http://comick:3000"
                 value={draft.comick_url ?? ''}
                 onChange={(event) => setField('comick_url', event.target.value)}
-                className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-tertiary shadow-inner focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-tertiary shadow-inner focus:outline-hidden focus:ring-2 focus:ring-primary"
               />
             </div>
             <div className="flex flex-col gap-space-xs rounded-lg bg-surface-container-low p-space-sm">
@@ -235,7 +235,7 @@ export function SettingsPage() {
                 placeholder="paste the cookie value"
                 value={draft.mangafire_waf_pass ?? ''}
                 onChange={(event) => setField('mangafire_waf_pass', event.target.value)}
-                className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-tertiary shadow-inner focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full rounded-lg bg-surface-container-lowest px-space-md py-space-sm font-mono text-label-md text-tertiary shadow-inner focus:outline-hidden focus:ring-2 focus:ring-primary"
               />
               <p className="text-body-sm text-on-surface-variant">
                 Usually not needed. The site sits behind Cloudflare, which FlareSolverr clears on
