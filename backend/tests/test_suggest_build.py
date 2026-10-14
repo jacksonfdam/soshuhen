@@ -12,6 +12,7 @@ from app.handlers import suggest_build as build
 from app.handlers.base import JobContext
 from app.handlers.suggest_build import already_known, upsert_suggestion
 from app.providers.anilist import parse_manga_meta
+from app.providers.base import MangaMeta
 from app.queue import repo
 
 pytestmark = pytest.mark.asyncio
@@ -266,7 +267,7 @@ async def run_build(*, commit_at_end: bool = True) -> None:
 async def test_a_dismissed_suggestion_is_never_searched_for_again(monkeypatch):
     """Dismissal already sticks; what leaked was a search per source, on every run."""
     source = FakeSource()
-    monkeypatch.setattr(build, "all_sources", lambda: [source])
+    monkeypatch.setattr(build, "all_sources", lambda kind=None: [source])
     async with get_sessionmaker()() as session:
         await insert_anime(session, "21", "3000", "Vinland Saga")
         await insert_anime(session, "22", "4001", "Kaijuu 8-gou")
@@ -288,7 +289,7 @@ async def test_a_dismissed_suggestion_is_never_searched_for_again(monkeypatch):
 async def test_a_seed_that_blows_up_leaves_the_earlier_seeds_committed(monkeypatch):
     """900 seconds of lease do not cover a real list, so each seed has to stand alone."""
     source = FakeSource()
-    monkeypatch.setattr(build, "all_sources", lambda: [source])
+    monkeypatch.setattr(build, "all_sources", lambda kind=None: [source])
     real_upsert = build.upsert_suggestion
     seen: list[str] = []
 
@@ -317,7 +318,7 @@ async def test_a_seed_that_blows_up_leaves_the_earlier_seeds_committed(monkeypat
 async def test_a_new_suggestion_already_on_the_list_is_retired_with_its_series(monkeypatch):
     """Horimiya, in production: added by hand, the card must not stay on Discovery."""
     source = FakeSource()
-    monkeypatch.setattr(build, "all_sources", lambda: [source])
+    monkeypatch.setattr(build, "all_sources", lambda kind=None: [source])
     async with get_sessionmaker()() as session:
         await insert_anime(session, "21", "3000", "Vinland Saga")
         await session.execute(
@@ -366,7 +367,7 @@ async def test_a_new_suggestion_already_on_the_list_is_retired_with_its_series(m
 async def test_a_dismissed_suggestion_now_on_the_list_stays_dismissed(monkeypatch):
     """Being added by hand does not get to undo a dismissal."""
     source = FakeSource()
-    monkeypatch.setattr(build, "all_sources", lambda: [source])
+    monkeypatch.setattr(build, "all_sources", lambda kind=None: [source])
     async with get_sessionmaker()() as session:
         await insert_anime(session, "21", "3000", "Vinland Saga")
         await session.execute(
@@ -400,7 +401,7 @@ async def test_a_dismissed_suggestion_now_on_the_list_stays_dismissed(monkeypatc
 
 async def test_a_new_suggestion_still_off_every_list_is_untouched(monkeypatch):
     source = FakeSource()
-    monkeypatch.setattr(build, "all_sources", lambda: [source])
+    monkeypatch.setattr(build, "all_sources", lambda kind=None: [source])
     async with get_sessionmaker()() as session:
         await insert_anime(session, "21", "3000", "Vinland Saga")
         await insert_anime(session, "22", "4001", "Kaijuu 8-gou")
@@ -430,7 +431,7 @@ async def test_a_new_suggestion_still_off_every_list_is_untouched(monkeypatch):
 async def test_a_manga_that_is_already_a_local_series_is_not_searched_for(monkeypatch):
     """The alias exclusion is what keeps Discovery off manga the library already has."""
     source = FakeSource()
-    monkeypatch.setattr(build, "all_sources", lambda: [source])
+    monkeypatch.setattr(build, "all_sources", lambda kind=None: [source])
     async with get_sessionmaker()() as session:
         await insert_anime(session, "21", "3000", "Vinland Saga")
         await session.execute(
@@ -450,3 +451,30 @@ async def test_a_manga_that_is_already_a_local_series_is_not_searched_for(monkey
     async with get_sessionmaker()() as session:
         count = (await session.execute(text("select count(*) from suggestion"))).scalar_one()
     assert count == 0
+
+
+async def test_a_novel_seed_only_asks_prose_sources(monkeypatch):
+    """A light novel's title matches the manga it adapts, so the kind has to filter the search."""
+    asked: list[str | None] = []
+
+    def sources_of(kind=None):
+        asked.append(kind)
+        return []
+
+    class FakeAnilist:
+        async def fetch_manga_meta(self, token, ids):
+            return {i: MangaMeta(media_id=i, title="Vinland Saga", format="NOVEL") for i in ids}
+
+    async def token(session, provider):
+        return "t"
+
+    monkeypatch.setattr(build, "all_sources", sources_of)
+    monkeypatch.setattr(build, "get_source", lambda provider: FakeAnilist())
+    monkeypatch.setattr(build, "load_access_token", token)
+    async with get_sessionmaker()() as session:
+        await insert_anime(session, "21", "3000", "Vinland Saga")
+        await session.commit()
+
+    await run_build()
+
+    assert asked == ["prose"]
