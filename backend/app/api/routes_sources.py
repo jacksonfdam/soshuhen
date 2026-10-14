@@ -137,11 +137,14 @@ async def set_source(key: str, body: SourceIn, session: Session) -> dict[str, An
         ),
         {"key": key, "enabled": body.enabled},
     )
+    await registry.announce_change(session)
     await session.commit()
 
     # Enabling a site in settings *is* registering it (app/sources/registry.py),
     # so the registry is rebuilt here rather than at the next boot - otherwise
     # the toggle reports success and nothing searches the site until a restart.
+    # The announcement above does the same for the workers, which run the
+    # searches and the downloads and never see this request.
     await registry.reload(session)
 
     row = (

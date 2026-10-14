@@ -13,6 +13,7 @@ from app.api.deps import db_session
 from app.config import get_settings
 from app.enums import Provider
 from app.providers import get_source, syncing_providers
+from app.sources import registry
 from app.sources.comick_client import ComickClient
 from app.sources.mangadex_auth import tokens as mangadex_tokens
 
@@ -52,6 +53,10 @@ URL_SETTINGS = frozenset(
 )
 
 FETCHABLE_SCHEMES = frozenset({"http", "https"})
+
+# Settings a source is built from (app/sources/registry.py). Changing one means
+# rebuilding the registry, here and in both workers.
+SOURCE_SETTINGS = frozenset({settings_store.MANGAFIRE_WAF_PASS})
 
 
 def _validate(key: str, value: str) -> None:
@@ -146,7 +151,12 @@ async def write_settings(body: SettingsIn, session: Session) -> dict[str, Any]:
     for key, value in body.values.items():
         if key in EDITABLE:
             await settings_store.set_value(session, key, value)
+    sources_changed = not SOURCE_SETTINGS.isdisjoint(body.values)
+    if sources_changed:
+        await registry.announce_change(session)
     await session.commit()
+    if sources_changed:
+        await registry.reload(session)
     cron_changed = any(
         key
         in {
