@@ -24,6 +24,7 @@ from app.sources.mangadex import MangaDexSource
 from app.sources.mangafire.source import MangaFireSource
 from app.sources.mangageko import MangaGekoSource
 from app.sources.net import CatalogueRow
+from app.sources.novelight import NovelightSource
 from app.sources.templates import TemplateSource
 from app.sources.templates.comiciviewer import ComiciViewerSource
 from app.sources.templates.iken import IkenSource
@@ -49,6 +50,7 @@ NATIVE_SOURCES: dict[str, SiteSource] = {
     "mangageko": MangaGekoSource(),
     "asurascans": AsuraScansSource(),
     "lolobun": LolobunSource(),
+    "novelight": NovelightSource(),
 }
 
 # Ported templates, keyed by site_catalogue.template. A template with no entry
