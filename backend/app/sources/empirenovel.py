@@ -10,6 +10,7 @@ not careful with it - one book carries both /01 and /1, another skips numbers
 that then 404. The first URL for a number wins, and a gap stays a gap.
 """
 
+import re
 from decimal import Decimal, InvalidOperation
 from typing import ClassVar
 from urllib.parse import urljoin
@@ -30,6 +31,16 @@ from app.text_utils import best_similarity
 
 SITE = "empirenovel"
 BASE_URL = "https://www.empirenovel.com"
+
+
+def _other_names(raw) -> list[str]:
+    # The payload carries one string ("a, b" or "a | b"); iterating it as a
+    # list used to turn a name into single characters.
+    if isinstance(raw, str):
+        raw = re.split(r"[,|]", raw)
+    if not isinstance(raw, list):
+        return []
+    return [n.strip() for n in raw if isinstance(n, str) and n.strip()]
 
 
 class EmpireNovelSource(ProseSource):
@@ -72,7 +83,7 @@ class EmpireNovelSource(ProseSource):
             title = (item.get("name") or "").strip()
             if not slug or not title:
                 continue
-            others = [n for n in (item.get("otherNames") or []) if isinstance(n, str)]
+            others = _other_names(item.get("otherNames"))
             names = [title, *others]
             candidates.append(
                 Candidate(

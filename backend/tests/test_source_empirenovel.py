@@ -31,6 +31,20 @@ def test_search_reads_the_typeahead_payload():
     )
 
 
+def test_other_names_arrive_as_one_string_not_a_list():
+    payload = json.loads(_read("empirenovel_search.json"))
+    found = _source().parse_search(payload, ["The Divine Nine-Dragon Cauldron"])
+    assert found[0].alt_titles == ["九龙神鼎"]
+
+    def names(value):
+        item = {"name": "T", "slug": "t", "otherNames": value}
+        return _source().parse_search([item], ["T"])[0].alt_titles
+
+    assert names("A, B") == ["A", "B"]
+    assert names(None) == []
+    assert names(["A", "", 3]) == ["A"]
+
+
 def test_the_first_chapter_is_read_off_the_book_page():
     first = _source().parse_first_chapter(_read("empirenovel_book.html"))
     assert first == f"https://www.empirenovel.com/novel/{BOOK}/1"
