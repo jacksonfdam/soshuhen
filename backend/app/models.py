@@ -156,6 +156,8 @@ class Chapter(Base):
     file_path: Mapped[str | None] = mapped_column(Text)
     komga_book_id: Mapped[str | None] = mapped_column(String(100))
     discovered_at: Mapped[datetime] = _now()
+    # When the source stops serving this chapter; null means never.
+    available_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     series: Mapped[Series] = relationship(back_populates="chapters")
 

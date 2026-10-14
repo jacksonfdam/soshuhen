@@ -5,6 +5,7 @@ actually on disk first. Phase 5 replaces the disk check with Komga's own view of
 the library, so files moved by hand outside the pipeline still count.
 """
 
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -47,11 +48,14 @@ async def upsert_chapters(
         await session.execute(
             text(
                 """
-                insert into chapter (series_id, number, title, source_url, state, discovered_at)
-                values (:series_id, :number, :title, :url, 'known', now())
+                insert into chapter (series_id, number, title, source_url, state,
+                                     discovered_at, available_until)
+                values (:series_id, :number, :title, :url, 'known', now(),
+                        cast(:available_until as timestamptz))
                 on conflict (series_id, number) do update
                    set title = coalesce(excluded.title, chapter.title),
-                       source_url = excluded.source_url
+                       source_url = excluded.source_url,
+                       available_until = excluded.available_until
                 """
             ),
             {
@@ -59,8 +63,35 @@ async def upsert_chapters(
                 "number": chapter.number,
                 "title": chapter.title,
                 "url": chapter.url,
+                "available_until": chapter.available_until,
             },
         )
+
+
+# A week is long enough to notice and act, and short enough that the warning
+# only ever names parts that genuinely need attention.
+EXPIRY_WARNING_DAYS = 7
+
+EXPIRING_SQL = """
+select count(*) as count, min(available_until) as earliest
+  from chapter
+ where series_id = :series_id
+   and state in ('known', 'queued', 'failed')
+   and available_until > now()
+   and available_until <= now() + make_interval(days => :days)
+"""
+
+
+async def expiring_soon(session: AsyncSession, series_id: int) -> tuple[int, datetime | None]:
+    """How many chapters the source will stop serving within the week, and when
+    the first of them goes. Downloading stays the user's decision; this is what
+    makes sure they get to make it before the chance is gone."""
+    row = (
+        await session.execute(
+            text(EXPIRING_SQL), {"series_id": series_id, "days": EXPIRY_WARNING_DAYS}
+        )
+    ).one()
+    return int(row.count), row.earliest
 
 
 async def reconcile_with_komga(session: AsyncSession, series_id: int, slug: str) -> int:
@@ -183,6 +214,12 @@ async def handle(ctx: JobContext) -> None:
     await ctx.log(f"{len(chapters)} chapters published", pct=40)
 
     await upsert_chapters(ctx.session, series_id, chapters)
+
+    count, earliest = await expiring_soon(ctx.session, series_id)
+    if count:
+        await ctx.log(
+            f"{count} parts expire on {earliest:%d %b} and are not downloaded", level="warning"
+        )
 
     try:
         reconciled = await reconcile_with_komga(ctx.session, series_id, slug)
