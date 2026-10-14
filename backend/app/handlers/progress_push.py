@@ -25,6 +25,20 @@ def highest_completed(books: list[KomgaBook], numbers: dict[str, Decimal]) -> De
     return max(completed) if completed else None
 
 
+def pushable_chapter(read_chapter: int, kind: str | None, total: int | None) -> int:
+    """The chapter to write to one list entry.
+
+    Light novels only. J-Novel Club numbers its parts across a whole series,
+    and a list counts the novel's chapters its own way, so a part number can
+    run past the total the list itself holds - a number the provider would
+    refuse or store as nonsense. Comics are left alone: their providers'
+    totals lag releases, and capping them would hold real progress back.
+    """
+    if kind == "prose" and total and read_chapter > total:
+        return total
+    return read_chapter
+
+
 async def chapter_numbers(session: AsyncSession, series_id: int) -> dict[str, Decimal]:
     result = await session.execute(
         text(
@@ -49,7 +63,8 @@ async def entries_of(session: AsyncSession, series_id: int) -> list:
     result = await session.execute(
         text(
             """
-            select e.id, e.provider, e.provider_media_id, e.user_progress_chapter
+            select e.id, e.provider, e.provider_media_id, e.user_progress_chapter,
+                   e.total_chapters
               from list_entry e
               left join provider_token t on t.provider = e.provider
              where e.series_id = :series_id
@@ -66,7 +81,7 @@ async def entries_of(session: AsyncSession, series_id: int) -> list:
 async def handle(ctx: JobContext) -> None:
     series_id = int(ctx.payload["series_id"])
     result = await ctx.session.execute(
-        text("select komga_series_id from series where id = :id"), {"id": series_id}
+        text("select komga_series_id, kind from series where id = :id"), {"id": series_id}
     )
     row = result.first()
     if row is None:
@@ -91,18 +106,24 @@ async def handle(ctx: JobContext) -> None:
     pushed = 0
 
     for entry in await entries_of(ctx.session, series_id):
-        if forward_only(entry.user_progress_chapter, read_chapter) is None:
+        chapter = pushable_chapter(read_chapter, row.kind, entry.total_chapters)
+        if chapter < read_chapter:
+            await ctx.log(
+                f"{entry.provider}: part {read_chapter} is past the list's {chapter} chapters,"
+                f" sending {chapter}"
+            )
+        if forward_only(entry.user_progress_chapter, chapter) is None:
             continue
         provider = Provider(entry.provider)
         token = await access_token_for(ctx.session, provider)
         await get_source(provider).push_progress(
-            token, entry.provider_media_id, read_chapter
+            token, entry.provider_media_id, chapter
         )
         await ctx.session.execute(
             text("update list_entry set user_progress_chapter = :n where id = :id"),
-            {"n": read_chapter, "id": entry.id},
+            {"n": chapter, "id": entry.id},
         )
-        await ctx.log(f"{provider}: progress set to chapter {read_chapter}")
+        await ctx.log(f"{provider}: progress set to chapter {chapter}")
         pushed += 1
 
     # Guarded by `pushed` so the event cannot repeat: an entry that was not
