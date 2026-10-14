@@ -5,6 +5,7 @@ listing that returned all of it would be the one request on this screen that
 gets slower every time the generator runs.
 """
 
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,8 +13,15 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import settings_store
 from app.api.deps import db_session
-from app.sources import registry
+from app.config import get_settings
+from app.sources import jnovel_auth, registry
+from app.sources.base import get_prose_source
+from app.sources.jnovelclub import API_BASE as JNC_API_BASE
+from app.sources.jnovelclub import SITE as JNC_SITE
+from app.sources.jnovelclub import JNovelClubSource
+from app.sources.net import CatalogueRow, get_client
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
@@ -118,6 +126,80 @@ async def list_sources(
     )
 
     return {"items": [_item(row) for row in rows], "total": total, "page": page, "size": size}
+
+
+class JncSignIn(BaseModel):
+    login: str
+    password: str
+
+
+def _env_signs_in() -> bool:
+    settings = get_settings()
+    return bool(settings.jnc_login and settings.jnc_password)
+
+
+@router.post("/jnovelclub/sign-in")
+async def jnc_sign_in(body: JncSignIn, session: Session) -> dict[str, Any]:
+    """Sign in once and keep only the token.
+
+    The password is used for this one request and goes nowhere else - not to
+    the database, not to a log line. When the token lapses, the card says so
+    and asks again; that is the price of never storing a password.
+    """
+    if _env_signs_in():
+        raise HTTPException(status_code=409, detail="J-Novel Club is signed in from .env")
+    client = get_client(CatalogueRow(key=JNC_SITE, base_url=JNC_API_BASE))
+    try:
+        signed_in = await jnovel_auth.login(client, body.login, body.password)
+    except jnovel_auth.JncAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await settings_store.set_value(session, settings_store.JNC_TOKEN, signed_in.token)
+    await settings_store.set_value(
+        session, settings_store.JNC_TOKEN_EXPIRES_AT, signed_in.expires_at.isoformat()
+    )
+    await session.commit()
+    await registry.reload(session)
+    return {"signed_in": True, "expires_at": signed_in.expires_at.isoformat()}
+
+
+@router.delete("/jnovelclub/sign-in")
+async def jnc_sign_out(session: Session) -> dict[str, Any]:
+    token = await settings_store.stored(session, settings_store.JNC_TOKEN)
+    if token:
+        client = get_client(CatalogueRow(key=JNC_SITE, base_url=JNC_API_BASE))
+        await jnovel_auth.logout(client, token)
+    await session.execute(
+        text("delete from setting where key = any(cast(:keys as text[]))"),
+        {"keys": [settings_store.JNC_TOKEN, settings_store.JNC_TOKEN_EXPIRES_AT]},
+    )
+    await session.commit()
+    await registry.reload(session)
+    return {"signed_in": False}
+
+
+@router.get("/jnovelclub/session")
+async def jnc_session(session: Session) -> dict[str, Any]:
+    if _env_signs_in():
+        via, expires_at = "env", None
+    else:
+        token = await settings_store.stored(session, settings_store.JNC_TOKEN)
+        expires = await settings_store.stored(session, settings_store.JNC_TOKEN_EXPIRES_AT)
+        expires_at = datetime.fromisoformat(expires) if token and expires else None
+        if expires_at is None or expires_at <= datetime.now(UTC):
+            return {"via": "none", "expires_at": None, "level": None}
+        via = "settings"
+    try:
+        source = get_prose_source(JNC_SITE)
+    except (ValueError, TypeError):
+        source = None
+    level = (
+        await source.account_level() if isinstance(source, JNovelClubSource) else None
+    )
+    return {
+        "via": via,
+        "expires_at": expires_at.isoformat() if expires_at else None,
+        "level": level,
+    }
 
 
 @router.put("/{key}")

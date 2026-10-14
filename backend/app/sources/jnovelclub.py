@@ -137,6 +137,20 @@ class JNovelClubSource(ProseSource):
             return self.parse_chapter(response.text, chapter_url)
         raise AssertionError("unreachable")
 
+    async def account_level(self) -> str | None:
+        """The membership level of the signed-in account, for the Settings card.
+
+        None for anything that goes wrong: the card is a convenience, and a
+        failed lookup must not make the sign-in look broken.
+        """
+        try:
+            headers = await self._auth_headers(required=True)
+            response = await self.client.get(f"{API_BASE}/app/v2/me", params=JSON, headers=headers)
+            response.raise_for_status()
+            return response.json().get("level")
+        except Exception:  # noqa: BLE001 - see the docstring
+            return None
+
     async def _auth_headers(self, *, required: bool) -> dict[str, str]:
         try:
             return {"Authorization": f"Bearer {await self.keeper.token()}"}
