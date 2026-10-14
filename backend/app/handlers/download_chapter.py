@@ -22,7 +22,7 @@ from app.downloader.cbz import write_cbz
 from app.downloader.comicinfo import ComicInfo
 from app.downloader.fetcher import fetch_chapter, fetch_pages
 from app.downloader.limits import source_semaphore
-from app.downloader.paths import chapter_path
+from app.downloader.paths import chapter_path, existing_chapter_file
 from app.enums import JobType, Provider
 from app.handlers.base import JobContext, PermanentError, register
 from app.handlers.reader_cache import stored_page_list
@@ -30,7 +30,7 @@ from app.providers import mangabaka
 from app.queue import repo
 from app.reader import cache as reader_cache_files
 from app.sources import source_for_url
-from app.sources.base import ChapterUnavailable
+from app.sources.base import ChapterUnavailable, ProseSource
 from app.sources.net import CatalogueRow, get_client
 
 # How often a lease is renewed while one chapter's pages are still arriving.
@@ -45,7 +45,7 @@ async def load_context(session: AsyncSession, chapter_id: int) -> dict[str, Any]
         text(
             """
             select c.id, c.number, c.title, c.state, c.source_url as chapter_url,
-                   s.id as series_id, s.slug, s.canonical_title, s.meta,
+                   s.id as series_id, s.slug, s.canonical_title, s.meta, s.kind,
                    m.source_site, m.source_url
               from chapter c
               join series s on s.id = c.series_id
@@ -215,13 +215,16 @@ async def handle(ctx: JobContext) -> None:
     number = Decimal(str(row["number"]))
     settings = get_settings()
 
-    destination = chapter_path(Path(settings.library_path), row["slug"], number, row["title"])
-    if destination.exists():
+    kind = row["kind"] or "comic"
+    library_root = Path(settings.library_path)
+    existing = existing_chapter_file(library_root, row["slug"], number, row["title"])
+    if existing is not None:
         await ctx.log(f"chapter {number} already in the library", pct=100)
-        await mark_downloaded(ctx.session, chapter_id, destination)
+        await mark_downloaded(ctx.session, chapter_id, existing)
         if from_cache:
             reader_cache_files.remove(settings.reader_cache_path, chapter_id)
         return
+    destination = chapter_path(library_root, row["slug"], number, row["title"], kind=kind)
 
     if row["chapter_url"] is None:
         raise PermanentError(f"chapter {chapter_id} has no source url of its own")
@@ -231,13 +234,35 @@ async def handle(ctx: JobContext) -> None:
     )
     await ctx.session.commit()
 
-    if from_cache:
-        page_bytes = await pages_from_cache(ctx, row, chapter_id, number)
-    else:
-        page_bytes = await pages_from_source(ctx, row, chapter_id, number)
+    if kind == "prose":
+        # prose_download imports build_comicinfo from this module; importing it at
+        # module level would be circular.
+        from app.handlers.prose_download import cover_for, write_prose_chapter
 
-    info = await build_comicinfo(ctx.session, row)
-    await write_cbz(page_bytes, destination, info)
+        source, client, semaphore = await _site(ctx, row)
+        if not isinstance(source, ProseSource):
+            raise PermanentError(
+                f"series {row['series_id']} is prose but {source.site} is a comic source"
+            )
+        cover = await cover_for(ctx, row["series_id"])
+        async with semaphore:
+            try:
+                await write_prose_chapter(ctx, row, source, client, cover, destination)
+            except ChapterUnavailable as exc:
+                # The same answer a comic chapter gets in pages_from_source.
+                await ctx.session.execute(
+                    text("update chapter set state = 'skipped' where id = :id"),
+                    {"id": chapter_id},
+                )
+                raise PermanentError(str(exc)) from exc
+    else:
+        if from_cache:
+            page_bytes = await pages_from_cache(ctx, row, chapter_id, number)
+        else:
+            page_bytes = await pages_from_source(ctx, row, chapter_id, number)
+
+        info = await build_comicinfo(ctx.session, row)
+        await write_cbz(page_bytes, destination, info)
 
     await mark_downloaded(ctx.session, chapter_id, destination)
     if from_cache:

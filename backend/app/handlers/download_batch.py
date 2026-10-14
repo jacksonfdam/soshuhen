@@ -22,14 +22,15 @@ from app.config import get_settings
 from app.downloader.cbz import write_cbz
 from app.downloader.fetcher import PageFetchError, fetch_chapter
 from app.downloader.limits import source_semaphore
-from app.downloader.paths import chapter_path
+from app.downloader.paths import chapter_path, existing_chapter_file
 from app.enums import JobType
 from app.handlers.base import JobContext, PermanentError, register
 from app.handlers.batching import queue_from_reader
 from app.handlers.download_chapter import build_comicinfo, load_catalogue_row
+from app.handlers.prose_download import cover_for, write_prose_chapter
 from app.queue import repo
 from app.sources import source_for_url
-from app.sources.base import ChapterUnavailable
+from app.sources.base import ChapterUnavailable, ProseSource
 from app.sources.net import get_client
 
 # How often a lease is renewed while one chapter's pages are still arriving.
@@ -44,7 +45,7 @@ async def load_batch(session: AsyncSession, chapter_ids: list[int]) -> list[dict
         text(
             """
             select c.id, c.number, c.title, c.state, c.source_url as chapter_url,
-                   s.id as series_id, s.slug, s.canonical_title, s.meta,
+                   s.id as series_id, s.slug, s.canonical_title, s.meta, s.kind,
                    m.source_site, m.source_url
               from chapter c
               join series s on s.id = c.series_id
@@ -78,6 +79,7 @@ async def handle(ctx: JobContext) -> None:
     library_root = Path(get_settings().library_path)
     first = rows[0]
     slug = first["slug"]
+    kind = first["kind"] or "comic"
 
     wanted: dict[Decimal, dict[str, Any]] = {}
     already = 0
@@ -89,8 +91,8 @@ async def handle(ctx: JobContext) -> None:
         if row["state"] == "streaming":
             await queue_from_reader(ctx.session, row["series_id"], [row["id"]])
             continue
-        destination = chapter_path(library_root, slug, number, row["title"])
-        if destination.exists():
+        destination = existing_chapter_file(library_root, slug, number, row["title"])
+        if destination is not None:
             await mark_downloaded(ctx.session, row["id"], destination)
             already += 1
             continue
@@ -117,6 +119,17 @@ async def handle(ctx: JobContext) -> None:
     # source is resolved once from whichever chapter happens to be first
     # rather than once per chapter.
     source = source_for_url(next(iter(wanted.values()))["chapter_url"])
+    if kind == "prose" and not isinstance(source, ProseSource):
+        raise PermanentError(
+            f"series {first['series_id']} is prose but its mapping points at "
+            f"{source.site}, a comic source - choose a new mapping in Review"
+        )
+    if kind != "prose" and isinstance(source, ProseSource):
+        raise PermanentError(
+            f"series {first['series_id']} is a comic but its mapping points at "
+            f"{source.site}, a prose source - choose a new mapping in Review"
+        )
+    cover = await cover_for(ctx, first["series_id"]) if kind == "prose" else None
 
     total = len(wanted)
     placed = 0
@@ -155,14 +168,19 @@ async def handle(ctx: JobContext) -> None:
                     await repo.renew_lease(ctx.session, ctx.job.id)
                     await ctx.session.commit()
 
+            destination = chapter_path(library_root, slug, number, row["title"], kind=kind)
             try:
-                # Listing and fetching together, so a page that 404s can ask for
-                # the list again: the at-home address rotates, and this is what
-                # cost eighteen chapters of one series - a single stale page
-                # failed the whole batch (#169).
-                page_bytes = await fetch_chapter(
-                    source, row["chapter_url"], client, on_page=keep_lease
-                )
+                if kind == "prose":
+                    await write_prose_chapter(ctx, row, source, client, cover, destination)
+                    page_bytes: list[bytes] = []
+                else:
+                    # Listing and fetching together, so a page that 404s can ask for
+                    # the list again: the at-home address rotates, and this is what
+                    # cost eighteen chapters of one series - a single stale page
+                    # failed the whole batch (#169).
+                    page_bytes = await fetch_chapter(
+                        source, row["chapter_url"], client, on_page=keep_lease
+                    )
             except ChapterUnavailable as exc:
                 # Decision (#95): one chapter the source refuses skips that
                 # chapter, not the whole batch - per-chapter listing means a
@@ -199,9 +217,9 @@ async def handle(ctx: JobContext) -> None:
                 await ctx.session.commit()
                 continue
 
-            info = await build_comicinfo(ctx.session, row)
-            destination = chapter_path(library_root, slug, number, row["title"])
-            await write_cbz(page_bytes, destination, info)
+            if kind != "prose":
+                info = await build_comicinfo(ctx.session, row)
+                await write_cbz(page_bytes, destination, info)
             await mark_downloaded(ctx.session, row["id"], destination)
             placed += 1
 
@@ -211,9 +229,9 @@ async def handle(ctx: JobContext) -> None:
             # does not already hold. Renewing the lease here, once a chapter, is
             # enough - even a slow chapter finishes in well under the 15 minute
             # lease this job was granted.
+            detail = "saved as EPUB" if kind == "prose" else f"{len(page_bytes)}/{counted} pages"
             await ctx.log(
-                f"chapter {number}: {len(page_bytes)}/{counted} pages "
-                f"({index}/{total} chapters)",
+                f"chapter {number}: {detail} ({index}/{total} chapters)",
                 pct=100.0 * index / total,
             )
             await ctx.session.commit()
