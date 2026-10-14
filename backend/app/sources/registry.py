@@ -17,8 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import settings_store
 from app.sources.asurascans import AsuraScansSource
-from app.sources.base import RegisteredSource, Source, install_registry
+from app.sources.base import RegisteredSource, SiteSource, Source, install_registry
 from app.sources.comick import SITES, ComickSource
+from app.sources.lolobun import LolobunSource
 from app.sources.mangadex import MangaDexSource
 from app.sources.mangafire.source import MangaFireSource
 from app.sources.mangageko import MangaGekoSource
@@ -42,11 +43,12 @@ logger = logging.getLogger(__name__)
 # Built once at import because none of them needs anything from the database.
 # MangaFire is the exception and is built per reload instead - see
 # `_configured_natives`.
-NATIVE_SOURCES: dict[str, Source] = {
+NATIVE_SOURCES: dict[str, SiteSource] = {
     "mangadex": MangaDexSource(),
     "weebcentral": ComickSource(*SITES[0]),
     "mangageko": MangaGekoSource(),
     "asurascans": AsuraScansSource(),
+    "lolobun": LolobunSource(),
 }
 
 # Ported templates, keyed by site_catalogue.template. A template with no entry
