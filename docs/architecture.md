@@ -113,6 +113,10 @@ The download handlers read the kind once and branch once, at the archive write. 
 outside the branch and are shared. Prose does not use the reader cache, so the image reader answers
 409 for a prose chapter; Komga's own reader is where a novel is read.
 
+Known risk: LoLoBun and Novelight number chapters by list position, so a chapter the site inserts
+mid-list shifts every later number, and `upsert_chapters` would rebind existing rows to new URLs. A
+follow-up should detect a URL change on a downloaded row.
+
 ## Live progress
 
 A handler inserts into `job_event` and calls `pg_notify('jobs', ...)`. The API holds one dedicated

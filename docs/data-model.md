@@ -29,12 +29,11 @@ The canonical work.
 - **`meta.aliases`** holds normalised titles, widened as each provider contributes spellings.
 - **`meta.cross_refs`** holds identifiers with their provenance. See
   [`providers.md`](providers.md#identity-and-hearsay).
-
 - **`kind`** is `comic`, `prose` or null, with a check constraint. Null means unknown and behaves as
   `comic`, which is what every series did before the column existed. Migration `0019` backfilled it
   from the entries' `raw`.
-- **How it is set.** `list_sync` writes it when it creates a series, and recomputes it from all of the
-  series' entries when another attaches; a series with both comic and prose entries resolves to
+- **How it is set.** `list_sync` recomputes it from all of the
+  series' entries after each entry is upserted, unless it is locked; a series with both comic and prose entries resolves to
   `comic`. The user sets it with `POST /api/series/{id}/kind`, which is how a `local` series or a
   provider that states nothing gets one.
 - **`meta.kind_locked`** is set by that route and marks a kind chosen by hand. Sync never overwrites a
