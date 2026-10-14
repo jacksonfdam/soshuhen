@@ -84,6 +84,8 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        coalesce(max(ch.known), 0) as known,
        coalesce(max(ch.in_flight), 0) as in_flight,
        coalesce(max(ch.failed), 0) as failed,
+       coalesce(max(ch.expiring_count), 0) as expiring_count,
+       max(ch.expiring_earliest) as expiring_earliest,
        array_remove(array_agg(distinct e.provider), null) as providers,
        max(e.total_chapters) as total_chapters,
        (array_agg(e.status order by
@@ -110,7 +112,16 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
              count(*) filter (where state = 'downloaded') as downloaded,
              count(*) as known,
              count(*) filter (where state in ('queued', 'downloading')) as in_flight,
-             count(*) filter (where state = 'failed') as failed
+             count(*) filter (where state = 'failed') as failed,
+             -- The same week as chapter_discover.EXPIRY_WARNING_DAYS.
+             count(*) filter (where state in ('known', 'queued', 'failed')
+                                and available_until > now()
+                                and available_until <= now() + interval '7 days')
+                 as expiring_count,
+             min(available_until) filter (where state in ('known', 'queued', 'failed')
+                                            and available_until > now()
+                                            and available_until <= now() + interval '7 days')
+                 as expiring_earliest
         from chapter
        group by series_id
   ) ch on ch.series_id = s.id
@@ -130,6 +141,17 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        count(c.id) as known,
        count(c.id) filter (where c.state in ('queued', 'downloading')) as in_flight,
        count(c.id) filter (where c.state = 'failed') as failed,
+       -- distinct: chapter and list_entry are joined in the same from, so a
+       -- series on two lists sees each chapter row twice. The same week as
+       -- chapter_discover.EXPIRY_WARNING_DAYS.
+       count(distinct c.id) filter (where c.state in ('known', 'queued', 'failed')
+                                      and c.available_until > now()
+                                      and c.available_until <= now() + interval '7 days')
+           as expiring_count,
+       min(c.available_until) filter (where c.state in ('known', 'queued', 'failed')
+                                        and c.available_until > now()
+                                        and c.available_until <= now() + interval '7 days')
+           as expiring_earliest,
        array_remove(array_agg(distinct e.provider), null) as providers,
        max(e.total_chapters) as total_chapters,
        (array_agg(e.status order by
@@ -222,6 +244,11 @@ def _row_to_series(row: Any) -> dict[str, Any]:
         "total_chapters": row.total_chapters,
         "auto_download": row.auto_download,
         "kind": row.kind,
+        "expiring": (
+            {"count": row.expiring_count, "earliest": row.expiring_earliest.isoformat()}
+            if row.expiring_count
+            else None
+        ),
         "state": _state_of(row),
         "status": row.status,
         "progress": row.progress,
@@ -364,7 +391,7 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
     chapters = await session.execute(
         text(
             """
-            select id, number, title, state, file_path, komga_book_id
+            select id, number, title, state, file_path, komga_book_id, available_until
               from chapter where series_id = :id order by number
             """
         ),
@@ -407,6 +434,7 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
                 # this is null for every chapter that is not downloaded yet -
                 # and the row simply does not offer a link.
                 "komga_book_id": c.komga_book_id,
+                "available_until": c.available_until.isoformat() if c.available_until else None,
             }
             for c in chapters.all()
         ],
