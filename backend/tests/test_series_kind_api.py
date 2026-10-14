@@ -97,3 +97,37 @@ async def test_a_prose_series_accepts_a_prose_source(client):
         f"/api/series/{series_id}/mapping", json={"source_url": "https://prose.test/n/1"}
     )
     assert response.status_code == 200
+
+
+async def test_series_payloads_carry_the_kind(client):
+    series_id = await _series("prose")
+    rows = (await client.get("/api/series")).json()
+    assert next(row for row in rows if row["id"] == series_id)["kind"] == "prose"
+    detail = (await client.get(f"/api/series/{series_id}")).json()
+    assert detail["series"]["kind"] == "prose"
+
+
+async def test_setting_the_kind_by_hand_locks_it(client):
+    series_id = await _series(None)
+    response = await client.post(f"/api/series/{series_id}/kind", json={"kind": "prose"})
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "kind": "prose"}
+    async with get_sessionmaker()() as session:
+        row = (
+            await session.execute(
+                text("select kind, meta from series where id = :id"), {"id": series_id}
+            )
+        ).one()
+    assert row.kind == "prose"
+    assert row.meta["kind_locked"] is True
+
+
+async def test_an_unknown_kind_value_is_rejected(client):
+    series_id = await _series(None)
+    response = await client.post(f"/api/series/{series_id}/kind", json={"kind": "audio"})
+    assert response.status_code == 422
+
+
+async def test_setting_the_kind_of_a_missing_series_is_404(client):
+    response = await client.post("/api/series/999999/kind", json={"kind": "prose"})
+    assert response.status_code == 404

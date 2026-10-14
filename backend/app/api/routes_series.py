@@ -2,7 +2,7 @@
 
 import json
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -43,6 +43,10 @@ class AutoDownloadIn(BaseModel):
     enabled: bool
 
 
+class KindIn(BaseModel):
+    kind: Literal["comic", "prose"]
+
+
 class ProgressIn(BaseModel):
     chapter: int
 
@@ -73,7 +77,7 @@ class NotesIn(BaseModel):
 
 LIST_SQL = f"""
 select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_id,
-       s.auto_download,
+       s.auto_download, s.kind,
        coalesce(m.source_site, '') as source_site,
        coalesce(m.source_url, '') as source_url,
        coalesce(max(ch.downloaded), 0) as downloaded,
@@ -119,7 +123,7 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
 # drift from it one column at a time.
 LIST_SQL_ONE = f"""
 select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_id,
-       s.auto_download,
+       s.auto_download, s.kind,
        coalesce(m.source_site, '') as source_site,
        coalesce(m.source_url, '') as source_url,
        count(c.id) filter (where c.state = 'downloaded') as downloaded,
@@ -217,6 +221,7 @@ def _row_to_series(row: Any) -> dict[str, Any]:
         "failed": row.failed,
         "total_chapters": row.total_chapters,
         "auto_download": row.auto_download,
+        "kind": row.kind,
         "state": _state_of(row),
         "status": row.status,
         "progress": row.progress,
@@ -621,6 +626,33 @@ async def set_auto_download(
         )
     await session.commit()
     return {"ok": True, "auto_download": body.enabled, "queued": queued}
+
+
+@router.post("/{series_id}/kind")
+async def set_kind(series_id: int, body: KindIn, session: Session) -> dict[str, Any]:
+    """Say what a series is when no provider did, or when one said it wrong.
+
+    Locked, so the next list sync does not put it back: the providers that
+    stay silent about format are exactly the ones a person corrects by hand.
+    The active mapping is left alone - if it is now the wrong kind, the
+    download refuses it by name, and Review is where a new one is chosen.
+    """
+    result = await session.execute(
+        text(
+            """
+            update series
+               set kind = :kind,
+                   meta = jsonb_set(coalesce(meta, '{}'::jsonb), '{kind_locked}', 'true'::jsonb)
+             where id = :id
+            returning id
+            """
+        ),
+        {"kind": body.kind, "id": series_id},
+    )
+    if result.first() is None:
+        raise HTTPException(status_code=404, detail="series not found")
+    await session.commit()
+    return {"ok": True, "kind": body.kind}
 
 
 @router.get("/{series_id}/chapters")
