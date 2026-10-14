@@ -19,6 +19,7 @@ from app.queue import repo
 from app.sources.base import (
     ChapterText,
     ChapterUnavailable,
+    NotConfigured,
     PageRef,
     ProseSource,
     RegisteredSource,
@@ -273,5 +274,35 @@ async def test_a_prose_series_on_a_comic_source_is_refused_before_the_chapter_is
                 )
             ).scalar_one()
         assert after == before
+    finally:
+        stub.close()
+
+
+class SignedOutProse(FakeProse):
+    async def fetch_chapter(self, chapter_url, *, language="en"):
+        raise NotConfigured("J-Novel Club sign-in expired; sign in again in Settings")
+
+
+async def test_an_expired_sign_in_leaves_the_chapters_known():
+    stub = Stub(lambda path: (200, "image/png", PNG))
+    try:
+        urls = [f"{stub.base_url}/n/1/{n}" for n in (1, 2)]
+        install_registry({stub.key: RegisteredSource(SignedOutProse(stub.key), stub.base_url)})
+        async with get_sessionmaker()() as session:
+            series_id = await _series(session, stub.key)
+            await _make_prose(session, series_id)
+            await _catalogue(session, stub.key, stub.base_url)
+            ids = [
+                await _chapter(session, series_id, str(n), u)
+                for n, u in zip((1, 2), urls, strict=True)
+            ]
+            ctx = await _context(session, ids)
+            with pytest.raises(PermanentError, match="sign in again"):
+                await download_batch.handle(ctx)
+            await session.commit()
+            states = (
+                await session.execute(text("select state from chapter order by number"))
+            ).scalars().all()
+        assert states == ["known", "known"]
     finally:
         stub.close()
