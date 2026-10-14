@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.db import get_sessionmaker
 from app.sources import registry
 from app.sources.base import NotConfigured, get_prose_source
+from tests.jnovelclub_seed import seed_jnovelclub
 
 
 @pytest.fixture(autouse=True)
@@ -22,6 +23,7 @@ async def clean(monkeypatch):
             text("delete from setting where key in ('jnc_token', 'jnc_token_expires_at')")
         )
         await session.commit()
+    await seed_jnovelclub()
     yield
     get_settings.cache_clear()
 
