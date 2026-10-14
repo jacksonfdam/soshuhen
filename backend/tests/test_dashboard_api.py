@@ -240,6 +240,7 @@ async def test_a_continue_reading_card_carries_what_the_strip_renders(client):
         "series_id": series_id,
         "title": "Berserk",
         "slug": "berserk",
+        "kind": "comic",
         "cover_url": None,
         "progress": 3,
         # AniList holds this one, so the card's +1 has somewhere to land.
@@ -251,6 +252,15 @@ async def test_a_continue_reading_card_carries_what_the_strip_renders(client):
         "in_komga": True,
         "updated_at": card["updated_at"],
     }
+
+
+async def test_a_continue_reading_card_carries_a_prose_series_kind(client):
+    series_id = await _series("Overlord Novels", "overlord-novels", progress=2)
+    await _exec("update series set kind = 'prose' where id = :id", {"id": series_id})
+
+    body = (await client.get("/api/dashboard")).json()
+
+    assert body["continue_reading"][0]["kind"] == "prose"
 
 
 async def test_an_unknown_total_leaves_chapters_remaining_null_rather_than_zero(client):

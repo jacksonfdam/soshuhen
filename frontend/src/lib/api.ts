@@ -412,6 +412,8 @@ export interface ContinueReadingEntry {
   writable: boolean
   title: string
   slug: string
+  /** Prose has no in-app reader, so its Continue link goes to the series page. */
+  kind: 'comic' | 'prose'
   cover_url: string | null
   progress: number
   total_chapters: number | null
