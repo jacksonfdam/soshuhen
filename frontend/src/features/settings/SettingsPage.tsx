@@ -4,6 +4,7 @@ import { Button, ErrorState, Icon, NoticeBar, Skeleton, Toggle, type IconName } 
 import { ProviderCard } from './ProviderCard'
 import { PipelineFields } from './PipelineFields'
 import { SourcesPanel } from './SourcesPanel'
+import { JNovelClubCard } from './JNovelClubCard'
 import { SourceCard } from './SourceCard'
 import { StorageFields } from './StorageFields'
 import { useSettings } from './useSettings'
@@ -248,6 +249,7 @@ export function SettingsPage() {
               </p>
             </div>
           </SourceCard>
+          <JNovelClubCard />
         </div>
       </section>
 

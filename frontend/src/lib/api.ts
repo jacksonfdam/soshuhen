@@ -36,6 +36,12 @@ export interface Series {
   komga_series_id: string | null
 }
 
+export interface JncSession {
+  via: 'env' | 'settings' | 'none'
+  expires_at: string | null
+  level: string | null
+}
+
 export interface Candidate {
   id: number
   source_site: string
@@ -884,6 +890,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ chapter }),
     }),
+  jncSession: () => request<JncSession>('/api/sources/jnovelclub/session'),
+  jncSignIn: (login: string, password: string) =>
+    request<{ signed_in: boolean; expires_at: string }>('/api/sources/jnovelclub/sign-in', {
+      method: 'POST',
+      body: JSON.stringify({ login, password }),
+    }),
+  jncSignOut: () =>
+    request<{ signed_in: boolean }>('/api/sources/jnovelclub/sign-in', { method: 'DELETE' }),
   setAutoDownload: (id: number, enabled: boolean) =>
     request<{ auto_download: boolean; queued: number }>(`/api/series/${id}/auto-download`, {
       method: 'POST',
