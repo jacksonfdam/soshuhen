@@ -30,7 +30,7 @@ from app.handlers.download_chapter import build_comicinfo, load_catalogue_row
 from app.handlers.prose_download import cover_for, write_prose_chapter
 from app.queue import repo
 from app.sources import source_for_url
-from app.sources.base import ChapterUnavailable, NotConfigured, ProseSource
+from app.sources.base import ChapterUnavailable, ProseSource, SignInRequired
 from app.sources.net import get_client
 
 # How often a lease is renewed while one chapter's pages are still arriving.
@@ -181,7 +181,7 @@ async def handle(ctx: JobContext) -> None:
                     page_bytes = await fetch_chapter(
                         source, row["chapter_url"], client, on_page=keep_lease
                     )
-            except NotConfigured as exc:
+            except SignInRequired as exc:
                 # The source needs a sign-in it no longer has. Nothing is wrong
                 # with these chapters: put back what this batch had not reached,
                 # keep what it already saved, and say what to do. The next

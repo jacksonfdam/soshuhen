@@ -21,6 +21,17 @@ class NotConfigured(RuntimeError):
     """
 
 
+class SignInRequired(NotConfigured):
+    """The account a source signs in with has to sign in again.
+
+    Its own class rather than plain NotConfigured, because the cure differs:
+    a chapter refused for this reason is waiting on the user, not broken, and
+    nothing about it may be marked skipped - the download handlers catch this,
+    and only this, to put chapters back. A source that is simply not set up
+    for one chapter (ComiciViewer's paid pages) still raises NotConfigured.
+    """
+
+
 class ChapterUnavailable(RuntimeError):
     """The source itself says the chapter is gone - a 404 on the chapter URL,
     or an empty page list - not that one request to reach it failed.

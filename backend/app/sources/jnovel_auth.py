@@ -16,11 +16,15 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from app.sources.base import NotConfigured
+from app.sources.base import SignInRequired
 
 API = "https://labs.j-novel.club/app/v2"
 DEFAULT_TTL_SECONDS = 1_209_600  # 14 days, what J-Novel Club's own web app asks for
 RENEW_AHEAD = timedelta(hours=1)
+# After .env credentials are refused, how long before trying them again. Every
+# queued batch asks for a token, and signing in with a wrong password once per
+# batch per retry is how an account gets locked.
+FAILED_SIGN_IN_PAUSE = timedelta(minutes=15)
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +111,8 @@ class TokenKeeper:
         self._now = now
         self._session: JncSession | None = None
         self._rejected: str | None = None
+        self._failed_until: datetime | None = None
+        self._failed_reason = ""
         self._lock = asyncio.Lock()
 
     @property
@@ -119,18 +125,26 @@ class TokenKeeper:
         async with self._lock:
             if self.via == "env":
                 if self._session is None or self._session.expires_at - RENEW_AHEAD <= self._now():
-                    self._session = await login(
-                        self._client, self._login, self._password, now=self._now
-                    )
+                    if self._failed_until is not None and self._now() < self._failed_until:
+                        raise SignInRequired(self._failed_reason)
+                    try:
+                        self._session = await login(
+                            self._client, self._login, self._password, now=self._now
+                        )
+                    except JncAuthError as exc:
+                        self._failed_reason = f"J-Novel Club sign-in from .env failed: {exc}"
+                        self._failed_until = self._now() + FAILED_SIGN_IN_PAUSE
+                        raise SignInRequired(self._failed_reason) from exc
+                    self._failed_until = None
                 return self._session.token
             if self.via == "settings":
                 stored = await self._load_stored()
                 if stored is None:
-                    raise NotConfigured("J-Novel Club is not signed in")
+                    raise SignInRequired("J-Novel Club is not signed in")
                 if stored.expires_at <= self._now() or stored.token == self._rejected:
-                    raise NotConfigured("J-Novel Club sign-in expired; sign in again in Settings")
+                    raise SignInRequired("J-Novel Club sign-in expired; sign in again in Settings")
                 return stored.token
-            raise NotConfigured("J-Novel Club is not signed in")
+            raise SignInRequired("J-Novel Club is not signed in")
 
     async def invalidate(self, token: str) -> None:
         """The server refused this token. Credentials sign in again on the next

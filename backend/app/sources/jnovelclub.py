@@ -25,6 +25,7 @@ from app.sources.base import (
     NotConfigured,
     PageRef,
     ProseSource,
+    SignInRequired,
 )
 from app.sources.jnovel_auth import TokenKeeper
 from app.sources.net import CatalogueRow, get_client
@@ -101,10 +102,16 @@ class JNovelClubSource(ProseSource):
         # Signed in, `owned` is filled in, and owned volumes' parts never
         # expire; anonymous still lists everything, so a lapsed sign-in does
         # not stop discovery.
+        url = f"{API_BASE}/app/v2/series/{match.group(1)}/aggregate"
         headers = await self._auth_headers(required=False)
-        response = await self.client.get(
-            f"{API_BASE}/app/v2/series/{match.group(1)}/aggregate", params=JSON, headers=headers
-        )
+        response = await self.client.get(url, params=JSON, headers=headers)
+        if headers and response.status_code in (401, 410):
+            # The token is dead on J-Novel Club's side though its clock says
+            # otherwise. Say so to the keeper and list anonymously: discovery
+            # runs in the other worker lane, which never learns of a rejection
+            # the download lane saw.
+            await self.keeper.invalidate(headers["Authorization"].removeprefix("Bearer "))
+            response = await self.client.get(url, params=JSON)
         response.raise_for_status()
         return self.parse_chapters(response.json())
 
@@ -124,13 +131,18 @@ class JNovelClubSource(ProseSource):
                 f"{API_BASE}/embed/v2/{part_id}/data.xhtml",
                 headers={"Authorization": f"Bearer {token}"},
             )
-            if response.status_code == 401 and attempt == 1:
-                # A lapsed token: renew once (from .env) or learn that the
-                # saved one is dead, which the next token() call then says.
+            if response.status_code == 401 or (
+                response.status_code in (403, 410) and not await self._session_alive(token)
+            ):
+                # A session J-Novel Club no longer accepts. 403 and 410 also
+                # mean "this part is not yours" and "this part expired", and
+                # reading a revoked token that way would skip every part in
+                # the batch for good - so the session is asked first. Renew
+                # once (from .env); otherwise the keeper now refuses it.
                 await self.keeper.invalidate(token)
-                continue
-            if response.status_code == 401:
-                raise NotConfigured("J-Novel Club refused the sign-in; sign in again")
+                if attempt == 1:
+                    continue
+                raise SignInRequired("J-Novel Club refused the sign-in; sign in again")
             if response.status_code in REFUSALS:
                 raise ChapterUnavailable(f"{chapter_url} {REFUSALS[response.status_code]}")
             response.raise_for_status()
@@ -150,6 +162,20 @@ class JNovelClubSource(ProseSource):
             return response.json().get("level")
         except Exception:  # noqa: BLE001 - see the docstring
             return None
+
+    async def _session_alive(self, token: str) -> bool:
+        """Whether J-Novel Club still accepts this token, asked of /me.
+
+        A 5xx raises: not knowing is not the same as a dead session, and the
+        retry ladder is the right answer to it.
+        """
+        response = await self.client.get(
+            f"{API_BASE}/app/v2/me", params=JSON, headers={"Authorization": f"Bearer {token}"}
+        )
+        if response.status_code in (401, 410):
+            return False
+        response.raise_for_status()
+        return True
 
     async def _auth_headers(self, *, required: bool) -> dict[str, str]:
         try:

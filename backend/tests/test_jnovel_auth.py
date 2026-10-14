@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from app.sources.base import NotConfigured
+from app.sources.base import NotConfigured, SignInRequired
 from app.sources.jnovel_auth import JncAuthError, JncSession, TokenKeeper, login
 
 NOW = datetime(2026, 10, 14, 12, 0, tzinfo=UTC)
@@ -119,3 +119,32 @@ async def test_no_credentials_and_nothing_stored_is_not_configured():
             await TokenKeeper(client).token()
         with pytest.raises(NotConfigured, match="not signed in"):
             await TokenKeeper(client, load_stored=load).token()
+
+
+async def test_wrong_env_credentials_ask_for_a_sign_in_and_do_not_retry_at_once():
+    clock = [NOW]
+    logins = 0
+
+    def handler(request):
+        nonlocal logins
+        logins += 1
+        return httpx.Response(401)
+
+    async with _client(handler) as client:
+        keeper = TokenKeeper(client, login_name="me", password="bad", now=lambda: clock[0])
+        with pytest.raises(SignInRequired, match="from .env failed"):
+            await keeper.token()
+        # Every queued batch asks again; hammering the login invites a lockout.
+        with pytest.raises(SignInRequired):
+            await keeper.token()
+        assert logins == 1
+        clock[0] = NOW + timedelta(minutes=16)
+        with pytest.raises(SignInRequired):
+            await keeper.token()
+        assert logins == 2
+
+
+async def test_a_dead_session_is_a_sign_in_required():
+    async with _client(lambda request: httpx.Response(500)) as client:
+        with pytest.raises(SignInRequired):
+            await TokenKeeper(client).token()

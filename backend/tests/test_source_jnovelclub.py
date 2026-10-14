@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app.sources.base import ChapterUnavailable, NotConfigured
+from app.sources.base import ChapterUnavailable, NotConfigured, SignInRequired
 from app.sources.jnovel_auth import JncSession, TokenKeeper
 from app.sources.jnovelclub import JNovelClubSource, expires_at
 from app.sources.net import CatalogueRow, SiteClient
@@ -155,6 +155,9 @@ async def test_refusals_become_unavailable_with_the_reason(status, reason):
     def handler(request):
         if request.url.path.startswith("/app/v2/parts/"):
             return _part_lookup(request)
+        if request.url.path == "/app/v2/me":
+            # The session is fine: the refusal is about the part itself.
+            return httpx.Response(200, json={"level": "PREMIUM_MEMBER"})
         return httpx.Response(status, text="no")
 
     with pytest.raises(ChapterUnavailable, match=reason):
@@ -202,3 +205,34 @@ async def test_listing_works_without_a_sign_in():
     source = _network(handler, lambda c: TokenKeeper(c, now=lambda: NOW))
     chapters = await source.list_chapters("https://j-novel.club/series/the-apothecary-diaries")
     assert len(chapters) == 216
+
+
+@pytest.mark.parametrize("status", [403, 410])
+async def test_a_refusal_from_a_dead_session_asks_for_a_sign_in_not_a_skip(status):
+    # A token revoked on J-Novel Club's side answers like a refused part. Read
+    # as the part's fault, every part in the batch would be skipped for good -
+    # and pre-publication parts expire.
+    def handler(request):
+        if request.url.path.startswith("/app/v2/parts/"):
+            return _part_lookup(request)
+        if request.url.path == "/app/v2/me":
+            return httpx.Response(401)
+        return httpx.Response(status, text="no")
+
+    with pytest.raises(SignInRequired):
+        await _network(handler, _stored()).fetch_chapter(PART_URL)
+
+
+async def test_a_rejected_token_does_not_stop_discovery():
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers.get("authorization"))
+        if "authorization" in request.headers:
+            return httpx.Response(401)
+        return httpx.Response(200, text=_read("jnovelclub_aggregate.json"))
+
+    source = _network(handler, _stored())
+    chapters = await source.list_chapters("https://j-novel.club/series/the-apothecary-diaries")
+    assert len(chapters) == 216
+    assert seen == ["Bearer saved", None]
