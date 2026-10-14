@@ -229,3 +229,18 @@ async def test_a_cover_that_cannot_be_fetched_ships_the_chapter_without_one(monk
 
     assert await cover_for(Ctx(), 1) is None
     assert any("cover unavailable" in line for line in logged)
+
+
+async def test_a_cover_in_an_unrecognised_format_ships_the_chapter_without_one(monkeypatch):
+    async def svg(ctx, series_id):
+        return b"<svg/>"
+
+    monkeypatch.setattr("app.handlers.prose_download.fetch_series_artwork", svg)
+    logged: list[str] = []
+
+    class Ctx:
+        async def log(self, message, **kwargs):
+            logged.append(message)
+
+    assert await cover_for(Ctx(), 1) is None
+    assert any("cover unavailable" in line for line in logged)

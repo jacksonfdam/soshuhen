@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 
+from app.downloader.cbz import page_extension
 from app.downloader.epub import EpubChapter, write_epub
 from app.downloader.prose_fetch import fetch_prose_chapter
 from app.handlers.base import JobContext
@@ -29,8 +30,13 @@ async def cover_for(ctx: JobContext, series_id: int) -> bytes | None:
     is not worth a chapter, so any failure here just ships it without one.
     """
     try:
-        return await fetch_series_artwork(ctx, series_id)
-    except httpx.HTTPError as exc:
+        data = await fetch_series_artwork(ctx, series_id)
+        # write_epub names the cover by its real format and raises on one it does not
+        # know, which would fail the whole batch over art nobody asked for.
+        if data is not None:
+            page_extension(data)
+        return data
+    except (httpx.HTTPError, ValueError) as exc:
         await ctx.log(f"cover unavailable, chapters ship without one: {exc}", level="warning")
         return None
 
