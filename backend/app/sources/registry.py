@@ -19,6 +19,7 @@ from app import settings_store
 from app.sources.asurascans import AsuraScansSource
 from app.sources.base import RegisteredSource, SiteSource, Source, install_registry
 from app.sources.comick import SITES, ComickSource
+from app.sources.empirenovel import EmpireNovelSource
 from app.sources.lolobun import LolobunSource
 from app.sources.mangadex import MangaDexSource
 from app.sources.mangafire.source import MangaFireSource
@@ -51,6 +52,7 @@ NATIVE_SOURCES: dict[str, SiteSource] = {
     "asurascans": AsuraScansSource(),
     "lolobun": LolobunSource(),
     "novelight": NovelightSource(),
+    "empirenovel": EmpireNovelSource(),
 }
 
 # Ported templates, keyed by site_catalogue.template. A template with no entry
