@@ -14,6 +14,7 @@ from app.api.deps import db_session
 from app.api.list_raw import display_fields, metadata_of
 from app.api.progress_queue import progress_bounds, queue_progress_write
 from app.api.reading_frequency import reading_frequency
+from app.api.reading_recency import LAST_READ_AT
 from app.enums import JobType, ListStatus, ProgressSource, Provider
 from app.handlers.batching import queue_batches
 from app.handlers.media_enrich import is_stale
@@ -69,7 +70,7 @@ class NotesIn(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=20)
 
 
-LIST_SQL = """
+LIST_SQL = f"""
 select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_id,
        s.auto_download,
        coalesce(m.source_site, '') as source_site,
@@ -90,6 +91,7 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        coalesce(bool_or(e.provider = any(cast(:writable as text[]))), false) as writable,
        coalesce(max(e.user_progress_chapter), 0) as progress,
        max(e.updated_at) as updated_at,
+       {LAST_READ_AT} as last_read_at,
        (array_agg(e.raw order by e.updated_at desc))[1] as raw
   from series s
   left join source_mapping m on m.series_id = s.id and m.active
@@ -114,7 +116,7 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
 # Same aggregate as LIST_SQL, narrowed to one row — the detail route needs the
 # exact shape the library card already rendered, not a second query that could
 # drift from it one column at a time.
-LIST_SQL_ONE = """
+LIST_SQL_ONE = f"""
 select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_id,
        s.auto_download,
        coalesce(m.source_site, '') as source_site,
@@ -135,6 +137,7 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        coalesce(bool_or(e.provider = any(cast(:writable as text[]))), false) as writable,
        coalesce(max(e.user_progress_chapter), 0) as progress,
        max(e.updated_at) as updated_at,
+       {LAST_READ_AT} as last_read_at,
        (array_agg(e.raw order by e.updated_at desc))[1] as raw
   from series s
   left join source_mapping m on m.series_id = s.id and m.active
@@ -187,6 +190,10 @@ async def _review_list(session: AsyncSession, *, ignored: bool) -> dict[str, Any
     return {"total": len(items), "items": items}
 
 
+def _iso_or_none(value: Any) -> str | None:
+    return value.isoformat() if value else None
+
+
 def _row_to_series(row: Any) -> dict[str, Any]:
     """Shared by the list and detail routes so they cannot drift.
 
@@ -213,6 +220,9 @@ def _row_to_series(row: Any) -> dict[str, Any]:
         "status": row.status,
         "progress": row.progress,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        # Absent from rows built by queries other than LIST_SQL, which never
+        # order by reading.
+        "last_read_at": _iso_or_none(row._mapping.get("last_read_at")),
         # The reader lives in Komga, not here, so the screen needs Komga's own
         # id to link to it. Null until a scan has matched the series there.
         "komga_series_id": row.komga_series_id,

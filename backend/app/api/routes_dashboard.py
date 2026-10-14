@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import routes_health
 from app.api.deps import db_session
+from app.api.reading_recency import LAST_READ_AT
 from app.api.routes_jobs import JOB_COLUMNS, job_row
 from app.api.routes_series import writable_providers
 from app.config import get_settings
@@ -56,7 +57,7 @@ left join lateral (
 # the front page that the shelf listed as plan_to_read. The aggregates stay
 # over every entry, exactly as LIST_SQL computes them, so the two screens agree
 # on the numbers as well as on the membership.
-READING = """
+READING = f"""
 select s.id,
        s.canonical_title,
        s.slug,
@@ -65,6 +66,7 @@ select s.id,
        coalesce(max(e.user_progress_chapter), 0) as progress,
        max(e.total_chapters) as total_chapters,
        max(e.updated_at) as updated_at,
+       {LAST_READ_AT} as last_read_at,
        -- Whether a progress write has anywhere to land, so the card can refuse
        -- before the click rather than after the job fails.
        coalesce(bool_or(e.provider = any(cast(:writable as text[]))), false) as writable
@@ -90,7 +92,10 @@ with r as ({READING})
 select r.*, ahead.known as known_ahead, ahead.downloaded as downloaded_ahead
   from r
   {AHEAD}
- order by r.updated_at desc nulls last
+ -- Reading first, by when it happened. A series with no reading record yet
+ -- (the history only fills forward) falls back to its sync time, behind every
+ -- series that has one.
+ order by r.last_read_at desc nulls last, r.updated_at desc nulls last
  limit :limit
 """
 
