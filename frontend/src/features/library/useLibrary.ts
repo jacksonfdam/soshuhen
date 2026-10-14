@@ -63,6 +63,15 @@ export function totalChapters(series: Series): number | null {
   return Math.max(series.total_chapters ?? 0, series.known ?? 0) || null
 }
 
+const time = (value: string | null) => (value ? new Date(value).getTime() : 0)
+
+function byRecentReading(a: Series, b: Series): number {
+  if (Boolean(a.last_read_at) !== Boolean(b.last_read_at)) return a.last_read_at ? -1 : 1
+  return (
+    time(b.last_read_at) - time(a.last_read_at) || time(b.updated_at) - time(a.updated_at)
+  )
+}
+
 export function useLibrary() {
   const load = useCallback(() => api.series(), [])
   const { data, error, reload } = useAsyncData(load)
@@ -184,11 +193,13 @@ export function useLibrary() {
 
   // Independent of the active status tab: a series still belongs here the
   // instant it drops out of "reading" from a click, not only while filtered in.
+  // Most recently read first, the same order as Home. A series with no
+  // reading recorded falls back to its sync time, behind every one that has.
   const continueReading = useMemo(
     () =>
       [...all]
-        .filter((row) => row.status === 'reading' && row.updated_at)
-        .sort((a, b) => new Date(b.updated_at as string).getTime() - new Date(a.updated_at as string).getTime())
+        .filter((row) => row.status === 'reading' && (row.last_read_at || row.updated_at))
+        .sort(byRecentReading)
         .slice(0, 3),
     [all],
   )

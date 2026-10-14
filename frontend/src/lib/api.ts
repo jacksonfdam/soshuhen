@@ -26,6 +26,10 @@ export interface Series {
   genres: string[]
   format: string | null
   updated_at: string | null
+  /** When reading last happened: a page turned in the reader or progress
+      moving forward. Null for a series with no reading recorded yet. Not
+      `updated_at`, which a list sync moves without anyone reading. */
+  last_read_at: string | null
   /** Komga's own id for the series, once a scan has matched it. */
   komga_series_id: string | null
 }
