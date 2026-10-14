@@ -34,6 +34,12 @@ def _chapter(**overrides) -> EpubChapter:
     return EpubChapter(**values)
 
 
+def test_a_title_that_already_says_chapter_is_not_prefixed_twice():
+    chapter = _chapter(title="Chapter 1: The Brave", number=Decimal(1))
+    assert chapter.full_title == "The Weakest of the Four - Chapter 1: The Brave"
+    assert _chapter(title="chapter 2").full_title == "The Weakest of the Four - chapter 2"
+
+
 async def test_mimetype_comes_first_and_uncompressed(tmp_path):
     out = tmp_path / "a.epub"
     await write_epub(_chapter(), out)

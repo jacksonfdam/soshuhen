@@ -53,6 +53,9 @@ class EpubChapter:
 
     @property
     def full_title(self) -> str:
+        if self.title and self.title.strip().lower().startswith("chapter"):
+            # Sources often return "Chapter 1: ..." as the title already.
+            return f"{self.series} - {self.title.strip()}"
         name = f"{self.series} - Chapter {_number(self.number)}"
         return f"{name}: {self.title}" if self.title else name
 
