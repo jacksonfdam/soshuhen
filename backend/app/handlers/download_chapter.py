@@ -229,6 +229,14 @@ async def handle(ctx: JobContext) -> None:
     if row["chapter_url"] is None:
         raise PermanentError(f"chapter {chapter_id} has no source url of its own")
 
+    if kind != "prose":
+        mapped = source_for_url(row["chapter_url"])
+        if isinstance(mapped, ProseSource):
+            raise PermanentError(
+                f"series {row['series_id']} is a comic but its mapping points at "
+                f"{mapped.site}, a prose source - choose a new mapping in Review"
+            )
+
     await ctx.session.execute(
         text("update chapter set state = 'downloading' where id = :id"), {"id": chapter_id}
     )

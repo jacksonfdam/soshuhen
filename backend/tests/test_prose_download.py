@@ -4,6 +4,7 @@ import zipfile
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pytest
 from sqlalchemy import text
 
@@ -12,7 +13,8 @@ from app.db import get_sessionmaker
 from app.downloader.paths import chapter_path
 from app.enums import JobType
 from app.handlers import download_batch, download_chapter
-from app.handlers.base import JobContext
+from app.handlers.base import JobContext, PermanentError
+from app.handlers.prose_download import cover_for
 from app.queue import repo
 from app.sources.base import (
     ChapterText,
@@ -163,3 +165,67 @@ async def test_a_single_prose_chapter_job_writes_an_epub():
         assert path.endswith(".epub")
     finally:
         stub.close()
+
+
+class ComicOnly:
+    domains: tuple[str, ...] = ()
+
+    def __init__(self, site: str) -> None:
+        self.site = site
+
+    async def list_pages(self, chapter_url, *, language="en"):
+        return []
+
+    def descramble(self, data, page):
+        return data
+
+
+async def test_a_prose_series_mapped_to_a_comic_source_fails_the_batch_by_name():
+    stub = Stub(lambda path: (200, "image/png", PNG))
+    try:
+        url = f"{stub.base_url}/n/1/1"
+        install_registry({stub.key: RegisteredSource(ComicOnly(stub.key), stub.base_url)})
+        async with get_sessionmaker()() as session:
+            series_id = await _series(session, stub.key)
+            await _make_prose(session, series_id)
+            await _catalogue(session, stub.key, stub.base_url)
+            chapter_id = await _chapter(session, series_id, "1", url)
+            ctx = await _context(session, [chapter_id])
+            with pytest.raises(PermanentError, match=stub.key):
+                await download_batch.handle(ctx)
+    finally:
+        stub.close()
+
+
+async def test_a_comic_series_mapped_to_a_prose_source_fails_the_chapter_job():
+    stub = Stub(lambda path: (200, "image/png", PNG))
+    try:
+        url = f"{stub.base_url}/n/1/1"
+        install_registry({stub.key: RegisteredSource(FakeProse(stub.key), stub.base_url)})
+        async with get_sessionmaker()() as session:
+            series_id = await _series(session, stub.key)
+            await _catalogue(session, stub.key, stub.base_url)
+            chapter_id = await _chapter(session, series_id, "1", url)
+            await repo.enqueue(session, JobType.DOWNLOAD_CHAPTER, {"chapter_id": chapter_id})
+            await session.commit()
+            job = await repo.lease(session, types=EVERY_TYPE)
+            await session.commit()
+            with pytest.raises(PermanentError, match="prose source"):
+                await download_chapter.handle(JobContext(session=session, job=job))
+    finally:
+        stub.close()
+
+
+async def test_a_cover_that_cannot_be_fetched_ships_the_chapter_without_one(monkeypatch):
+    async def broken(ctx, series_id):
+        raise httpx.ConnectError("cdn down")
+
+    monkeypatch.setattr("app.handlers.prose_download.fetch_series_artwork", broken)
+    logged: list[str] = []
+
+    class Ctx:
+        async def log(self, message, **kwargs):
+            logged.append(message)
+
+    assert await cover_for(Ctx(), 1) is None
+    assert any("cover unavailable" in line for line in logged)

@@ -10,6 +10,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from app.downloader.epub import EpubChapter, write_epub
 from app.downloader.prose_fetch import fetch_prose_chapter
 from app.handlers.base import JobContext
@@ -28,7 +30,7 @@ async def cover_for(ctx: JobContext, series_id: int) -> bytes | None:
     """
     try:
         return await fetch_series_artwork(ctx, series_id)
-    except Exception as exc:  # noqa: BLE001 - best effort by design, logged
+    except httpx.HTTPError as exc:
         await ctx.log(f"cover unavailable, chapters ship without one: {exc}", level="warning")
         return None
 

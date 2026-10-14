@@ -8,7 +8,7 @@ blocklist: a tag nobody thought of is unwrapped, never passed through.
 
 import html
 import re
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from selectolax.parser import HTMLParser, Node
 
@@ -64,7 +64,13 @@ def _render(node: Node, images: list[str], base_url: str) -> list[str]:
         src = node.attributes.get("data-src") or node.attributes.get("src")
         if not src:
             return []
-        images.append(urljoin(base_url, src))
+        resolved = urljoin(base_url, src)
+        # An inline data: or javascript: image is not a fetchable address, and
+        # fetch_pages would fail the whole batch on it with a bare ConnectError.
+        # Dropped here rather than kept as a placeholder nothing can resolve.
+        if urlparse(resolved).scheme not in ("http", "https"):
+            return []
+        images.append(resolved)
         return [f"{{{{img:{len(images) - 1}}}}}"]
 
     inner = _children(node, images, base_url)

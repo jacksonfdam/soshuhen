@@ -74,3 +74,15 @@ def test_a_body_with_nothing_left_is_unavailable():
 def test_bare_top_level_text_is_wrapped_in_a_paragraph():
     body, _ = clean_chapter_html("Loose text<br>more<p>Para</p>", BASE)
     assert body == "<p>Loose text<br/>more</p><p>Para</p>"
+
+
+def test_images_that_are_not_http_urls_are_dropped_and_numbering_stays_consecutive():
+    body, images = clean_chapter_html(
+        '<p>a <img src="data:image/png;base64,xx"> b <img src="javascript:alert(1)">'
+        ' c <img src="/x.png"></p>',
+        BASE,
+    )
+    assert images == ["https://site.test/x.png"]
+    assert "{{img:0}}" in body and "{{img:1}}" not in body
+    assert "data:" not in body and "javascript:" not in body
+    assert "a" in body and "b" in body and "c" in body
