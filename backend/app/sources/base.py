@@ -7,6 +7,7 @@ which the downloader fetches; a prose source returns the chapter's text.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from typing import ClassVar
 from urllib.parse import urlsplit
@@ -50,6 +51,9 @@ class ChapterRef:
     title: str | None = None
     volume: str | None = None
     language: str = "en"
+    # When a source stops serving this chapter to the signed-in account. None,
+    # for every source but one, means it never expires.
+    available_until: datetime | None = None
 
 
 @dataclass(frozen=True)

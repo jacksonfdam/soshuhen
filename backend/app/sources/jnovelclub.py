@@ -1,0 +1,207 @@
+"""J-Novel Club (j-novel.club): pre-publication parts of licensed light novels.
+
+A publisher, not an aggregator. Its catalogue answers without signing in; a
+part's text needs the Premium member's token (sources/jnovel_auth.py). Every
+part's XHTML carries a note asking that it not be turned into EPUBs - the user
+chose to, for personal reading, knowing that (see the design spec).
+
+Part numbers already run across the whole series (The Apothecary Diaries
+volume 16 is parts 204-216), so they are the chapter numbers as they come.
+"""
+
+import re
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import ClassVar
+from urllib.parse import urlsplit
+
+from selectolax.parser import HTMLParser
+
+from app.sources.base import (
+    Candidate,
+    ChapterRef,
+    ChapterText,
+    ChapterUnavailable,
+    NotConfigured,
+    PageRef,
+    ProseSource,
+)
+from app.sources.jnovel_auth import TokenKeeper
+from app.sources.net import CatalogueRow, get_client
+from app.sources.prose import clean_chapter_html
+from app.text_utils import best_similarity
+
+SITE = "jnovelclub"
+API_BASE = "https://labs.j-novel.club"
+WEB_BASE = "https://j-novel.club"
+JSON = {"format": "json"}
+
+_SERIES_SLUG = re.compile(r"/series/([^/?#]+)")
+_PART_SLUG = re.compile(r"/read/([^/?#]+)")
+
+# J-Novel Club's own words for each refusal, so a skipped chapter says why.
+REFUSALS = {
+    402: "needs a purchase on J-Novel Club",
+    403: "needs a J-Novel Club membership, or the sign-in no longer grants it",
+    404: "is gone from J-Novel Club",
+    410: "has expired on J-Novel Club",
+    451: "is not available in your region",
+}
+
+
+def expires_at(publishing: datetime) -> datetime:
+    """When a Premium member stops being able to read a volume's parts.
+
+    The API's own `expiration` is null or wrong (null for every part of a
+    volume published 2026-10-09). J-Novel Club's web app and jncep compute it
+    from the volume's publishing date: the 15th, 10:00, of that month - or the
+    next month once the volume publishes on the 9th or later - moved to Monday
+    when that falls on a weekend. The web app builds the time in the browser's
+    own timezone; jncep uses UTC, and so does this, since a warning given a
+    week ahead does not depend on the hour.
+    """
+    year, month = publishing.year, publishing.month
+    if publishing.day >= 9:
+        month += 1
+        if month == 13:
+            year, month = year + 1, 1
+    day = datetime(year, month, 15, 10, tzinfo=UTC)
+    if day.weekday() == 5:
+        day += timedelta(days=2)
+    elif day.weekday() == 6:
+        day += timedelta(days=1)
+    return day
+
+
+def _instant(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
+
+
+class JNovelClubSource(ProseSource):
+    site: ClassVar[str] = SITE
+    domains: ClassVar[tuple[str, ...]] = ("j-novel.club", "labs.j-novel.club")
+
+    def __init__(self, keeper: TokenKeeper | None = None, client=None, now=None) -> None:
+        self.client = client or get_client(CatalogueRow(key=SITE, base_url=API_BASE))
+        self.keeper = keeper or TokenKeeper(self.client)
+        self._now = now or (lambda: datetime.now(UTC))
+
+    async def search(self, titles: list[str], *, limit: int = 8) -> list[Candidate]:
+        query = titles[0] if titles else ""
+        response = await self.client.get(
+            f"{API_BASE}/app/v2/series", params={**JSON, "query": query}
+        )
+        response.raise_for_status()
+        return self.parse_search(response.json(), titles)[:limit]
+
+    async def list_chapters(self, url: str, *, language: str = "en") -> list[ChapterRef]:
+        match = _SERIES_SLUG.search(urlsplit(url).path)
+        if match is None:
+            raise ChapterUnavailable(f"{url} is not a J-Novel Club series address")
+        # Signed in, `owned` is filled in, and owned volumes' parts never
+        # expire; anonymous still lists everything, so a lapsed sign-in does
+        # not stop discovery.
+        headers = await self._auth_headers(required=False)
+        response = await self.client.get(
+            f"{API_BASE}/app/v2/series/{match.group(1)}/aggregate", params=JSON, headers=headers
+        )
+        response.raise_for_status()
+        return self.parse_chapters(response.json())
+
+    async def fetch_chapter(self, chapter_url: str, *, language: str = "en") -> ChapterText:
+        match = _PART_SLUG.search(urlsplit(chapter_url).path)
+        if match is None:
+            raise ChapterUnavailable(f"{chapter_url} is not a J-Novel Club part address")
+        part = await self.client.get(f"{API_BASE}/app/v2/parts/{match.group(1)}", params=JSON)
+        if part.status_code == 404:
+            raise ChapterUnavailable(f"{chapter_url} {REFUSALS[404]}")
+        part.raise_for_status()
+        part_id = part.json()["id"]
+
+        for attempt in (1, 2):
+            token = await self.keeper.token()
+            response = await self.client.get(
+                f"{API_BASE}/embed/v2/{part_id}/data.xhtml",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if response.status_code == 401 and attempt == 1:
+                # A lapsed token: renew once (from .env) or learn that the
+                # saved one is dead, which the next token() call then says.
+                await self.keeper.invalidate(token)
+                continue
+            if response.status_code == 401:
+                raise NotConfigured("J-Novel Club refused the sign-in; sign in again")
+            if response.status_code in REFUSALS:
+                raise ChapterUnavailable(f"{chapter_url} {REFUSALS[response.status_code]}")
+            response.raise_for_status()
+            return self.parse_chapter(response.text, chapter_url)
+        raise AssertionError("unreachable")
+
+    async def _auth_headers(self, *, required: bool) -> dict[str, str]:
+        try:
+            return {"Authorization": f"Bearer {await self.keeper.token()}"}
+        except NotConfigured:
+            if required:
+                raise
+            return {}
+
+    def parse_search(self, payload: dict, titles: list[str]) -> list[Candidate]:
+        candidates: list[Candidate] = []
+        for item in payload.get("series") or []:
+            # The same catalogue carries J-Novel Club's manga, often under the
+            # very same title as the novel it adapts.
+            if item.get("type") != "NOVEL" or not item.get("slug"):
+                continue
+            names = [n for n in (item.get("title"), item.get("shortTitle"),
+                                 item.get("originalTitle")) if n]
+            if not names:
+                continue
+            cover = (item.get("cover") or {}).get("thumbnailUrl") or None
+            candidates.append(
+                Candidate(
+                    source_site=SITE,
+                    source_url=f"{WEB_BASE}/series/{item['slug']}",
+                    title=names[0],
+                    cover_url=cover,
+                    alt_titles=names[1:],
+                    score=round(max((best_similarity(names, t) for t in titles), default=0.0), 4),
+                )
+            )
+        return sorted(candidates, key=lambda c: c.score, reverse=True)
+
+    def parse_chapters(self, payload: dict) -> list[ChapterRef]:
+        now = self._now()
+        chapters: list[ChapterRef] = []
+        for entry in payload.get("volumes") or []:
+            volume = entry.get("volume") or {}
+            publishing = _instant(volume.get("publishing"))
+            for part in entry.get("parts") or []:
+                launch = _instant(part.get("launch"))
+                # A part announced but not out yet answers 403 to everyone;
+                # listing it would queue a download that cannot succeed.
+                if launch is not None and launch > now:
+                    continue
+                expiry = None
+                if not part.get("preview") and not volume.get("owned") and publishing:
+                    expiry = expires_at(publishing)
+                chapters.append(
+                    ChapterRef(
+                        number=Decimal(part["number"]),
+                        url=f"{WEB_BASE}/read/{part['slug']}",
+                        title=part.get("title") or None,
+                        volume=str(volume["number"]) if volume.get("number") is not None else None,
+                        available_until=expiry,
+                    )
+                )
+        return sorted(chapters, key=lambda c: c.number)
+
+    def parse_chapter(self, xhtml: str, chapter_url: str) -> ChapterText:
+        body = HTMLParser(xhtml).body
+        if body is None:
+            raise ChapterUnavailable(f"{chapter_url} returned no chapter body")
+        text, images = clean_chapter_html(body.html, chapter_url)
+        return ChapterText(
+            title=None,
+            body=text,
+            images=[PageRef(url=url, headers={"Referer": f"{WEB_BASE}/"}) for url in images],
+        )
