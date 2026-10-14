@@ -90,7 +90,9 @@ def _render(node: Node, images: list[str], base_url: str) -> list[str]:
 
 def _text(value: str | None) -> str:
     cleaned = _INVALID_XML.sub("", (value or "").replace("\xa0", " "))
-    return html.escape(cleaned, quote=False)
+    # A literal `{{img:N}}` in the chapter text would otherwise be resolved as one of
+    # our image placeholders, or fail the EPUB when no such image exists.
+    return html.escape(cleaned, quote=False).replace("{", "&#123;")
 
 
 def _wrap_loose(pieces: list[str]) -> list[str]:

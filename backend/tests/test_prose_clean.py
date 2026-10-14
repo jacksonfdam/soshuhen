@@ -86,3 +86,11 @@ def test_images_that_are_not_http_urls_are_dropped_and_numbering_stays_consecuti
     assert "{{img:0}}" in body and "{{img:1}}" not in body
     assert "data:" not in body and "javascript:" not in body
     assert "a" in body and "b" in body and "c" in body
+
+
+def test_a_literal_placeholder_in_the_text_stays_text():
+    body, images = clean_chapter_html("<p>{{img:0}} literally</p>", BASE)
+    assert "{{img:" not in body
+    assert "literally" in body
+    assert images == []
+    _parses(body)
