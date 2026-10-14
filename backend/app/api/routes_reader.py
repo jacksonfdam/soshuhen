@@ -41,6 +41,10 @@ def service_errors() -> Iterator[None]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except IndexError as exc:
         raise HTTPException(status_code=404, detail="no such page") from exc
+    except service.ProseChapter as exc:
+        raise HTTPException(
+            status_code=409, detail="this is a light novel chapter; read it in Komga"
+        ) from exc
     except service.NoMapping as exc:
         raise HTTPException(
             status_code=409, detail="this series has no confirmed source yet"

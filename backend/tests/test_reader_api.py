@@ -449,3 +449,29 @@ async def test_a_page_that_is_not_an_image_is_a_page_failure_not_a_crash(client,
         )
     response = await client.get(f"/api/reader/chapters/{chapter_id}/pages/1")
     assert response.status_code == 502
+
+
+async def test_a_prose_chapter_is_refused_with_a_pointer_to_komga(client):
+    async with get_sessionmaker()() as session:
+        series_id = (
+            await session.execute(
+                text(
+                    "insert into series (canonical_title, slug, needs_review, meta, kind)"
+                    " values ('N', 'n', false, '{}'::jsonb, 'prose') returning id"
+                )
+            )
+        ).scalar_one()
+        chapter_id = (
+            await session.execute(
+                text(
+                    "insert into chapter (series_id, number, state)"
+                    " values (:s, 1, 'downloaded') returning id"
+                ),
+                {"s": series_id},
+            )
+        ).scalar_one()
+        await session.commit()
+
+    response = await client.get(f"/api/reader/chapters/{chapter_id}")
+    assert response.status_code == 409
+    assert "Komga" in response.json()["detail"]
