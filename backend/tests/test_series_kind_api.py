@@ -131,3 +131,34 @@ async def test_an_unknown_kind_value_is_rejected(client):
 async def test_setting_the_kind_of_a_missing_series_is_404(client):
     response = await client.post("/api/series/999999/kind", json={"kind": "prose"})
     assert response.status_code == 404
+
+
+async def _match_searches(series_id: int) -> int:
+    async with get_sessionmaker()() as session:
+        return (
+            await session.execute(
+                text("select count(*) from job where type = 'match_search' and series_id = :id"),
+                {"id": series_id},
+            )
+        ).scalar_one()
+
+
+async def test_setting_the_kind_of_an_unmapped_series_searches_again(client):
+    series_id = await _series(None)
+    await client.post(f"/api/series/{series_id}/kind", json={"kind": "prose"})
+    assert await _match_searches(series_id) == 1
+
+
+async def test_setting_the_kind_of_a_mapped_series_does_not_search_again(client):
+    series_id = await _series("comic")
+    async with get_sessionmaker()() as session:
+        await session.execute(
+            text(
+                "insert into source_mapping (series_id, source_site, source_url, active)"
+                " values (:id, 'comic-fake', 'https://comic.test/m/1', true)"
+            ),
+            {"id": series_id},
+        )
+        await session.commit()
+    await client.post(f"/api/series/{series_id}/kind", json={"kind": "prose"})
+    assert await _match_searches(series_id) == 0

@@ -651,6 +651,23 @@ async def set_kind(series_id: int, body: KindIn, session: Session) -> dict[str, 
     )
     if result.first() is None:
         raise HTTPException(status_code=404, detail="series not found")
+    # Review's candidates were searched as the old kind. A mapped series has already
+    # chosen its source, so only an unmapped one has stale candidates to replace.
+    mapped = (
+        await session.execute(
+            text("select 1 from source_mapping where series_id = :id and active limit 1"),
+            {"id": series_id},
+        )
+    ).first() is not None
+    if not mapped:
+        await repo.enqueue(
+            session,
+            JobType.MATCH_SEARCH,
+            {"series_id": series_id},
+            priority=0,
+            series_id=series_id,
+            dedupe_key=f"match_search:{series_id}",
+        )
     await session.commit()
     return {"ok": True, "kind": body.kind}
 
