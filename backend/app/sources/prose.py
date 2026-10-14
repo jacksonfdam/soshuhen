@@ -26,7 +26,7 @@ DROPPED = {"script", "style", "iframe", "noscript", "form", "button", "svg", "na
 # a bare div, and unwrapping those would run the whole chapter together.
 CONTAINERS = {"div", "section", "article", "main", "center"}
 # XML 1.0 refuses these outright, and a single one makes the EPUB unreadable.
-_INVALID_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
+_INVALID_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 _BLOCK_OPEN = re.compile(r"^<(p|blockquote|h[1-4]|ul|ol|li|hr)\b")
 
 
