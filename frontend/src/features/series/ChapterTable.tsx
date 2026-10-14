@@ -199,27 +199,25 @@ export function ChapterTable({
                       Read
                     </Link>
                   )}
-                  {komgaHref && chapter.komga_book_id && prose && (
+                  {komgaHref && chapter.komga_book_id && (
+                    // Komga routes an EPUB to its own reader and everything else to the
+                    // image reader, which shows a blank page for a book of text.
                     <a
-                      href={`${komgaHref}/book/${chapter.komga_book_id}/read?page=1&incognito=false`}
+                      href={`${komgaHref}/book/${chapter.komga_book_id}/${
+                        prose ? 'read-epub' : 'read?page=1&incognito=false'
+                      }`}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 rounded-lg px-space-sm py-1 font-mono text-label-sm text-primary transition-colors hover:bg-primary/[0.12]"
+                      title={prose ? undefined : 'Open in Komga'}
+                      aria-label={prose ? undefined : 'Open in Komga'}
+                      className={
+                        prose
+                          ? 'inline-flex items-center gap-1.5 rounded-lg px-space-sm py-1 font-mono text-label-sm text-primary transition-colors hover:bg-primary/[0.12]'
+                          : 'inline-flex items-center rounded-lg px-space-xs py-1 text-outline transition-colors hover:bg-surface-container-high hover:text-on-surface'
+                      }
                     >
-                      <Icon name="book" className="h-3.5 w-3.5" />
-                      Read in Komga
-                    </a>
-                  )}
-                  {komgaHref && chapter.komga_book_id && !prose && (
-                    <a
-                      href={`${komgaHref}/book/${chapter.komga_book_id}/read?page=1&incognito=false`}
-                      target="_blank"
-                      rel="noreferrer"
-                      title="Open in Komga"
-                      aria-label="Open in Komga"
-                      className="inline-flex items-center rounded-lg px-space-xs py-1 text-outline transition-colors hover:bg-surface-container-high hover:text-on-surface"
-                    >
-                      <Icon name="link" className="h-3.5 w-3.5" />
+                      <Icon name={prose ? 'book' : 'link'} className="h-3.5 w-3.5" />
+                      {prose && 'Read in Komga'}
                     </a>
                   )}
                 </div>
