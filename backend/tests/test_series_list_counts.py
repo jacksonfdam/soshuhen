@@ -126,3 +126,29 @@ async def test_providers_and_total_chapters_still_come_from_the_entries_without_
     assert item["known"] == 0
     assert item["providers"] == ["anilist", "mal"]
     assert item["total_chapters"] == 9
+
+
+async def test_detail_counts_each_chapter_once_with_two_list_entries(client):
+    # LIST_SQL_ONE carried the same cross join after #34 fixed LIST_SQL, so the
+    # detail header reported double what the library card did for the same series.
+    async with get_sessionmaker()() as session:
+        series_id = await _insert_series(session, "Both Providers", "both-providers")
+        await _insert_entry(session, series_id, "mal", "6", total=24)
+        await _insert_entry(session, series_id, "anilist", "7", total=25)
+        await _insert_chapter(session, series_id, 1, "downloaded")
+        await _insert_chapter(session, series_id, 2, "queued")
+        await _insert_chapter(session, series_id, 3, "failed")
+        await _insert_chapter(session, series_id, 4, "known")
+        await session.commit()
+
+    detail = (await client.get(f"/api/series/{series_id}")).json()["series"]
+    assert detail["downloaded"] == 1
+    assert detail["known"] == 4
+    assert detail["in_flight"] == 1
+    assert detail["failed"] == 1
+    assert detail["providers"] == ["anilist", "mal"]
+    assert detail["total_chapters"] == 25
+
+    card = (await client.get("/api/series")).json()[0]
+    for key in ("downloaded", "known", "in_flight", "failed"):
+        assert detail[key] == card[key]
