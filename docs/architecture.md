@@ -100,6 +100,19 @@ is searched only when asked.
 
 **Do not remove a stop to make something more automatic.** They are the product, not friction in it.
 
+## Comics and prose
+
+`series.kind` routes a series to one kind of source. `match_search` asks the registry only for
+sources of the series' kind, and the mapping route rejects with 422 a source of the other kind, so a
+novel cannot be mapped to an image site or the reverse. A null kind behaves as `comic`.
+
+The download handlers read the kind once and branch once, at the archive write. A comic goes through
+`list_pages`, the reader cache and `write_cbz`. A prose chapter goes through
+`ProseSource.fetch_chapter`, fetches its images through the same rate-limited fetcher, and goes to
+`write_epub`. Batching, leasing, retries and the `ChapterUnavailable` to `PermanentError` mapping sit
+outside the branch and are shared. Prose does not use the reader cache, so the image reader answers
+409 for a prose chapter; Komga's own reader is where a novel is read.
+
 ## Live progress
 
 A handler inserts into `job_event` and calls `pg_notify('jobs', ...)`. The API holds one dedicated
