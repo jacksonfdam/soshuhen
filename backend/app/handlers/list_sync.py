@@ -75,6 +75,46 @@ def series_kind_from_entries(kinds: set[str | None]) -> str | None:
     return None
 
 
+# series_kind_from_entries speaks provider vocabulary, which the merge guard
+# needs; the column speaks the pipeline's own, which is all a handler routing a
+# download needs to know.
+_KIND_COLUMN = {"MANGA": "comic", "NOVEL": "prose"}
+
+
+def series_kind_column(kinds: set[str | None]) -> str | None:
+    """The series.kind value for a series holding entries of these kinds."""
+    return _KIND_COLUMN.get(series_kind_from_entries(kinds) or "")
+
+
+async def refresh_series_kind(session: AsyncSession, series_id: int) -> None:
+    """Recompute series.kind from every entry the series holds.
+
+    From all of them rather than from the entry that just arrived, so a comic
+    entry joining a prose series turns it comic, the safe direction from #88.
+    A kind the user set by hand is theirs: a provider that cannot tell a light
+    novel from a manga does not get to overrule them on every sync.
+    """
+    rows = (
+        await session.execute(
+            text("select provider, raw from list_entry where series_id = :id"),
+            {"id": series_id},
+        )
+    ).all()
+    kind = series_kind_column({entry_kind_from_raw(provider, raw) for provider, raw in rows})
+    await session.execute(
+        text(
+            """
+            update series
+               set kind = cast(:kind as text)
+             where id = :id
+               and kind is distinct from cast(:kind as text)
+               and not coalesce((meta ->> 'kind_locked')::boolean, false)
+            """
+        ),
+        {"id": series_id, "kind": kind},
+    )
+
+
 async def load_access_token(session: AsyncSession, provider: Provider) -> str:
     try:
         return await access_token_for(session, provider)
@@ -563,6 +603,7 @@ async def handle(ctx: JobContext) -> None:
             continue
         series_id, is_new = await resolve_series(ctx.session, dto)
         await upsert_entry(ctx.session, dto, series_id)
+        await refresh_series_kind(ctx.session, series_id)
         if is_new:
             created += 1
             if auto_search:
