@@ -19,6 +19,8 @@ export interface Series {
   failed: number
   total_chapters: number | null
   auto_download: boolean
+  /** Parts the source stops serving within a week and that are not downloaded. */
+  expiring: { count: number; earliest: string } | null
   /** Comic or prose. Null when no provider said, which behaves as comic. */
   kind: 'comic' | 'prose' | null
   state: SeriesState
@@ -62,6 +64,8 @@ export interface SeriesChapter {
   file_path: string | null
   /** Komga's own id for the book, once it has indexed the downloaded file. */
   komga_book_id: string | null
+  /** When the source stops serving this chapter. Null means it never expires. */
+  available_until: string | null
 }
 
 export type ReaderMode = 'paged_ltr' | 'paged_rtl' | 'long_strip' | 'double'

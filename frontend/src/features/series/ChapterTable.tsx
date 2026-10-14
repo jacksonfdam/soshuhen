@@ -181,6 +181,15 @@ export function ChapterTable({
                       {chapter.title}
                     </span>
                   )}
+                  {chapter.available_until && (
+                    <span className="font-mono text-label-sm text-outline">
+                      until{' '}
+                      {new Date(chapter.available_until).toLocaleDateString(undefined, {
+                        day: 'numeric',
+                        month: 'short',
+                      })}
+                    </span>
+                  )}
                 </div>
               </td>
               <td className="w-0 whitespace-nowrap px-space-md py-space-sm">

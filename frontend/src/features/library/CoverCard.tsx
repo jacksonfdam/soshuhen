@@ -167,6 +167,15 @@ export function CoverCard({
 function pipelineNote(
   series: Series,
 ): { text: string; icon: 'warning' | 'download' | 'check' | 'sync'; tone: string } | null {
+  // First: a part that expires before it is downloaded is gone for good, which
+  // outranks anything else this line could say.
+  if (series.expiring) {
+    const day = new Date(series.expiring.earliest).toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'short',
+    })
+    return { text: `${series.expiring.count} parts expire ${day}`, icon: 'warning', tone: 'text-warning' }
+  }
   if (series.state === 'needs_review') {
     return { text: 'Needs a source mapping', icon: 'warning', tone: 'text-error' }
   }
