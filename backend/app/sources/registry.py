@@ -10,21 +10,28 @@ from Postgres.
 """
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import settings_store
+from app.config import get_settings
+from app.db import get_sessionmaker
 from app.sources.asurascans import AsuraScansSource
 from app.sources.base import RegisteredSource, SiteSource, Source, install_registry
 from app.sources.comick import SITES, ComickSource
 from app.sources.empirenovel import EmpireNovelSource
+from app.sources.jnovel_auth import JncSession, TokenKeeper
+from app.sources.jnovelclub import API_BASE as JNC_API_BASE
+from app.sources.jnovelclub import SITE as JNC_SITE
+from app.sources.jnovelclub import JNovelClubSource
 from app.sources.lolobun import LolobunSource
 from app.sources.mangadex import MangaDexSource
 from app.sources.mangafire.source import MangaFireSource
 from app.sources.mangageko import MangaGekoSource
-from app.sources.net import CatalogueRow
+from app.sources.net import CatalogueRow, get_client
 from app.sources.novelight import NovelightSource
 from app.sources.templates import TemplateSource
 from app.sources.templates.comiciviewer import ComiciViewerSource
@@ -114,7 +121,7 @@ def native_keys() -> frozenset[str]:
 
 # Native sites built per reload rather than at import, because they need
 # something only the database holds.
-CONFIGURED_NATIVES = frozenset({"mangafire"})
+CONFIGURED_NATIVES = frozenset({"mangafire", "jnovelclub"})
 
 
 async def _configured_natives(session: AsyncSession) -> dict[str, Source]:
@@ -127,7 +134,32 @@ async def _configured_natives(session: AsyncSession) -> dict[str, Source]:
     reloads, so toggling the site is enough.
     """
     waf_pass = await settings_store.get(session, settings_store.MANGAFIRE_WAF_PASS)
-    return {"mangafire": MangaFireSource(waf_pass=waf_pass)}
+    return {"mangafire": MangaFireSource(waf_pass=waf_pass), "jnovelclub": build_jnovelclub()}
+
+
+def build_jnovelclub() -> JNovelClubSource:
+    """J-Novel Club, signed in from .env when it says how, from Settings otherwise.
+
+    The Settings token is looked up each time one is needed rather than read
+    here: the workers build this registry once at boot, and a sign-in made in
+    the web interface afterwards would otherwise never reach the download lane.
+    """
+    settings = get_settings()
+    client = get_client(CatalogueRow(key=JNC_SITE, base_url=JNC_API_BASE))
+    if settings.jnc_login and settings.jnc_password:
+        keeper = TokenKeeper(client, login_name=settings.jnc_login, password=settings.jnc_password)
+    else:
+        keeper = TokenKeeper(client, load_stored=load_stored_jnc_session)
+    return JNovelClubSource(keeper=keeper, client=client)
+
+
+async def load_stored_jnc_session() -> JncSession | None:
+    async with get_sessionmaker()() as session:
+        token = await settings_store.stored(session, settings_store.JNC_TOKEN)
+        expires = await settings_store.stored(session, settings_store.JNC_TOKEN_EXPIRES_AT)
+    if not token or not expires:
+        return None
+    return JncSession(token=token, expires_at=datetime.fromisoformat(expires))
 
 
 def _build(row: Any, natives: dict[str, Source] | None = None) -> Source | None:
