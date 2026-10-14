@@ -244,3 +244,34 @@ async def test_a_cover_in_an_unrecognised_format_ships_the_chapter_without_one(m
 
     assert await cover_for(Ctx(), 1) is None
     assert any("cover unavailable" in line for line in logged)
+
+
+async def test_a_prose_series_on_a_comic_source_is_refused_before_the_chapter_is_touched():
+    stub = Stub(lambda path: (200, "image/png", PNG))
+    try:
+        url = f"{stub.base_url}/n/1/1"
+        install_registry({stub.key: RegisteredSource(ComicOnly(stub.key), stub.base_url)})
+        async with get_sessionmaker()() as session:
+            series_id = await _series(session, stub.key)
+            await _make_prose(session, series_id)
+            await _catalogue(session, stub.key, stub.base_url)
+            chapter_id = await _chapter(session, series_id, "1", url)
+            before = (
+                await session.execute(
+                    text("select state from chapter where id = :id"), {"id": chapter_id}
+                )
+            ).scalar_one()
+            await repo.enqueue(session, JobType.DOWNLOAD_CHAPTER, {"chapter_id": chapter_id})
+            await session.commit()
+            job = await repo.lease(session, types=EVERY_TYPE)
+            await session.commit()
+            with pytest.raises(PermanentError, match="comic source"):
+                await download_chapter.handle(JobContext(session=session, job=job))
+            after = (
+                await session.execute(
+                    text("select state from chapter where id = :id"), {"id": chapter_id}
+                )
+            ).scalar_one()
+        assert after == before
+    finally:
+        stub.close()

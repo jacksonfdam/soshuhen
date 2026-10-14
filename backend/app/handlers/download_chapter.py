@@ -229,13 +229,18 @@ async def handle(ctx: JobContext) -> None:
     if row["chapter_url"] is None:
         raise PermanentError(f"chapter {chapter_id} has no source url of its own")
 
-    if kind != "prose":
-        mapped = source_for_url(row["chapter_url"])
-        if isinstance(mapped, ProseSource):
-            raise PermanentError(
-                f"series {row['series_id']} is a comic but its mapping points at "
-                f"{mapped.site}, a prose source - choose a new mapping in Review"
-            )
+    # Both mismatch directions refuse before the chapter is marked downloading, so a
+    # refused job leaves the state it found rather than one the retry ladder has to undo.
+    mapped = source_for_url(row["chapter_url"])
+    if kind != "prose" and isinstance(mapped, ProseSource):
+        raise PermanentError(
+            f"series {row['series_id']} is a comic but its mapping points at "
+            f"{mapped.site}, a prose source - choose a new mapping in Review"
+        )
+    if kind == "prose" and not isinstance(mapped, ProseSource):
+        raise PermanentError(
+            f"series {row['series_id']} is prose but {mapped.site} is a comic source"
+        )
 
     await ctx.session.execute(
         text("update chapter set state = 'downloading' where id = :id"), {"id": chapter_id}
@@ -248,10 +253,6 @@ async def handle(ctx: JobContext) -> None:
         from app.handlers.prose_download import cover_for, write_prose_chapter
 
         source, client, semaphore = await _site(ctx, row)
-        if not isinstance(source, ProseSource):
-            raise PermanentError(
-                f"series {row['series_id']} is prose but {source.site} is a comic source"
-            )
         cover = await cover_for(ctx, row["series_id"])
         async with semaphore:
             try:
