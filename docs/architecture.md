@@ -106,6 +106,14 @@ A handler inserts into `job_event` and calls `pg_notify('jobs', ...)`. The API h
 asyncpg connection with `LISTEN` on that channel and pushes to the browser over SSE. Nothing polls,
 anywhere. A screen that polls is doing it wrong.
 
+The source registry travels the same way in the other direction. Every process builds its own in
+memory at boot. When Settings enables or disables a site, or saves a setting a source is built from
+(the MangaFire cookie), the API calls `pg_notify('sources_changed')` in the same transaction and
+rebuilds its own; each worker holds a `LISTEN` on that channel and rebuilds on every notification,
+and once more whenever the listening connection is (re)established, which covers a change committed
+while it was not listening. Without it, a site enabled in Settings was searched and downloaded by
+nothing until the containers restarted.
+
 ## Concurrency
 
 The worker runs N asyncio tasks, N from the `download_concurrency` setting, default 3.
