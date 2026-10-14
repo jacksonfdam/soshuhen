@@ -47,6 +47,24 @@ export function useSeriesDetail(id: number) {
     [id, setData],
   )
 
+  // Same rollback-on-rejection shape as the auto-download toggle above.
+  const setKind = useCallback(
+    async (kind: 'comic' | 'prose') => {
+      let previous: SeriesDetail | null = null
+      setData((current) => {
+        previous = current
+        return current ? { ...current, series: { ...current.series, kind } } : current
+      })
+      try {
+        await api.setKind(id, kind)
+      } catch (failure) {
+        if (previous) setData(previous)
+        throw failure
+      }
+    },
+    [id, setData],
+  )
+
   // Progress is not like the two writes around it. A status or an auto-download
   // toggle is stored on the spot; a chapter is only *queued*, and this screen
   // used to write it into the loaded detail and never look again — showing a
@@ -156,6 +174,7 @@ export function useSeriesDetail(id: number) {
     error,
     reload,
     toggleAutoDownload,
+    setKind,
     setProgress,
     setListStatus,
     saveNotes,

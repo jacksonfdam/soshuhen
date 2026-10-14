@@ -60,6 +60,10 @@ export function SeriesHeader({
         {series.status && <StatusPill status={series.status} />}
         {series.state === 'needs_review' && <Badge tone="error">Needs review</Badge>}
         {series.auto_download && <Badge tone="secondary">Auto-download active</Badge>}
+        {/* A provider format that already says novel would repeat it. */}
+        {series.kind === 'prose' && !format?.toLowerCase().includes('novel') && (
+          <Badge tone="tertiary">Light novel</Badge>
+        )}
         {/* The reader is Komga's, not this application's. Offered only once a
             scan has matched the series there and someone has said what address
             Komga answers on. */}
