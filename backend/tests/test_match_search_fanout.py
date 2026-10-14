@@ -15,6 +15,7 @@ from app.enums import JobType, Lane, types_for
 from app.handlers import match_search
 from app.handlers.base import JobContext
 from app.queue import repo
+from app.sources import base
 from app.sources.base import Candidate
 
 pytestmark = pytest.mark.asyncio
@@ -117,7 +118,7 @@ async def test_a_hanging_source_does_not_cost_the_others_their_candidates(monkey
     monkeypatch.setattr(
         match_search,
         "all_sources",
-        lambda: [
+        lambda kind=None: [
             FakeSource("fast", score=0.9),
             FakeSource("slow", delay=5.0),
             FakeSource("broken", fail=True),
@@ -146,7 +147,7 @@ async def test_every_failure_is_named_in_the_job_log(monkeypatch):
     monkeypatch.setattr(
         match_search,
         "all_sources",
-        lambda: [FakeSource("fast"), FakeSource("broken", fail=True)],
+        lambda kind=None: [FakeSource("fast"), FakeSource("broken", fail=True)],
     )
     async with get_sessionmaker()() as session:
         series_id = await _series(session)
@@ -166,7 +167,7 @@ async def test_priority_breaks_a_tie_between_equal_scores(monkeypatch):
     monkeypatch.setattr(
         match_search,
         "all_sources",
-        lambda: [FakeSource("second", score=0.7), FakeSource("first", score=0.7)],
+        lambda kind=None: [FakeSource("second", score=0.7), FakeSource("first", score=0.7)],
     )
     async with get_sessionmaker()() as session:
         series_id = await _series(session)
@@ -194,7 +195,7 @@ async def test_the_searches_run_together_rather_than_one_after_another(monkeypat
     monkeypatch.setattr(
         match_search,
         "all_sources",
-        lambda: [FakeSource(f"site{n}", delay=0.3) for n in range(3)],
+        lambda kind=None: [FakeSource(f"site{n}", delay=0.3) for n in range(3)],
     )
     async with get_sessionmaker()() as session:
         series_id = await _series(session)
@@ -206,3 +207,53 @@ async def test_the_searches_run_together_rather_than_one_after_another(monkeypat
         await session.commit()
 
     assert elapsed < 0.7, f"searches look sequential: {elapsed:.2f}s"
+
+
+async def test_a_prose_series_only_asks_prose_sources():
+    asked: list[str] = []
+
+    class ComicFake(base.Source):
+        site = "comic-fake"
+        domains = ()
+
+        async def search(self, titles, *, limit=8):
+            asked.append(self.site)
+            return []
+
+        async def list_chapters(self, url, *, language="en"):
+            return []
+
+        async def list_pages(self, chapter_url, *, language="en"):
+            return []
+
+    class ProseFake(base.ProseSource):
+        site = "prose-fake"
+        domains = ()
+
+        async def search(self, titles, *, limit=8):
+            asked.append(self.site)
+            return []
+
+        async def list_chapters(self, url, *, language="en"):
+            return []
+
+        async def fetch_chapter(self, chapter_url, *, language="en"):
+            raise NotImplementedError
+
+    base.install_registry(
+        {
+            "comic-fake": base.RegisteredSource(ComicFake(), "https://c.test"),
+            "prose-fake": base.RegisteredSource(ProseFake(), "https://p.test"),
+        }
+    )
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session, "Some Novel")
+        await session.execute(
+            text("update series set kind = 'prose' where id = :id"), {"id": series_id}
+        )
+        await session.commit()
+        ctx = await _context(session, series_id)
+        await match_search.handle(ctx)
+        await session.commit()
+
+    assert asked == ["prose-fake"]

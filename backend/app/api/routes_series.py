@@ -17,12 +17,13 @@ from app.api.reading_frequency import reading_frequency
 from app.api.reading_recency import LAST_READ_AT
 from app.enums import JobType, ListStatus, ProgressSource, Provider
 from app.handlers.batching import queue_batches
+from app.handlers.match_search import series_kind
 from app.handlers.media_enrich import is_stale
 from app.handlers.progress_write import forward_only
 from app.providers import get_source
 from app.queue import repo
 from app.series_removal import remove_series
-from app.sources import source_for_url
+from app.sources import kind_of, source_for_url
 
 router = APIRouter(prefix="/api/series", tags=["series"])
 
@@ -521,6 +522,19 @@ async def confirm_mapping(series_id: int, body: MappingIn, session: Session) -> 
         source = source_for_url(body.source_url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # The one place a person can still cross the comic/prose boundary by hand -
+    # a pasted link - so it is refused here rather than discovered as a
+    # download that writes the wrong kind of file.
+    expected = await series_kind(session, series_id)
+    if kind_of(source) != expected:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{source.site} publishes {kind_of(source)}, and this series is {expected}. "
+                "Change the series kind first if it is wrong."
+            ),
+        )
 
     await session.execute(
         text("update source_mapping set active = false where series_id = :series_id"),

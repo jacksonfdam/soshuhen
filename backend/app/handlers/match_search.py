@@ -14,7 +14,7 @@ from app import settings_store
 from app.enums import JobType
 from app.handlers.base import JobContext, PermanentError, register
 from app.sources import Candidate, all_sources
-from app.sources.base import Source
+from app.sources.base import SiteSource
 
 
 async def titles_for_series(session: AsyncSession, series_id: int) -> list[str]:
@@ -46,6 +46,15 @@ async def titles_for_series(session: AsyncSession, series_id: int) -> list[str]:
             seen.add(title.casefold())
             titles.append(title)
     return titles
+
+
+async def series_kind(session: AsyncSession, series_id: int) -> str:
+    """The kind to search as. Unknown searches as comic, which is what every
+    series did before the column existed."""
+    kind = (
+        await session.execute(text("select kind from series where id = :id"), {"id": series_id})
+    ).scalar_one_or_none()
+    return kind or "comic"
 
 
 async def store_candidates(
@@ -105,10 +114,11 @@ async def handle(ctx: JobContext) -> None:
     )
     timeout = await settings_store.get_int(ctx.session, settings_store.SOURCE_SEARCH_TIMEOUT)
     priorities = await source_priorities(ctx.session)
+    kind = await series_kind(ctx.session, series_id)
 
     gate = asyncio.Semaphore(max(1, concurrency))
     results = await asyncio.gather(
-        *(_search_one(source, titles, timeout, gate, ctx) for source in all_sources())
+        *(_search_one(source, titles, timeout, gate, ctx) for source in all_sources(kind=kind))
     )
     candidates = [candidate for found in results for candidate in found]
 
@@ -132,7 +142,7 @@ async def source_priorities(session: AsyncSession) -> dict[str, int]:
 
 
 async def _search_one(
-    source: Source,
+    source: SiteSource,
     titles: list[str],
     timeout: float,
     gate: asyncio.Semaphore,
