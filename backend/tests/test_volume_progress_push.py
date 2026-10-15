@@ -1,8 +1,10 @@
 """Komga reading moves each list's volumes forward, beside its chapters."""
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
+from app.api.main import app
 from app.db import get_sessionmaker
 from app.enums import JobType
 from app.handlers import progress_push
@@ -182,3 +184,11 @@ async def test_volume_books_the_lists_count_as_read_are_marked():
         books = [_book("V16", completed=False), _book("V17", completed=False)]
         await mark_read_up_to_lists(JobContext(session=session, job=job), client, series_id, books)
         assert client.marked == ["V16"]
+
+
+async def test_series_detail_entries_carry_the_volume_count():
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session, progress_volume=16)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        detail = (await http.get(f"/api/series/{series_id}")).json()
+    assert detail["entries"][0]["user_progress_volume"] == 16
