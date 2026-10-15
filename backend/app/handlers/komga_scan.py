@@ -8,12 +8,14 @@ discovery trust Komga instead of the filesystem.
 import asyncio
 import json
 import statistics
+from decimal import Decimal
 
 import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.downloader.paths import volume_number_from_filename
 from app.enums import JobType
 from app.handlers import progress_events
 from app.handlers.base import JobContext, PermanentError, register
@@ -376,6 +378,63 @@ async def mark_read_up_to_lists(ctx: JobContext, client, series_id: int, books) 
     return marked
 
 
+# A volume whose parts are unknown goes after every part: 100000 is past any
+# part number a series reaches, and adding the volume number keeps volumes in
+# order among themselves.
+UNPLACED_VOLUME_SORT = 100000
+
+
+def wanted_volume_metadata(number: Decimal, last_part: Decimal | None) -> dict:
+    """Where a volume sits among its series' parts: right after the last one."""
+    sort = float(last_part) + 0.5 if last_part is not None else UNPLACED_VOLUME_SORT + float(number)
+    shown = format(number.normalize(), "f")
+    return {"number": f"Vol. {shown}", "numberLock": True, "numberSort": sort, "numberSortLock": True}
+
+
+async def reconcile_volumes(ctx: JobContext, client, series_id: int, books) -> int:
+    """Match volume books to volume rows, and number them in Komga.
+
+    Locked, so Komga's own import of J-Novel Club's metadata cannot move the
+    book back; checked first, so a book already in place costs no request.
+    Failures are logged, not raised - chapters are this job's real work.
+    """
+    rows = (
+        await ctx.session.execute(
+            text("select id, number, last_part from volume where series_id = :s"),
+            {"s": series_id},
+        )
+    ).all()
+    by_number = {Decimal(str(row.number)): row for row in rows}
+    matched = 0
+    for book in books:
+        number = volume_number_from_filename(book.filename)
+        row = by_number.get(number) if number is not None else None
+        if row is None:
+            continue
+        matched += 1
+        await ctx.session.execute(
+            text(
+                """
+                update volume
+                   set komga_book_id = :book, state = 'downloaded',
+                       file_path = coalesce(file_path, :path)
+                 where id = :id
+                """
+            ),
+            {"book": book.id, "path": book.path, "id": row.id},
+        )
+        last_part = Decimal(str(row.last_part)) if row.last_part is not None else None
+        want = wanted_volume_metadata(number, last_part)
+        current = (book.number, book.number_sort, book.number_lock, book.number_sort_lock)
+        if current == (want["number"], want["numberSort"], True, True):
+            continue
+        try:
+            await client.update_book_metadata(book.id, want)
+        except Exception as exc:  # noqa: BLE001 - see the docstring
+            await ctx.log(f"could not place volume {number} in Komga: {exc}", level="warning")
+    return matched
+
+
 @register(JobType.KOMGA_SCAN)
 async def handle(ctx: JobContext) -> None:
     settings = get_settings()
@@ -417,12 +476,19 @@ async def handle(ctx: JobContext) -> None:
     # must not roll them back and leave the series without them forever.
     await ctx.session.commit()
 
+    volumes = await reconcile_volumes(ctx, client, series_id, books)
+    if volumes:
+        await ctx.log(f"{volumes} volumes matched")
+    await ctx.session.commit()
+
     caught_up = await mark_read_up_to_lists(ctx, client, series_id, books)
     if caught_up:
         await ctx.log(f"marked {caught_up} books read to match the lists")
 
     await ensure_series_cover(ctx, client, komga_series_id, series_id)
-    await ensure_book_covers(ctx, client, series_id, books)
+    # Volume books carry J-Novel Club's own cover; the backfill is for chapters.
+    chapter_books = [b for b in books if volume_number_from_filename(b.filename) is None]
+    await ensure_book_covers(ctx, client, series_id, chapter_books)
     await ctx.session.commit()
 
     suggestion_id = await completed_series(ctx.session, series_id)
