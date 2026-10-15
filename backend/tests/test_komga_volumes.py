@@ -3,8 +3,10 @@
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
+from app.api.main import app
 from app.db import get_sessionmaker
 from app.enums import JobType
 from app.handlers.base import JobContext
@@ -96,3 +98,37 @@ async def test_a_volume_already_in_place_is_not_patched_again():
                        number_lock=True, number_sort_lock=True)]
         await reconcile_volumes(ctx, komga, series_id, books)
         assert komga.patched == []
+
+
+async def test_series_detail_lists_its_volumes():
+    async with get_sessionmaker()() as session:
+        _, series_id = await _ctx(session)
+        await session.execute(
+            text(
+                "update volume set state = 'downloaded', last_updated = now(),"
+                " downloaded_updated = now() - interval '1 day'"
+            )
+        )
+        await session.commit()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        detail = (await http.get(f"/api/series/{series_id}")).json()
+    [volume] = detail["volumes"]
+    assert (volume["number"], volume["status"], volume["state"], volume["revised"]) == (
+        16.0, "owned", "downloaded", True,
+    )
+
+
+async def test_a_series_without_volumes_has_an_empty_list():
+    async with get_sessionmaker()() as session:
+        series_id = (
+            await session.execute(
+                text(
+                    "insert into series (canonical_title, slug, needs_review, meta)"
+                    " values ('B', 'b', false, '{}'::jsonb) returning id"
+                )
+            )
+        ).scalar_one()
+        await session.commit()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        detail = (await http.get(f"/api/series/{series_id}")).json()
+    assert detail["volumes"] == []

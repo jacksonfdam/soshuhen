@@ -397,6 +397,17 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
         ),
         {"id": series_id},
     )
+    volumes = await session.execute(
+        text(
+            """
+            select number, title, status, state, last_updated, komga_book_id,
+                   (downloaded_updated is not null and last_updated is not null
+                    and downloaded_updated < last_updated) as revised
+              from volume where series_id = :id order by number
+            """
+        ),
+        {"id": series_id},
+    )
     entries = await session.execute(
         text(
             """
@@ -437,6 +448,18 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
                 "available_until": c.available_until.isoformat() if c.available_until else None,
             }
             for c in chapters.all()
+        ],
+        "volumes": [
+            {
+                "number": float(v.number),
+                "title": v.title,
+                "status": v.status,
+                "state": v.state,
+                "last_updated": v.last_updated.isoformat() if v.last_updated else None,
+                "revised": bool(v.revised),
+                "komga_book_id": v.komga_book_id,
+            }
+            for v in volumes.all()
         ],
         "entries": [
             {
