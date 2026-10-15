@@ -14,8 +14,10 @@ from app.enums import JobType, ProgressSource, Provider
 from app.handlers import progress_events
 from app.handlers.base import JobContext, PermanentError, register
 from app.handlers.progress_write import forward_only
+from app.handlers.volume_progress import VolumeRow, furthest_volume, pushable_volume
 from app.komga import KomgaBook, from_settings
 from app.providers import get_source
+from app.providers.base import WriteRefused
 from app.providers.tokens import access_token_for, keyed_providers
 
 
@@ -52,6 +54,37 @@ async def chapter_numbers(session: AsyncSession, series_id: int) -> dict[str, De
     return {row.komga_book_id: Decimal(str(row.number)) for row in result.all()}
 
 
+async def volume_rows(session: AsyncSession, series_id: int) -> list[VolumeRow]:
+    rows = (
+        await session.execute(
+            text(
+                "select number, first_part, last_part, komga_book_id from volume"
+                " where series_id = :s"
+            ),
+            {"s": series_id},
+        )
+    ).all()
+    return [
+        VolumeRow(
+            number=Decimal(str(r.number)),
+            first_part=Decimal(str(r.first_part)) if r.first_part is not None else None,
+            last_part=Decimal(str(r.last_part)) if r.last_part is not None else None,
+            komga_book_id=r.komga_book_id,
+        )
+        for r in rows
+    ]
+
+
+async def chapter_books(session: AsyncSession, series_id: int) -> dict[Decimal, str | None]:
+    rows = (
+        await session.execute(
+            text("select number, komga_book_id from chapter where series_id = :s"),
+            {"s": series_id},
+        )
+    ).all()
+    return {Decimal(str(r.number)): r.komga_book_id for r in rows}
+
+
 async def entries_of(session: AsyncSession, series_id: int) -> list:
     """Every list entry this job may actually write to.
 
@@ -64,7 +97,7 @@ async def entries_of(session: AsyncSession, series_id: int) -> list:
         text(
             """
             select e.id, e.provider, e.provider_media_id, e.user_progress_chapter,
-                   e.total_chapters
+                   e.total_chapters, e.user_progress_volume, e.total_volumes
               from list_entry e
               left join provider_token t on t.provider = e.provider
              where e.series_id = :series_id
@@ -96,12 +129,17 @@ async def handle(ctx: JobContext) -> None:
     books = await client.books_of_series(row.komga_series_id)
     numbers = await chapter_numbers(ctx.session, series_id)
     furthest = highest_completed(books, numbers)
-
-    if furthest is None:
+    read_volume, volume_last_part = furthest_volume(
+        books, await volume_rows(ctx.session, series_id), await chapter_books(ctx.session, series_id)
+    )
+    # A finished volume is its parts read: chapters follow it to its last part,
+    # even when no chapter book of its own was ever finished.
+    candidates = [n for n in (furthest, volume_last_part) if n is not None]
+    if not candidates:
         await ctx.log("nothing marked read in komga", pct=100)
         return
 
-    read_chapter = int(furthest)
+    read_chapter = int(max(candidates))
     before = await progress_events.furthest_read(ctx.session, series_id)
     pushed = 0
 
@@ -112,18 +150,35 @@ async def handle(ctx: JobContext) -> None:
                 f"{entry.provider}: part {read_chapter} is past the list's {chapter} chapters,"
                 f" sending {chapter}"
             )
-        if forward_only(entry.user_progress_chapter, chapter) is None:
+        chapter_moves = forward_only(entry.user_progress_chapter, chapter) is not None
+        volume = pushable_volume(read_volume, entry.total_volumes, entry.user_progress_volume)
+        if not chapter_moves and volume is None:
             continue
+        # A volume-only move must not carry the chapter backwards.
+        chapter_sent = max(chapter, entry.user_progress_chapter)
         provider = Provider(entry.provider)
         token = await access_token_for(ctx.session, provider)
-        await get_source(provider).push_progress(
-            token, entry.provider_media_id, chapter
-        )
+        source = get_source(provider)
+        try:
+            await source.push_progress(token, entry.provider_media_id, chapter_sent, volume)
+        except WriteRefused:
+            if volume is None:
+                raise
+            # No provider documents what it does past its volume count; one it
+            # will not take must not hold chapter progress back with it.
+            await ctx.log(f"{provider} refused volume {volume}, sent chapter only", level="warning")
+            volume = None
+            await source.push_progress(token, entry.provider_media_id, chapter_sent)
         await ctx.session.execute(
-            text("update list_entry set user_progress_chapter = :n where id = :id"),
-            {"n": chapter, "id": entry.id},
+            text(
+                "update list_entry set user_progress_chapter = :c,"
+                " user_progress_volume = coalesce(cast(:v as integer), user_progress_volume)"
+                " where id = :id"
+            ),
+            {"c": chapter_sent, "v": volume, "id": entry.id},
         )
-        await ctx.log(f"{provider}: progress set to chapter {chapter}")
+        shown = f"chapter {chapter_sent}" + (f", volume {volume}" if volume is not None else "")
+        await ctx.log(f"{provider}: progress set to {shown}")
         pushed += 1
 
     # Guarded by `pushed` so the event cannot repeat: an entry that was not

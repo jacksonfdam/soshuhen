@@ -30,7 +30,9 @@ class RecordingSource:
         self.pushed = pushed
         self.provider = provider
 
-    async def push_progress(self, access_token: str, media_id: str, chapter: int) -> None:
+    async def push_progress(
+        self, access_token: str, media_id: str, chapter: int, volume: int | None = None
+    ) -> None:
         self.pushed.append((str(self.provider), chapter))
 
 
