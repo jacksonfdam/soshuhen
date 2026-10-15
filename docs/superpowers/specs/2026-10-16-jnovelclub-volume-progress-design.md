@@ -104,7 +104,8 @@ Per list entry, inside the existing loop:
 | volume | `pushable_volume(read_volume, total_volumes)`: capped at the total when known, then kept only if it beats `user_progress_volume` (null counts as 0) |
 
 - If either moves forward, there is one `push_progress` call.
-- When only the volume moves, the chapter sent is the larger of the entry's current chapter and the computed one, so it never goes backwards.
+- When only the volume moves, no chapter is sent at all: the stored chapter is only as fresh as the last sync, and resending it could pull back a list read further elsewhere. `push_progress` takes `chapter=None` for this.
+- A synced list whose `user_progress_volume` is still null (no sync since migration 0024) gets no volume: null there means unknown, not zero.
 - When neither moves, nothing is sent.
 - After a successful call, both columns are updated, and the log line names both: "mal: progress set to chapter 216, volume 16".
 - A comic series has no volume rows, so `read_volume` is None and every call is exactly today's.
