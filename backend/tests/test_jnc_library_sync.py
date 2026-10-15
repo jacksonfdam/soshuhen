@@ -1,10 +1,18 @@
 """The J-Novel Club library becomes volume rows, and new or revised ones download."""
 
+from datetime import UTC, datetime
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import text
 
 from app.db import get_sessionmaker
 from app.enums import JobType, Lane, lane_of
+from app.handlers.base import JobContext
+from app.handlers.jnc_library_sync import handle, needs_download
+from app.queue import repo
+from app.sources.base import ProseSource, RegisteredSource, SignInRequired, install_registry
+from app.sources.jnovelclub import OwnedVolume
 
 
 @pytest.fixture(autouse=True)
@@ -36,3 +44,170 @@ async def test_a_volume_is_unique_per_series_and_number():
         await session.execute(insert, {"s": series_id, "v": "VOL-16"})
         with pytest.raises(Exception, match="unique|duplicate"):
             await session.execute(insert, {"s": series_id, "v": "VOL-OTHER"})
+
+OLD = datetime(2026, 9, 1, tzinfo=UTC)
+NEW = datetime(2026, 10, 1, tzinfo=UTC)
+
+
+def test_what_needs_downloading():
+    base = {"status": "owned", "has_link": True, "state": "known",
+            "downloaded_updated": None, "last_updated": OLD}
+    assert needs_download(**base)
+    assert not needs_download(**{**base, "status": "preorder"})
+    assert not needs_download(**{**base, "has_link": False})
+    assert not needs_download(**{**base, "state": "queued"})
+    assert not needs_download(**{**base, "state": "downloading"})
+    assert not needs_download(**{**base, "state": "downloaded", "downloaded_updated": OLD})
+    assert needs_download(**{**base, "state": "downloaded", "downloaded_updated": OLD,
+                             "last_updated": NEW})
+
+
+class FakeJnc(ProseSource):
+    site = "jnovelclub"
+    domains = ("j-novel.club",)
+
+    def __init__(self, owned=None, signed_in=True):
+        self.owned = owned or []
+        self.signed_in = signed_in
+
+    async def search(self, titles, *, limit=8):
+        return []
+
+    async def list_chapters(self, url, *, language="en"):
+        return []
+
+    async def fetch_chapter(self, chapter_url, *, language="en"):
+        raise NotImplementedError
+
+    async def library(self):
+        if not self.signed_in:
+            raise SignInRequired("J-Novel Club is not signed in")
+        return self.owned
+
+    async def part_ranges(self, series_slug):
+        return {Decimal(16): (Decimal(204), Decimal(216))}
+
+
+def _owned(number=16, *, slug="the-apothecary-diaries", status="owned", updated=OLD):
+    return OwnedVolume(slug, f"VOL-{number}", Decimal(number), f"Volume {number}", status,
+                       updated, "https://cdn.example/v.epub?sig=x")
+
+
+async def _mapped_series(session, slug="the-apothecary-diaries") -> int:
+    series_id = (
+        await session.execute(
+            text(
+                "insert into series (canonical_title, slug, needs_review, meta, kind)"
+                " values ('The Apothecary Diaries', 'apothecary', false, '{}'::jsonb, 'prose')"
+                " returning id"
+            )
+        )
+    ).scalar_one()
+    await session.execute(
+        text(
+            "insert into source_mapping (series_id, source_site, source_url, active)"
+            " values (:s, 'jnovelclub', :u, true)"
+        ),
+        {"s": series_id, "u": f"https://j-novel.club/series/{slug}"},
+    )
+    await session.commit()
+    return int(series_id)
+
+
+async def _run(session, source) -> JobContext:
+    install_registry({"jnovelclub": RegisteredSource(source, "https://labs.j-novel.club")})
+    await repo.enqueue(session, JobType.JNC_LIBRARY_SYNC, {})
+    await session.commit()
+    job = await repo.lease(session, types=[str(JobType.JNC_LIBRARY_SYNC)])
+    await session.commit()
+    ctx = JobContext(session=session, job=job)
+    await handle(ctx)
+    await session.commit()
+    return ctx
+
+
+async def _volumes(session):
+    return (
+        await session.execute(
+            text("select number, status, state, first_part, last_part from volume order by number")
+        )
+    ).all()
+
+
+async def _queued(session) -> int:
+    return (
+        await session.execute(text("select count(*) from job where type = 'volume_download'"))
+    ).scalar_one()
+
+
+async def test_an_owned_volume_of_a_mapped_series_is_recorded_and_queued():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned()]))
+        rows = await _volumes(session)
+        assert [(r.number, r.status, r.state, r.first_part, r.last_part) for r in rows] == [
+            (Decimal("16.00"), "owned", "queued", Decimal("204.00"), Decimal("216.00"))
+        ]
+        assert await _queued(session) == 1
+
+
+async def test_a_preorder_is_recorded_but_not_queued():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned(status="preorder")]))
+        assert [r.state for r in await _volumes(session)] == ["known"]
+        assert await _queued(session) == 0
+
+
+async def test_an_unmapped_series_is_reported_not_recorded():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        ctx = await _run(session, FakeJnc([_owned(slug="some-other-series")]))
+        assert await _volumes(session) == []
+        log = (
+            await session.execute(
+                text("select string_agg(message, ' ') from job_event where job_id = :j"),
+                {"j": ctx.job.id},
+            )
+        ).scalar_one()
+        assert "some-other-series" in log
+
+
+async def test_not_signed_in_is_done_not_failed():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc(signed_in=False))
+        assert await _volumes(session) == []
+
+
+async def test_a_second_sync_with_nothing_new_queues_nothing():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned()]))
+        await session.execute(
+            text(
+                "update volume set state = 'downloaded', file_path = '/m/a.epub',"
+                " downloaded_updated = :d"
+            ),
+            {"d": OLD},
+        )
+        await session.execute(text("delete from job where type = 'volume_download'"))
+        await session.commit()
+        await _run(session, FakeJnc([_owned()]))
+        row = (await session.execute(text("select state, file_path from volume"))).one()
+        assert (row.state, row.file_path) == ("downloaded", "/m/a.epub")
+        assert await _queued(session) == 0
+
+
+async def test_a_revised_volume_is_queued_again():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned()]))
+        await session.execute(
+            text("update volume set state = 'downloaded', downloaded_updated = :d"), {"d": OLD}
+        )
+        await session.execute(text("delete from job where type = 'volume_download'"))
+        await session.commit()
+        await _run(session, FakeJnc([_owned(updated=NEW)]))
+        assert [r.state for r in await _volumes(session)] == ["queued"]
+        assert await _queued(session) == 1

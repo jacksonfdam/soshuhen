@@ -1,0 +1,150 @@
+"""Read the J-Novel Club library and keep volume rows and downloads in step.
+
+Buying a volume is the decision to have it, so an owned volume of a series
+mapped to J-Novel Club downloads without being asked - unlike chapters, which
+wait for a range or auto_download. Volumes of series no list holds are only
+named in the log: a series is created by a reading list, never by a shop.
+"""
+
+import re
+from collections import defaultdict
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.enums import JobType
+from app.handlers.base import JobContext, register
+from app.sources.base import SignInRequired, get_prose_source
+
+SITE = "jnovelclub"
+_SERIES_SLUG = re.compile(r"/series/([^/?#]+)")
+
+UPSERT = """
+insert into volume (series_id, number, source_volume_id, title, status, last_updated,
+                    first_part, last_part)
+values (:series_id, :number, :volume_id, :title, :status, cast(:last_updated as timestamptz),
+        cast(:first_part as numeric), cast(:last_part as numeric))
+on conflict (series_id, source_volume_id) do update
+   set number = excluded.number,
+       title = excluded.title,
+       status = excluded.status,
+       last_updated = excluded.last_updated,
+       first_part = excluded.first_part,
+       last_part = excluded.last_part
+returning id, state, downloaded_updated, last_updated
+"""
+
+
+def needs_download(
+    *,
+    status: str,
+    has_link: bool,
+    state: str,
+    downloaded_updated: datetime | None,
+    last_updated: datetime | None,
+) -> bool:
+    """Owned, downloadable, not already on its way, and not on disk at this revision."""
+    if status != "owned" or not has_link or state in ("queued", "downloading"):
+        return False
+    if downloaded_updated is None:
+        return True
+    return last_updated is not None and downloaded_updated < last_updated
+
+
+async def series_by_slug(session: AsyncSession) -> dict[str, int]:
+    rows = (
+        await session.execute(
+            text(
+                "select series_id, source_url from source_mapping"
+                " where active and source_site = :site"
+            ),
+            {"site": SITE},
+        )
+    ).all()
+    found: dict[str, int] = {}
+    for row in rows:
+        match = _SERIES_SLUG.search(row.source_url or "")
+        if match:
+            found[match.group(1)] = row.series_id
+    return found
+
+
+@register(JobType.JNC_LIBRARY_SYNC)
+async def handle(ctx: JobContext) -> None:
+    try:
+        source = get_prose_source(SITE)
+    except (ValueError, TypeError):
+        await ctx.log("J-Novel Club is not enabled; skipping the library")
+        return
+    try:
+        owned = await source.library()
+    except SignInRequired:
+        # Done, not failed: a free account or a signed-out install would
+        # otherwise turn this cron red every six hours for nothing.
+        await ctx.log("J-Novel Club is not signed in; skipping the library", pct=100)
+        return
+
+    mapped = await series_by_slug(ctx.session)
+    by_slug: dict[str, list[Any]] = defaultdict(list)
+    for volume in owned:
+        by_slug[volume.series_slug].append(volume)
+
+    unmapped: list[str] = []
+    queued = revised = preorders = 0
+    for slug, volumes in by_slug.items():
+        series_id = mapped.get(slug)
+        if series_id is None:
+            unmapped.append(slug)
+            continue
+        ranges = await source.part_ranges(slug)
+        for volume in volumes:
+            first, last = ranges.get(volume.number, (None, None))
+            row = (
+                await ctx.session.execute(
+                    text(UPSERT),
+                    {
+                        "series_id": series_id,
+                        "number": volume.number,
+                        "volume_id": volume.volume_id,
+                        "title": volume.title,
+                        "status": volume.status,
+                        "last_updated": volume.last_updated,
+                        "first_part": first,
+                        "last_part": last,
+                    },
+                )
+            ).one()
+            if volume.status == "preorder":
+                preorders += 1
+            if not needs_download(
+                status=volume.status,
+                has_link=volume.epub_link is not None,
+                state=row.state,
+                downloaded_updated=row.downloaded_updated,
+                last_updated=row.last_updated,
+            ):
+                continue
+            if row.downloaded_updated is not None:
+                revised += 1
+            await ctx.session.execute(
+                text("update volume set state = 'queued' where id = :id"), {"id": row.id}
+            )
+            await ctx.enqueue(
+                JobType.VOLUME_DOWNLOAD,
+                {"volume_id": row.id},
+                series_id=series_id,
+                dedupe_key=f"volume_download:{row.id}",
+            )
+            queued += 1
+
+    await ctx.session.commit()
+    summary = f"{len(owned)} owned on J-Novel Club, {queued} queued"
+    if revised:
+        summary += f" ({revised} revised)"
+    if preorders:
+        summary += f", {preorders} pre-orders waiting"
+    if unmapped:
+        summary += f"; owned but not mapped: {', '.join(sorted(unmapped))}"
+    await ctx.log(summary, pct=100)
