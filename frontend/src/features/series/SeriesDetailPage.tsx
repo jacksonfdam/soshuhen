@@ -15,6 +15,7 @@ import { ScoreStrip } from './ScoreStrip'
 import { SeriesHeader } from './SeriesHeader'
 import { SimilarWorks } from './SimilarWorks'
 import { SynopsisPanel } from './SynopsisPanel'
+import { VolumesPanel } from './VolumesPanel'
 import { SyncTargets } from './SyncTargets'
 import { totalChapters, useSeriesDetail } from './useSeriesDetail'
 
@@ -178,6 +179,7 @@ export function SeriesDetailPage() {
 
         <aside className="flex flex-col gap-space-md">
           <MappingPanel seriesId={series.id} mapping={mapping} onResearch={research} onRemap={remap} />
+          <VolumesPanel volumes={detail.volumes} komgaBaseUrl={detail.komga_public_url} />
           <SyncTargets entries={entries} />
           <KindControl kind={series.kind} onChange={setKind} />
           <DownloadControls
