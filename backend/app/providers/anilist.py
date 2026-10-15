@@ -16,6 +16,7 @@ from app.providers.base import (
     MangaMeta,
     RelatedManga,
     TokenSet,
+    WriteRefused,
 )
 
 API_URL = "https://graphql.anilist.co"
@@ -196,6 +197,17 @@ mutation ($mediaId: Int, $progress: Int) {
 }
 """
 
+# A separate document rather than a nullable variable: SaveMediaListEntry
+# writes whatever it is handed, and a null progressVolumes would clear the
+# volume count the user keeps on their own account.
+PROGRESS_WITH_VOLUMES_MUTATION = """
+mutation ($mediaId: Int, $progress: Int, $progressVolumes: Int) {
+  SaveMediaListEntry(mediaId: $mediaId, progress: $progress, progressVolumes: $progressVolumes) {
+    id progress progressVolumes
+  }
+}
+"""
+
 STATUS_MUTATION = """
 mutation ($mediaId: Int, $status: MediaListStatus) {
   SaveMediaListEntry(mediaId: $mediaId, status: $status) { id status }
@@ -271,10 +283,24 @@ class AniListSource(ListSource):
         )
         return parse_manga_search(data)
 
-    async def push_progress(self, access_token: str, media_id: str, chapter: int) -> None:
-        await self._post(
-            access_token, PROGRESS_MUTATION, {"mediaId": int(media_id), "progress": chapter}
-        )
+    async def push_progress(
+        self, access_token: str, media_id: str, chapter: int, volume: int | None = None
+    ) -> None:
+        variables: dict[str, Any] = {"mediaId": int(media_id), "progress": chapter}
+        query = PROGRESS_MUTATION
+        if volume is not None:
+            variables["progressVolumes"] = volume
+            query = PROGRESS_WITH_VOLUMES_MUTATION
+        try:
+            await self._post(access_token, query, variables)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (400, 422):
+                raise WriteRefused(f"AniList refused the progress write: {exc}") from exc
+            raise
+        except RuntimeError as exc:
+            if str(exc).startswith("anilist error"):
+                raise WriteRefused(str(exc)) from exc
+            raise
 
     async def set_status(self, access_token: str, media_id: str, status: ListStatus) -> None:
         await self._post(

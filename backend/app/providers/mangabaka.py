@@ -34,7 +34,7 @@ import httpx
 
 from app.config import get_settings
 from app.enums import ListStatus, Provider
-from app.providers.base import ListEntryDTO, ListSource, NotSupported
+from app.providers.base import ListEntryDTO, ListSource, NotSupported, WriteRefused
 
 # MangaBaka's own vocabulary for `Series.type`, translated onto AniList's the
 # way MyAnimeList's `media_type` is - see MEDIA_TYPE_MAP in providers/mal.py.
@@ -260,8 +260,18 @@ class MangaBakaSource(ListSource):
             url = next_page(page)
         return entries
 
-    async def push_progress(self, access_token: str, media_id: str, chapter: int) -> None:
-        await self._upsert(access_token, media_id, {"progress_chapter": chapter})
+    async def push_progress(
+        self, access_token: str, media_id: str, chapter: int, volume: int | None = None
+    ) -> None:
+        fields: dict[str, Any] = {"progress_chapter": chapter}
+        if volume is not None:
+            fields["progress_volume"] = volume
+        try:
+            await self._upsert(access_token, media_id, fields)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (400, 422):
+                raise WriteRefused(f"MangaBaka refused the progress write: {exc}") from exc
+            raise
 
     async def set_status(self, access_token: str, media_id: str, status: ListStatus) -> None:
         state = STATE_FOR_STATUS.get(status)

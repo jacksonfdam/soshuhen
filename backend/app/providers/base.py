@@ -24,6 +24,13 @@ MANGA_FORMATS = {"MANGA", "MANHWA", "MANHUA", "OEL"}
 PROSE_FORMATS = {"NOVEL"}
 
 
+class WriteRefused(RuntimeError):
+    """The provider answered a write with a validation refusal (400/422, or an
+    AniList GraphQL error) rather than failing to be reached. Progress pushing
+    retries a refused volume without it, so chapters never stall on a volume
+    count a provider will not take."""
+
+
 @dataclass(frozen=True)
 class ListEntryDTO:
     provider: Provider
@@ -189,8 +196,12 @@ class ListSource(ABC):
         """Every manga entry on the authenticated user's list."""
 
     @abstractmethod
-    async def push_progress(self, access_token: str, media_id: str, chapter: int) -> None:
-        """Write the read chapter count back to the provider."""
+    async def push_progress(
+        self, access_token: str, media_id: str, chapter: int, volume: int | None = None
+    ) -> None:
+        """Write the read chapter count back to the provider, and the read volume
+        count beside it when one is given. Without a volume the request is
+        exactly the chapter-only one."""
 
     def authorize_url(self, redirect_uri: str, state: str, verifier: str) -> str:
         """Where to send the browser to start the OAuth flow."""
