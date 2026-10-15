@@ -8,6 +8,7 @@ series and number, and the manifest item marked cover-image for the
 thumbnail.
 """
 
+import io
 import os
 import re
 import tempfile
@@ -199,3 +200,21 @@ def _opf(chapter: EpubChapter, image_names: list[str], cover_name: str | None) -
 def _number(number: Decimal) -> str:
     integral = int(number)
     return str(integral) if number == integral else format(number.normalize(), "f")
+
+
+def is_epub(data: bytes) -> bool:
+    """Whether these bytes are an EPUB, read from the bytes and not the headers.
+
+    A signed link that has lapsed answers with an HTML page, often with a 200;
+    saved under a .epub name it would look like a working download until
+    someone opened it. The container format is the test: a zip whose first
+    entry is `mimetype`, holding exactly `application/epub+zip`.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            entries = archive.infolist()
+            if not entries or entries[0].filename != "mimetype":
+                return False
+            return archive.read("mimetype") == b"application/epub+zip"
+    except zipfile.BadZipFile:
+        return False
