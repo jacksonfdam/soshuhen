@@ -132,3 +132,12 @@ async def test_a_series_without_volumes_has_an_empty_list():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         detail = (await http.get(f"/api/series/{series_id}")).json()
     assert detail["volumes"] == []
+
+
+async def test_a_chapter_book_mentioning_a_volume_is_not_adopted():
+    async with get_sessionmaker()() as session:
+        ctx, series_id = await _ctx(session)
+        komga = FakeKomga()
+        books = [_book("C1", "a - Ch.0012 - Vol.16 Extra.epub")]
+        assert await reconcile_volumes(ctx, komga, series_id, books) == 0
+        assert komga.patched == []

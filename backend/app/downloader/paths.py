@@ -87,6 +87,9 @@ _NUMBER_IN_NAME = re.compile(r"\bCh\.(\d+(?:\.\d+)?)")
 
 def number_from_filename(filename: str) -> Decimal | None:
     """Inverse of the naming rule, for files Komga reports that we did not place."""
+    # A volume titled "... Ch.5 ..." is still a volume, never chapter 5.
+    if _VOLUME_NAME.match(filename):
+        return None
     match = _NUMBER_IN_NAME.search(filename)
     return Decimal(match.group(1)) if match else None
 
@@ -112,10 +115,14 @@ def volume_path(
     return series_dir(library_root, series_slug) / volume_filename(series_slug, number, title)
 
 
-_VOLUME_IN_NAME = re.compile(r"\bVol\.(\d+(?:\.\d+)?)")
+# Anchored to the whole naming rule, not searched for anywhere in the name: a
+# chapter titled "Vol.3 Extra Story" would otherwise be adopted as volume 3,
+# locked as such in Komga, and deleted by that volume's next revision. Slugs
+# never contain spaces, so "<slug> - Vol." can only be a volume's own name.
+_VOLUME_NAME = re.compile(r"^\S+ - Vol\.(\d+(?:\.\d+)?)(?: - .*)?\.epub$")
 
 
 def volume_number_from_filename(filename: str) -> Decimal | None:
     """Inverse of volume_filename, for the books Komga reports."""
-    match = _VOLUME_IN_NAME.search(filename)
+    match = _VOLUME_NAME.match(filename)
     return Decimal(match.group(1)) if match else None

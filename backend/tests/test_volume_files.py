@@ -52,3 +52,13 @@ def test_a_zip_without_the_mimetype_first_is_not_an_epub():
     assert not is_epub(_zip([("OEBPS/content.opf", b"<x/>")]))
     assert not is_epub(_zip([("OEBPS/a", b"x"), ("mimetype", b"application/epub+zip")]))
     assert not is_epub(_zip([("mimetype", b"application/zip")]))
+
+
+def test_a_chapter_title_mentioning_a_volume_is_not_a_volume():
+    # A chapter titled "Vol.3 Extra Story" must never be adopted as volume 3:
+    # the scan would lock it as "Vol. 3" and a revision would delete it.
+    name = "mushoku - Ch.0012 - Vol.3 Extra Story.epub"
+    assert volume_number_from_filename(name) is None
+    assert volume_number_from_filename("mushoku - Vol.0003 - Ch.5 notes.epub") == Decimal(3)
+    # ...and the reverse: a volume titled with "Ch.5" is never chapter 5.
+    assert number_from_filename("mushoku - Vol.0003 - Ch.5 notes.epub") is None
