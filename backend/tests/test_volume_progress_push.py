@@ -7,6 +7,7 @@ from app.db import get_sessionmaker
 from app.enums import JobType
 from app.handlers import progress_push
 from app.handlers.base import JobContext
+from app.handlers.komga_scan import mark_read_up_to_lists
 from app.komga.client import KomgaBook
 from app.providers.base import WriteRefused
 from app.queue import repo
@@ -152,3 +153,32 @@ async def test_nothing_read_sends_nothing(monkeypatch):
         series_id = await _series(session)
         await _run(session, monkeypatch, series_id, [_book("V16", completed=False)], provider)
         assert provider.calls == []
+
+
+class MarkingClient:
+    def __init__(self):
+        self.marked: list[str] = []
+
+    async def set_read_progress(self, book_id, *, page, completed):
+        self.marked.append(book_id)
+
+
+async def test_volume_books_the_lists_count_as_read_are_marked():
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session, progress_volume=16)
+        await session.execute(
+            text(
+                "insert into volume (series_id, number, source_volume_id, status, state,"
+                " komga_book_id) values (:s, 17, 'VOL-17', 'owned', 'downloaded', 'V17')"
+            ),
+            {"s": series_id},
+        )
+        await session.commit()
+        await repo.enqueue(session, JobType.KOMGA_SCAN, {"series_id": series_id})
+        await session.commit()
+        job = await repo.lease(session, types=[str(JobType.KOMGA_SCAN)])
+        await session.commit()
+        client = MarkingClient()
+        books = [_book("V16", completed=False), _book("V17", completed=False)]
+        await mark_read_up_to_lists(JobContext(session=session, job=job), client, series_id, books)
+        assert client.marked == ["V16"]

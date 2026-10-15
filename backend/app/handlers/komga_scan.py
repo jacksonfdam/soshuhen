@@ -350,19 +350,30 @@ async def mark_read_up_to_lists(ctx: JobContext, client, series_id: int, books) 
     The reader marks a book itself when Komga already knows it. A chapter read
     while it was still streaming had no book to mark, and one read in Mihon
     never reached Komga at all. Both are behind the lists' progress, which only
-    moves forward, so the lists are what Komga is brought up to.
+    moves forward, so the lists are what Komga is brought up to. Volume books
+    follow the lists' volume count the same way.
     """
     furthest = await progress_events.furthest_read(ctx.session, series_id)
-    if furthest <= 0:
+    volume_read = (
+        await ctx.session.execute(
+            text("select max(user_progress_volume) from list_entry where series_id = :s"),
+            {"s": series_id},
+        )
+    ).scalar_one()
+    if furthest <= 0 and not volume_read:
         return 0
     result = await ctx.session.execute(
         text(
             """
             select komga_book_id from chapter
              where series_id = :s and komga_book_id is not null and number <= :furthest
+            union
+            select komga_book_id from volume
+             where series_id = :s and komga_book_id is not null
+               and number <= cast(:volume as integer)
             """
         ),
-        {"s": series_id, "furthest": furthest},
+        {"s": series_id, "furthest": furthest, "volume": volume_read},
     )
     behind = {row[0] for row in result.all()}
     marked = 0
