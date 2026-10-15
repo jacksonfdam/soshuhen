@@ -115,6 +115,12 @@ not mapped are named in the library sync's log rather than added, since series o
 lists. The library is read every six hours, after a sign-in, and when you press **Sync library
 now** on the J-Novel Club card; the series page lists each owned volume with where it stands.
 
+Reading a volume in Komga - finishing its book, or finishing every part of a volume you own - moves
+volumes read on MyAnimeList, AniList and MangaBaka to that volume, and chapters read to the volume's
+last part. Like chapters, it only ever moves forward, and it stops at the list's own volume count.
+A list that refuses the volume count still gets the chapter. Volumes a list already counts as read
+are marked read in Komga too. Nothing is written back to J-Novel Club.
+
 ## The screens
 
 ### Home

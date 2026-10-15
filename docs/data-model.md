@@ -43,7 +43,12 @@ The canonical work.
 One row per provider per work. Unique on `(provider, provider_media_id)`.
 
 `id`, `provider`, `provider_media_id`, `series_id`, `title_romaji`, `title_english`, `synonyms`,
-`status`, `user_progress_chapter`, `total_chapters`, `cover_url`, `raw` (jsonb), `updated_at`
+`status`, `user_progress_chapter`, `total_chapters`, `user_progress_volume`, `total_volumes`,
+`cover_url`, `raw` (jsonb), `updated_at`
+
+`user_progress_volume` and `total_volumes` are the list's own volume counts, filled by list sync.
+Both are nullable: null means the list never said. MyAnimeList reports an unknown total as `0`, which
+is stored as null so it can never cap volume progress at zero.
 
 `raw` keeps the provider's own payload. Metadata for `ComicInfo.xml` is read out of it at use time
 rather than denormalised into columns — a column is another thing to keep in sync, and these are
