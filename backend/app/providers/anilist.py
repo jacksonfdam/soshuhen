@@ -361,6 +361,8 @@ def parse_list(data: dict[str, Any]) -> list[ListEntryDTO]:
                     synonyms=synonyms,
                     progress_chapter=int(entry.get("progress") or 0),
                     total_chapters=media.get("chapters"),
+                    progress_volume=int(entry.get("progressVolumes") or 0),
+                    total_volumes=media.get("volumes") or None,
                     cover_url=(media.get("coverImage") or {}).get("large"),
                     kind=media.get("format") or None,
                     raw=entry,

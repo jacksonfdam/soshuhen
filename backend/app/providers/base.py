@@ -34,6 +34,11 @@ class ListEntryDTO:
     synonyms: list[str] = field(default_factory=list)
     progress_chapter: int = 0
     total_chapters: int | None = None
+    # Volumes, beside chapters. 0 and None are the defaults a provider that
+    # says nothing leaves; MyAnimeList's documented "0 means unknown" total is
+    # turned into None by its parser, so it can never become a cap of zero.
+    progress_volume: int = 0
+    total_volumes: int | None = None
     cover_url: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 

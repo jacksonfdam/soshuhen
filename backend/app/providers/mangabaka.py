@@ -193,6 +193,7 @@ def parse_library(payload: dict[str, Any]) -> list[ListEntryDTO]:
                 title_english=series.get("title"),
                 synonyms=_synonyms(series),
                 progress_chapter=int(row.get("progress_chapter") or 0),
+                progress_volume=int(row.get("progress_volume") or 0),
                 total_chapters=_to_int(series.get("total_chapters")),
                 cover_url=_cover_url(series),
                 cross_refs=cross_references(series),
