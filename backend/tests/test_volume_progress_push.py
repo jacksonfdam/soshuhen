@@ -26,9 +26,11 @@ class FakeKomgaClient:
 
 
 class RecordingProvider:
-    def __init__(self, refuse_volume=False):
+    def __init__(self, refuse_volume=False, syncs=False):
         self.calls: list[tuple] = []
         self.refuse_volume = refuse_volume
+        # The entries here are `local` ones, which have no remote list to sync.
+        self.syncs = syncs
 
     async def push_progress(self, token, media_id, chapter, volume=None):
         if volume is not None and self.refuse_volume:
@@ -124,12 +126,34 @@ async def test_a_list_already_past_the_volume_gets_no_volume(monkeypatch):
         assert provider.calls == [("L1", 216, None)]
 
 
-async def test_a_volume_only_move_sends_the_current_chapter(monkeypatch):
+async def test_a_volume_only_move_leaves_the_chapter_alone(monkeypatch):
+    # The stored chapter is only as fresh as the last sync; resending it could
+    # pull back a list read further elsewhere since.
     provider = RecordingProvider()
     async with get_sessionmaker()() as session:
         series_id = await _series(session, progress_chapter=300, progress_volume=3)
         await _run(session, monkeypatch, series_id, [_book("V16")], provider)
-        assert provider.calls == [("L1", 300, 16)]
+        assert provider.calls == [("L1", None, 16)]
+        assert tuple(await _entry(session)) == (300, 16)
+
+
+async def test_a_synced_list_that_never_reported_volumes_gets_none(monkeypatch):
+    # Null on a synced list means no sync has run since the column appeared,
+    # not zero: the list may hold a higher count this push would lower.
+    provider = RecordingProvider(syncs=True)
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session)
+        await _run(session, monkeypatch, series_id, [_book("V16")], provider)
+        assert provider.calls == [("L1", 216, None)]
+
+
+async def test_a_refused_volume_with_no_chapter_move_sends_nothing(monkeypatch):
+    provider = RecordingProvider(refuse_volume=True)
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session, progress_chapter=300, progress_volume=3)
+        await _run(session, monkeypatch, series_id, [_book("V16")], provider)
+        assert provider.calls == []
+        assert tuple(await _entry(session)) == (300, 3)
 
 
 async def test_the_volume_is_capped_at_the_lists_total(monkeypatch):

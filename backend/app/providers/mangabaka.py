@@ -261,9 +261,11 @@ class MangaBakaSource(ListSource):
         return entries
 
     async def push_progress(
-        self, access_token: str, media_id: str, chapter: int, volume: int | None = None
+        self, access_token: str, media_id: str, chapter: int | None, volume: int | None = None
     ) -> None:
-        fields: dict[str, Any] = {"progress_chapter": chapter}
+        fields: dict[str, Any] = {}
+        if chapter is not None:
+            fields["progress_chapter"] = chapter
         if volume is not None:
             fields["progress_volume"] = volume
         try:

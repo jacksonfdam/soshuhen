@@ -146,3 +146,18 @@ async def test_an_anilist_graphql_error_is_a_refusal():
     async with httpx.AsyncClient(transport=transport) as client:
         with pytest.raises(WriteRefused):
             await AniListSource(client).push_progress("t", "7", 12, volume=99)
+
+
+async def test_a_volume_alone_sends_no_chapter():
+    body = {"data": {"SaveMediaListEntry": {"id": 1}}}
+    seen, transport = _recorder(body=body)
+    async with httpx.AsyncClient(transport=transport) as client:
+        await MyAnimeListSource(client).push_progress("t", "1", None, volume=3)
+        await AniListSource(client).push_progress("t", "7", None, volume=3)
+        await MangaBakaSource(client).push_progress("k", "5", None, volume=3)
+    mal, anilist, mangabaka = seen
+    assert dict(httpx.QueryParams(mal.content.decode())) == {"num_volumes_read": "3"}
+    anilist_body = json.loads(anilist.content)
+    assert anilist_body["variables"] == {"mediaId": 7, "progressVolumes": 3}
+    assert "$progress:" not in anilist_body["query"]
+    assert json.loads(mangabaka.content) == [{"series_id": 5, "progress_volume": 3}]

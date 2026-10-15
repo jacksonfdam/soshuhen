@@ -197,11 +197,12 @@ class ListSource(ABC):
 
     @abstractmethod
     async def push_progress(
-        self, access_token: str, media_id: str, chapter: int, volume: int | None = None
+        self, access_token: str, media_id: str, chapter: int | None, volume: int | None = None
     ) -> None:
         """Write the read chapter count back to the provider, and the read volume
         count beside it when one is given. Without a volume the request is
-        exactly the chapter-only one."""
+        exactly the chapter-only one; without a chapter only the volume is
+        written, so a list's chapter count is never resent from a stale copy."""
 
     def authorize_url(self, redirect_uri: str, state: str, verifier: str) -> str:
         """Where to send the browser to start the OAuth flow."""

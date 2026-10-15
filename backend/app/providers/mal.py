@@ -190,10 +190,12 @@ class MyAnimeListSource(ListSource):
         return parse_manga_search(page)
 
     async def push_progress(
-        self, access_token: str, media_id: str, chapter: int, volume: int | None = None
+        self, access_token: str, media_id: str, chapter: int | None, volume: int | None = None
     ) -> None:
         headers = {"Authorization": f"Bearer {access_token}"}
-        data = {"num_chapters_read": chapter}
+        data = {}
+        if chapter is not None:
+            data["num_chapters_read"] = chapter
         if volume is not None:
             data["num_volumes_read"] = volume
         url = f"{API_BASE}/manga/{media_id}/my_list_status"

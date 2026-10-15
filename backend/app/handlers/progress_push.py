@@ -150,15 +150,19 @@ async def handle(ctx: JobContext) -> None:
                 f"{entry.provider}: part {read_chapter} is past the list's {chapter} chapters,"
                 f" sending {chapter}"
             )
-        chapter_moves = forward_only(entry.user_progress_chapter, chapter) is not None
-        volume = pushable_volume(read_volume, entry.total_volumes, entry.user_progress_volume)
-        if not chapter_moves and volume is None:
-            continue
-        # A volume-only move must not carry the chapter backwards.
-        chapter_sent = max(chapter, entry.user_progress_chapter)
         provider = Provider(entry.provider)
-        token = await access_token_for(ctx.session, provider)
         source = get_source(provider)
+        # The stored chapter is only as fresh as the last sync, so it is sent
+        # when Komga moves it and never resent alongside a volume.
+        chapter_sent = chapter if forward_only(entry.user_progress_chapter, chapter) else None
+        volume = pushable_volume(read_volume, entry.total_volumes, entry.user_progress_volume)
+        if volume is not None and entry.user_progress_volume is None and source.syncs:
+            # Null on a synced list is "not synced since 0024", not zero: the
+            # list may hold a higher count this push would lower.
+            volume = None
+        if chapter_sent is None and volume is None:
+            continue
+        token = await access_token_for(ctx.session, provider)
         try:
             await source.push_progress(token, entry.provider_media_id, chapter_sent, volume)
         except WriteRefused:
@@ -166,18 +170,28 @@ async def handle(ctx: JobContext) -> None:
                 raise
             # No provider documents what it does past its volume count; one it
             # will not take must not hold chapter progress back with it.
-            await ctx.log(f"{provider} refused volume {volume}, sent chapter only", level="warning")
+            await ctx.log(f"{provider} refused volume {volume}", level="warning")
             volume = None
+            if chapter_sent is None:
+                continue
             await source.push_progress(token, entry.provider_media_id, chapter_sent)
         await ctx.session.execute(
             text(
-                "update list_entry set user_progress_chapter = :c,"
-                " user_progress_volume = coalesce(cast(:v as integer), user_progress_volume)"
+                "update list_entry"
+                " set user_progress_chapter = coalesce(cast(:c as integer), user_progress_chapter),"
+                "     user_progress_volume = coalesce(cast(:v as integer), user_progress_volume)"
                 " where id = :id"
             ),
             {"c": chapter_sent, "v": volume, "id": entry.id},
         )
-        shown = f"chapter {chapter_sent}" + (f", volume {volume}" if volume is not None else "")
+        shown = ", ".join(
+            part
+            for part in (
+                f"chapter {chapter_sent}" if chapter_sent is not None else None,
+                f"volume {volume}" if volume is not None else None,
+            )
+            if part
+        )
         await ctx.log(f"{provider}: progress set to {shown}")
         pushed += 1
 

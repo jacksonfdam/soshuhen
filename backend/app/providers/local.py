@@ -49,7 +49,7 @@ class LocalSource(ListSource):
         return []
 
     async def push_progress(
-        self, access_token: str, media_id: str, chapter: int, volume: int | None = None
+        self, access_token: str, media_id: str, chapter: int | None, volume: int | None = None
     ) -> None:
         """No push. `progress_write` updates `list_entry` itself once this returns,
         and that row is the whole of this provider."""

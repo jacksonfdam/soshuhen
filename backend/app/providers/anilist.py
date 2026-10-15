@@ -208,6 +208,12 @@ mutation ($mediaId: Int, $progress: Int, $progressVolumes: Int) {
 }
 """
 
+VOLUMES_MUTATION = """
+mutation ($mediaId: Int, $progressVolumes: Int) {
+  SaveMediaListEntry(mediaId: $mediaId, progressVolumes: $progressVolumes) { id progressVolumes }
+}
+"""
+
 STATUS_MUTATION = """
 mutation ($mediaId: Int, $status: MediaListStatus) {
   SaveMediaListEntry(mediaId: $mediaId, status: $status) { id status }
@@ -284,12 +290,18 @@ class AniListSource(ListSource):
         return parse_manga_search(data)
 
     async def push_progress(
-        self, access_token: str, media_id: str, chapter: int, volume: int | None = None
+        self, access_token: str, media_id: str, chapter: int | None, volume: int | None = None
     ) -> None:
-        variables: dict[str, Any] = {"mediaId": int(media_id), "progress": chapter}
-        query = PROGRESS_MUTATION
+        variables: dict[str, Any] = {"mediaId": int(media_id)}
+        if chapter is not None:
+            variables["progress"] = chapter
         if volume is not None:
             variables["progressVolumes"] = volume
+        if chapter is None:
+            query = VOLUMES_MUTATION
+        elif volume is None:
+            query = PROGRESS_MUTATION
+        else:
             query = PROGRESS_WITH_VOLUMES_MUTATION
         try:
             await self._post(access_token, query, variables)
