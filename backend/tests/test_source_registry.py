@@ -60,7 +60,7 @@ async def test_a_non_native_template_row_is_skipped():
             )
         )
         await session.execute(
-            text("insert into source_pref (key, enabled) values ('fakemadara', true)")
+            text("insert into source_pref (key, enabled) values ('faketemplaterow', true)")
         )
         await session.commit()
         try:

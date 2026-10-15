@@ -44,6 +44,11 @@ from app.sources.templates.zeistmanga import ZeistMangaSource
 
 logger = logging.getLogger(__name__)
 
+# Each process holds its own registry, built at boot. The API rebuilds its own
+# when a change is made through it; this channel is how the two workers, which
+# never see that request, find out too.
+SOURCES_CHANNEL = "sources_changed"
+
 # template = 'native' rows are hand-written Python classes, not generated
 # template leaves. Keyed by site_catalogue.key, which is always the source's own
 # site: the comick module serves weebcentral, and keying its row after the
@@ -109,6 +114,19 @@ async def reload(session: AsyncSession) -> None:
     install_registry(entries)
 
 
+async def announce_change(session: AsyncSession) -> None:
+    """Tell every other process to rebuild its registry.
+
+    Call it in the transaction that makes the change, before the commit:
+    Postgres delivers a notification only when its transaction commits, so a
+    listener can never reload ahead of the row it is being told about, and a
+    change that rolls back announces nothing.
+    """
+    await session.execute(
+        text("select pg_notify(:channel, '')"), {"channel": SOURCES_CHANNEL}
+    )
+
+
 def native_keys() -> frozenset[str]:
     """Every native site this deployment can run.
 
@@ -130,8 +148,8 @@ async def _configured_natives(session: AsyncSession) -> dict[str, Source]:
     MangaFire's API is behind a check a person clears in their own browser; the
     cookie that produces lives in settings. Building it here rather than at
     import is also what makes pasting a new cookie take effect on the next
-    reload instead of on the next deploy - `PUT /api/sources/{key}` already
-    reloads, so toggling the site is enough.
+    reload instead of on the next deploy - saving the cookie in Settings
+    reloads every process, so nothing has to be toggled or restarted.
     """
     waf_pass = await settings_store.get(session, settings_store.MANGAFIRE_WAF_PASS)
     return {"mangafire": MangaFireSource(waf_pass=waf_pass), "jnovelclub": build_jnovelclub()}

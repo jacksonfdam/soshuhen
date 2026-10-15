@@ -43,6 +43,7 @@ from app.queue import repo
 from app.sources import reload as reload_sources
 from app.sources.net import close_all as close_site_clients
 from app.worker.runner import reclaim_loop, work_loop
+from app.worker.sources_watch import watch_sources
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("worker")
@@ -148,9 +149,10 @@ ENQUEUERS = {
 
 
 async def load_registry() -> None:
-    """The registry is loaded once here rather than queried per job - see
+    """The registry is loaded here rather than queried per job - see
     app/sources/registry.py - so a download or a search job never waits on
-    Postgres just to find out which sites are enabled.
+    Postgres just to find out which sites are enabled. After boot,
+    app/worker/sources_watch.py rebuilds it whenever Settings changes it.
 
     The generated catalogue is read in first, so a deploy that ships a new one
     picks it up without a separate command. It is safe to do unattended: the
@@ -267,7 +269,9 @@ async def main() -> None:
         if scheduler is not None
         else "(no scheduler in this lane)",
     )
-    await asyncio.gather(work_loop(concurrency, stop, types), reclaim_loop(stop, types))
+    await asyncio.gather(
+        work_loop(concurrency, stop, types), reclaim_loop(stop, types), watch_sources(stop)
+    )
     if scheduler is not None:
         scheduler.shutdown(wait=False)
     # Same reason the API closes these on shutdown: the connections and
