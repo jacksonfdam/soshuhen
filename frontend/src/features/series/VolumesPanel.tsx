@@ -9,7 +9,12 @@ function stateBadge(volume: SeriesVolume) {
   if (volume.state === 'downloaded') return <Badge tone="secondary">Downloaded</Badge>
   if (volume.state === 'failed') return <Badge tone="error">Failed</Badge>
   if (volume.revised) return <Badge tone="warning">Updated, downloading again</Badge>
-  return <Badge tone="primary">Queued</Badge>
+  if (volume.state === 'queued' || volume.state === 'downloading') {
+    return <Badge tone="primary">Queued</Badge>
+  }
+  // known: no download waiting. The next library sync queues it; saying
+  // "Queued" here would be a promise nothing is keeping.
+  return <Badge tone="tertiary">Not downloaded yet</Badge>
 }
 
 export function VolumesPanel({
