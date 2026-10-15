@@ -54,6 +54,8 @@ class JobType(StrEnum):
     STATUS_WRITE = "status_write"
     NOTES_WRITE = "notes_write"
     KOMGA_READ_PROGRESS = "komga_read_progress"
+    JNC_LIBRARY_SYNC = "jnc_library_sync"
+    VOLUME_DOWNLOAD = "volume_download"
 
 
 class Lane(StrEnum):
@@ -73,7 +75,9 @@ class Lane(StrEnum):
 # lane by omission. That is the safe default: a short job in the download lane
 # waits behind archives, while a long one in the fetch lane is merely the
 # behaviour we already had.
-_DOWNLOAD_LANE = frozenset({JobType.DOWNLOAD_BATCH, JobType.DOWNLOAD_CHAPTER})
+_DOWNLOAD_LANE = frozenset(
+    {JobType.DOWNLOAD_BATCH, JobType.DOWNLOAD_CHAPTER, JobType.VOLUME_DOWNLOAD}
+)
 
 
 def lane_of(job_type: JobType) -> Lane:

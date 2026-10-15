@@ -162,6 +162,39 @@ class Chapter(Base):
     series: Mapped[Series] = relationship(back_populates="chapters")
 
 
+
+class Volume(Base):
+    """A J-Novel Club volume the user owns or has pre-ordered.
+
+    Kept apart from Chapter on purpose; see migration 0023.
+    """
+
+    __tablename__ = "volume"
+    __table_args__ = (
+        UniqueConstraint("series_id", "number", name="volume_series_number_key"),
+        UniqueConstraint("series_id", "source_volume_id", name="volume_series_source_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    series_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("series.id", ondelete="CASCADE"), nullable=False
+    )
+    number: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    source_volume_id: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    last_updated: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The last_updated of the file on disk: older than last_updated means the
+    # volume was revised and downloads again.
+    downloaded_updated: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_part: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    last_part: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    state: Mapped[str] = mapped_column(Text, nullable=False, server_default="known")
+    file_path: Mapped[str | None] = mapped_column(Text)
+    komga_book_id: Mapped[str | None] = mapped_column(Text)
+    discovered_at: Mapped[datetime] = _now()
+
+
 class Job(Base):
     """The queue. Leased with SELECT ... FOR UPDATE SKIP LOCKED."""
 
