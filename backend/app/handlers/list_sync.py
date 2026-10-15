@@ -425,9 +425,11 @@ async def upsert_entry(session: AsyncSession, dto: ListEntryDTO, series_id: int)
             """
             insert into list_entry (provider, provider_media_id, series_id, title_romaji,
                                     title_english, synonyms, status, user_progress_chapter,
-                                    total_chapters, cover_url, raw, updated_at)
+                                    total_chapters, user_progress_volume, total_volumes,
+                                    cover_url, raw, updated_at)
             values (:provider, :media_id, :series_id, :romaji, :english, cast(:synonyms as jsonb),
-                    :status, :progress, :total, :cover, cast(:raw as jsonb), now())
+                    :status, :progress, :total, :progress_volume,
+                    cast(:total_volumes as integer), :cover, cast(:raw as jsonb), now())
             on conflict (provider, provider_media_id) do update
                set series_id = coalesce(list_entry.series_id, excluded.series_id),
                    title_romaji = excluded.title_romaji,
@@ -436,6 +438,8 @@ async def upsert_entry(session: AsyncSession, dto: ListEntryDTO, series_id: int)
                    status = excluded.status,
                    user_progress_chapter = excluded.user_progress_chapter,
                    total_chapters = excluded.total_chapters,
+                   user_progress_volume = excluded.user_progress_volume,
+                   total_volumes = excluded.total_volumes,
                    cover_url = excluded.cover_url,
                    raw = excluded.raw,
                    updated_at = now()
@@ -451,6 +455,8 @@ async def upsert_entry(session: AsyncSession, dto: ListEntryDTO, series_id: int)
             "status": str(dto.status),
             "progress": dto.progress_chapter,
             "total": dto.total_chapters,
+            "progress_volume": dto.progress_volume,
+            "total_volumes": dto.total_volumes,
             "cover": dto.cover_url,
             "raw": json.dumps(dto.raw or {}),
         },

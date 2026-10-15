@@ -5,7 +5,14 @@ num_volumes_read/num_volumes, AniList progressVolumes/volumes, MangaBaka
 progress_volume.
 """
 
+import pytest
+from sqlalchemy import text
+
+from app.db import get_sessionmaker
+from app.enums import ListStatus, Provider
+from app.handlers.list_sync import upsert_entry
 from app.providers.anilist import parse_list
+from app.providers.base import ListEntryDTO
 from app.providers.mal import parse_page
 from app.providers.mangabaka import parse_library
 
@@ -52,3 +59,44 @@ def test_entries_without_volume_fields_default_safely():
     }]}]}}
     [anilist] = parse_list(anilist_data)
     assert (anilist.progress_volume, anilist.total_volumes) == (0, None)
+
+
+@pytest.fixture
+async def series_id():
+    async with get_sessionmaker()() as session:
+        await session.execute(text("truncate series restart identity cascade"))
+        sid = (
+            await session.execute(
+                text(
+                    "insert into series (canonical_title, slug, needs_review, meta)"
+                    " values ('A', 'a', false, '{}'::jsonb) returning id"
+                )
+            )
+        ).scalar_one()
+        await session.commit()
+    return int(sid)
+
+
+async def _volumes_of(session):
+    return (
+        await session.execute(text("select user_progress_volume, total_volumes from list_entry"))
+    ).one()
+
+
+async def test_list_sync_stores_volume_progress(series_id):
+    dto = ListEntryDTO(provider=Provider.MAL, media_id="1", status=ListStatus.READING,
+                       progress_volume=2, total_volumes=16)
+    async with get_sessionmaker()() as session:
+        await upsert_entry(session, dto, series_id)
+        await session.commit()
+        row = await _volumes_of(session)
+    assert (row.user_progress_volume, row.total_volumes) == (2, 16)
+
+
+async def test_an_unknown_total_is_stored_as_null(series_id):
+    dto = ListEntryDTO(provider=Provider.MAL, media_id="1", status=ListStatus.READING)
+    async with get_sessionmaker()() as session:
+        await upsert_entry(session, dto, series_id)
+        await session.commit()
+        row = await _volumes_of(session)
+    assert (row.user_progress_volume, row.total_volumes) == (0, None)
