@@ -95,36 +95,49 @@ class OwnedVolume:
     epub_link: str | None
 
 
-def parse_library(payload: dict) -> tuple[list[OwnedVolume], bool]:
-    """One page of the library, and whether it was the last.
+def parse_library(payload: dict) -> tuple[list[OwnedVolume], bool, int]:
+    """One page of the library, whether it was the last, and how many entries
+    it held before any were skipped - paging counts those, not the parsed ones.
 
     Field names come from J-Novel Club's own message definitions (LibraryBook,
     Download) and from the clients that already download owned books; the
     account this was built with owned none, so no live page was seen.
     """
+    books = payload.get("books") or []
     volumes: list[OwnedVolume] = []
-    for book in payload.get("books") or []:
-        volume = book.get("volume") or {}
-        serie = book.get("serie") or {}
-        if not volume.get("id") or volume.get("number") is None or not serie.get("slug"):
-            continue
-        link = next(
-            (d.get("link") for d in book.get("downloads") or [] if d.get("type") == "EPUB"),
-            None,
-        )
-        volumes.append(
-            OwnedVolume(
-                series_slug=serie["slug"],
-                volume_id=volume["id"],
-                number=Decimal(str(volume["number"])),
-                title=volume.get("title") or None,
-                status="preorder" if book.get("status") == "PREORDER" else "owned",
-                last_updated=_instant(book.get("lastUpdated")),
-                epub_link=link or None,
-            )
-        )
+    for book in books:
+        try:
+            parsed = _owned_volume(book)
+        except (ValueError, ArithmeticError, TypeError, AttributeError):
+            # No live library page has been seen. One entry in a shape this
+            # does not expect is skipped, rather than failing every series'
+            # sync on every run until someone reads a log.
+            parsed = None
+        if parsed is not None:
+            volumes.append(parsed)
     last = bool((payload.get("pagination") or {}).get("lastPage", True))
-    return volumes, last
+    return volumes, last, len(books)
+
+
+def _owned_volume(book: dict) -> OwnedVolume | None:
+    volume = book.get("volume") or {}
+    serie = book.get("serie") or {}
+    if not volume.get("id") or volume.get("number") is None or not serie.get("slug"):
+        return None
+    link = next(
+        (d.get("link") for d in book.get("downloads") or [] if d.get("type") == "EPUB"),
+        None,
+    )
+    updated = book.get("lastUpdated")
+    return OwnedVolume(
+        series_slug=str(serie["slug"]),
+        volume_id=str(volume["id"]),
+        number=Decimal(str(volume["number"])),
+        title=volume.get("title") or None,
+        status="preorder" if book.get("status") == "PREORDER" else "owned",
+        last_updated=_instant(updated) if isinstance(updated, str) else None,
+        epub_link=link or None,
+    )
 
 
 def parse_part_ranges(payload: dict) -> dict[Decimal, tuple[Decimal, Decimal]]:
@@ -239,11 +252,11 @@ class JNovelClubSource(ProseSource):
                 await self.keeper.invalidate(token)
                 raise SignInRequired("J-Novel Club refused the sign-in; sign in again")
             response.raise_for_status()
-            page, last = parse_library(response.json())
+            page, last, raw = parse_library(response.json())
             volumes.extend(page)
-            if last or not page:
+            if last or raw == 0:
                 return volumes
-            skip += len(page)
+            skip += raw
 
     async def part_ranges(self, series_slug: str) -> dict[Decimal, tuple[Decimal, Decimal]]:
         response = await self.client.get(

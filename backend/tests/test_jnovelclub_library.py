@@ -44,7 +44,7 @@ def _book(number, *, slug="the-apothecary-diaries", status="OWNED", downloads=No
 
 
 def test_a_library_page_becomes_owned_volumes():
-    volumes, last = parse_library(
+    volumes, last, _ = parse_library(
         {"books": [_book(16)], "pagination": {"limit": 100, "skip": 0, "lastPage": True}}
     )
     assert last is True
@@ -62,7 +62,7 @@ def test_a_library_page_becomes_owned_volumes():
 
 
 def test_a_preorder_and_a_book_without_an_epub_are_kept_but_flagged():
-    volumes, _ = parse_library(
+    volumes, _, _ = parse_library(
         {"books": [_book(17, status="PREORDER"), _book(18, downloads=[])]}
     )
     assert [(v.number, v.status, v.epub_link) for v in volumes] == [
@@ -72,7 +72,7 @@ def test_a_preorder_and_a_book_without_an_epub_are_kept_but_flagged():
 
 
 def test_an_empty_library_is_one_last_page():
-    assert parse_library({"books": [], "pagination": {"lastPage": True}}) == ([], True)
+    assert parse_library({"books": [], "pagination": {"lastPage": True}}) == ([], True, 0)
 
 
 def test_part_ranges_come_from_the_aggregate():
@@ -137,3 +137,35 @@ async def test_a_volume_is_fetched_without_the_token():
     assert data == b"epub-bytes"
     assert "authorization" not in seen[0].headers
     assert seen[0].url.host == "cdn.example"
+
+
+def test_a_malformed_entry_is_skipped_not_fatal():
+    payload = {"books": [
+        {"volume": {"id": 99, "number": "not-a-number"}, "serie": {"slug": "s"}},
+        _book(16),
+        {"volume": {"id": 123, "number": 2}, "serie": {"slug": "s"}, "lastUpdated": 5},
+    ], "pagination": {"lastPage": True}}
+    volumes, _, raw = parse_library(payload)
+    assert raw == 3
+    assert [v.number for v in volumes] == [Decimal(16), Decimal(2)]
+    # An id that arrives as a number is still stored as text.
+    assert volumes[1].volume_id == "123"
+    assert volumes[1].last_updated is None
+
+
+async def test_paging_counts_every_entry_not_only_the_parsed_ones():
+    seen = []
+
+    def handler(request):
+        skip = int(request.url.params["skip"])
+        seen.append(skip)
+        if skip == 0:
+            # A whole page the parser cannot use must not end the paging.
+            return httpx.Response(200, json={
+                "books": [{"volume": {}, "serie": {}}] * 2, "pagination": {"lastPage": False},
+            })
+        return httpx.Response(200, json={"books": [_book(7)], "pagination": {"lastPage": True}})
+
+    volumes = await _source(handler, _stored).library()
+    assert seen == [0, 2]
+    assert [v.number for v in volumes] == [Decimal(7)]
