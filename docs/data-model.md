@@ -89,6 +89,23 @@ both the API and the worker, so enabling a site in settings is the same act as r
 ### `series_candidate`
 Search results awaiting confirmation. Replaced wholesale on each `match_search`.
 
+### `volume`
+A volume the user owns, or has pre-ordered, on J-Novel Club, for a series mapped to J-Novel Club.
+Unique on `(series_id, number)` and on `(series_id, source_volume_id)`.
+
+`id`, `series_id`, `number`, `source_volume_id`, `title`, `status` (`owned`, `preorder`),
+`last_updated`, `downloaded_updated`, `first_part`, `last_part`, `state`, `file_path`,
+`komga_book_id`, `discovered_at`
+
+**Kept apart from `chapter` on purpose.** Everything that counts chapters or turns a Komga book into
+a chapter number would otherwise need a filter, and a forgotten one would count volume 16 as
+chapter 16.
+
+`last_updated` is J-Novel Club's own revision date; `downloaded_updated` is the revision of the file
+on disk. When the first is newer, the volume downloads again and replaces the file. `last_part` sets
+where Komga sorts the volume: just after the last part it collects. Download links are never stored
+- they carry their own authorisation and are read fresh from the library each time.
+
 ### `chapter`
 What exists and what is held locally. Unique on `(series_id, number)`.
 
