@@ -37,6 +37,7 @@ from app.handlers import (  # noqa: F401
     progress_write,
     status_write,
     suggest_build,
+    volume_download,
 )
 from app.providers import syncing_providers
 from app.providers.tokens import keyed_providers
