@@ -15,7 +15,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.downloader.cbz import place_file
 from app.downloader.epub import is_epub
-from app.downloader.paths import volume_path
+from app.downloader.paths import volume_number_from_filename, volume_path
 from app.enums import JobType
 from app.handlers.base import JobContext, PermanentError, register
 from app.sources.base import SignInRequired, get_prose_source
@@ -50,6 +50,18 @@ async def handle(ctx: JobContext) -> None:
         raise PermanentError(f"volume {volume_id} no longer exists")
     await _set_state(ctx, volume_id, "downloading")
 
+    try:
+        await _download(ctx, row, volume_id)
+    except BaseException:
+        # Whatever went wrong - the library, the disk, the database - the row
+        # must not keep saying downloading with no job behind it; the next
+        # sync queues it again, and the retry ladder still runs this job.
+        await ctx.session.rollback()
+        await _set_state(ctx, volume_id, "known")
+        raise
+
+
+async def _download(ctx: JobContext, row, volume_id: int) -> None:
     source = get_prose_source(SITE)
     try:
         owned = await source.library()
@@ -65,15 +77,9 @@ async def handle(ctx: JobContext) -> None:
         )
         raise PermanentError(f"volume {row.number} {reason}")
 
-    try:
-        data = await source.fetch_volume(entry.epub_link)
-        if not is_epub(data):
-            raise RuntimeError(f"J-Novel Club's answer for volume {row.number} is not an EPUB")
-    except Exception:
-        # Back to known for the screens; the retry ladder runs the job again,
-        # and the next attempt reads a fresh link.
-        await _set_state(ctx, volume_id, "known")
-        raise
+    data = await source.fetch_volume(entry.epub_link)
+    if not is_epub(data):
+        raise RuntimeError(f"J-Novel Club's answer for volume {row.number} is not an EPUB")
 
     title = entry.title or row.title
     destination = volume_path(Path(get_settings().library_path), row.slug, row.number, title)
@@ -86,14 +92,21 @@ async def handle(ctx: JobContext) -> None:
     # is that same volume's older edition, and it goes only once the new one
     # is in place.
     if row.file_path and row.file_path != str(destination):
-        Path(row.file_path).unlink(missing_ok=True)
+        previous = Path(row.file_path)
+        # Only ever this volume's own earlier file: same folder, and a name that
+        # reads back as this volume. Anything else stays, whatever the row says.
+        if (
+            previous.parent == destination.parent
+            and volume_number_from_filename(previous.name) == row.number
+        ):
+            previous.unlink(missing_ok=True)
 
     await ctx.session.execute(
         text(
             """
             update volume
                set state = 'downloaded', file_path = :path, title = :title,
-                   downloaded_updated = cast(:updated as timestamptz)
+                   downloaded_updated = coalesce(cast(:updated as timestamptz), now())
              where id = :id
             """
         ),

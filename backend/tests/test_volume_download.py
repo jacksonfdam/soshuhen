@@ -183,3 +183,38 @@ async def test_a_lapsed_sign_in_leaves_the_volume_waiting():
             await _run(session, FakeJnc(signed_in=False), volume_id)
         await session.rollback()
         assert (await _row(session, volume_id)).state == "known"
+
+
+class BrokenLibrary(FakeJnc):
+    async def library(self):
+        raise RuntimeError("J-Novel Club answered 503")
+
+
+async def test_an_error_reading_the_library_does_not_strand_the_volume():
+    async with get_sessionmaker()() as session:
+        volume_id = await _volume(session)
+        with pytest.raises(RuntimeError):
+            await _run(session, BrokenLibrary(), volume_id)
+        await session.rollback()
+        assert (await _row(session, volume_id)).state == "known"
+
+
+async def test_a_volume_without_a_revision_date_is_not_downloaded_again():
+    async with get_sessionmaker()() as session:
+        volume_id = await _volume(session)
+        await session.execute(text("update volume set last_updated = null"))
+        await session.commit()
+        await _run(session, FakeJnc(updated=None), volume_id)
+        row = await _row(session, volume_id)
+        # Something must mark this edition as on disk, or every sync re-fetches it.
+        assert row.downloaded_updated is not None
+
+
+async def test_a_previous_path_that_is_not_this_volume_is_never_deleted(tmp_path):
+    chapter = tmp_path / "apothecary" / "apothecary - Ch.0012 - Vol.16 Extra.epub"
+    chapter.parent.mkdir(parents=True)
+    chapter.write_bytes(b"a chapter")
+    async with get_sessionmaker()() as session:
+        volume_id = await _volume(session, file_path=str(chapter))
+        await _run(session, FakeJnc(), volume_id)
+    assert chapter.exists()
