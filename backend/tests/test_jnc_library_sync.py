@@ -55,8 +55,8 @@ def test_what_needs_downloading():
     assert needs_download(**base)
     assert not needs_download(**{**base, "status": "preorder"})
     assert not needs_download(**{**base, "has_link": False})
-    assert not needs_download(**{**base, "state": "queued"})
-    assert not needs_download(**{**base, "state": "downloading"})
+    # In flight is the job table's to say (enqueue dedupes), not the row's.
+    assert needs_download(**{**base, "state": "queued"})
     assert not needs_download(**{**base, "state": "downloaded", "downloaded_updated": OLD})
     assert needs_download(**{**base, "state": "downloaded", "downloaded_updated": OLD,
                              "last_updated": NEW})
@@ -211,3 +211,47 @@ async def test_a_revised_volume_is_queued_again():
         await _run(session, FakeJnc([_owned(updated=NEW)]))
         assert [r.state for r in await _volumes(session)] == ["queued"]
         assert await _queued(session) == 1
+
+
+async def test_a_volume_left_queued_without_a_job_is_queued_again():
+    # "Cancel queue" deletes the job and leaves the row saying queued.
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned()]))
+        await session.execute(text("delete from job where type = 'volume_download'"))
+        await session.commit()
+        await _run(session, FakeJnc([_owned()]))
+        assert await _queued(session) == 1
+
+
+async def test_a_volume_already_waiting_is_not_queued_twice():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned()]))
+        await _run(session, FakeJnc([_owned()]))
+        assert await _queued(session) == 1
+
+
+async def test_a_number_taken_by_another_edition_skips_that_volume_only():
+    async with get_sessionmaker()() as session:
+        series_id = await _mapped_series(session)
+        await session.execute(
+            text(
+                "insert into volume (series_id, number, source_volume_id, status)"
+                " values (:s, 16, 'VOL-OLD-EDITION', 'owned')"
+            ),
+            {"s": series_id},
+        )
+        await session.commit()
+        ctx = await _run(session, FakeJnc([_owned(16), _owned(17)]))
+        numbers = (await session.execute(
+            text("select number, source_volume_id from volume order by number")
+        )).all()
+        assert [(r.number, r.source_volume_id) for r in numbers] == [
+            (Decimal("16.00"), "VOL-OLD-EDITION"), (Decimal("17.00"), "VOL-17"),
+        ]
+        log = (await session.execute(
+            text("select string_agg(message, ' ') from job_event where job_id = :j"),
+            {"j": ctx.job.id},
+        )).scalar_one()
+        assert "volume 16" in log

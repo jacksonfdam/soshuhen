@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.enums import JobType
@@ -45,8 +46,13 @@ def needs_download(
     downloaded_updated: datetime | None,
     last_updated: datetime | None,
 ) -> bool:
-    """Owned, downloadable, not already on its way, and not on disk at this revision."""
-    if status != "owned" or not has_link or state in ("queued", "downloading"):
+    """Owned, downloadable, and not on disk at this revision.
+
+    Whether a download is already on its way is the job table's to say, not
+    the row's: enqueue dedupes against a waiting or running job, while a row
+    can say queued long after "Cancel queue" deleted the job it meant.
+    """
+    if status != "owned" or not has_link:
         return False
     if downloaded_updated is None:
         return True
@@ -101,21 +107,32 @@ async def handle(ctx: JobContext) -> None:
         ranges = await source.part_ranges(slug)
         for volume in volumes:
             first, last = ranges.get(volume.number, (None, None))
-            row = (
-                await ctx.session.execute(
-                    text(UPSERT),
-                    {
-                        "series_id": series_id,
-                        "number": volume.number,
-                        "volume_id": volume.volume_id,
-                        "title": volume.title,
-                        "status": volume.status,
-                        "last_updated": volume.last_updated,
-                        "first_part": first,
-                        "last_part": last,
-                    },
+            try:
+                # One savepoint per volume: a number another edition already
+                # holds must cost that volume, not every series' sync forever.
+                async with ctx.session.begin_nested():
+                    row = (
+                        await ctx.session.execute(
+                            text(UPSERT),
+                            {
+                                "series_id": series_id,
+                                "number": volume.number,
+                                "volume_id": volume.volume_id,
+                                "title": volume.title,
+                                "status": volume.status,
+                                "last_updated": volume.last_updated,
+                                "first_part": first,
+                                "last_part": last,
+                            },
+                        )
+                    ).one()
+            except IntegrityError:
+                await ctx.log(
+                    f"{slug}: skipped volume {volume.number}, its number is already held by"
+                    " another edition",
+                    level="warning",
                 )
-            ).one()
+                continue
             if volume.status == "preorder":
                 preorders += 1
             if not needs_download(
@@ -126,16 +143,18 @@ async def handle(ctx: JobContext) -> None:
                 last_updated=row.last_updated,
             ):
                 continue
-            if row.downloaded_updated is not None:
-                revised += 1
-            await ctx.session.execute(
-                text("update volume set state = 'queued' where id = :id"), {"id": row.id}
-            )
-            await ctx.enqueue(
+            job_id = await ctx.enqueue(
                 JobType.VOLUME_DOWNLOAD,
                 {"volume_id": row.id},
                 series_id=series_id,
                 dedupe_key=f"volume_download:{row.id}",
+            )
+            if job_id is None:
+                continue  # already waiting or running
+            if row.downloaded_updated is not None:
+                revised += 1
+            await ctx.session.execute(
+                text("update volume set state = 'queued' where id = :id"), {"id": row.id}
             )
             queued += 1
 
