@@ -9,6 +9,9 @@ export interface JobEvent {
       hand to a handler; only the outcome frames identify what finished. */
   job_type: string | null
   series_id: number | null
+  /** Set on `notification.new` only, which names a row and carries no job. */
+  notification_id?: number
+  kind?: string
 }
 
 type Handler = (event: JobEvent) => void
@@ -18,7 +21,9 @@ type Handler = (event: JobEvent) => void
     which otherwise look identical on every screen. */
 export type StreamStatus = 'connecting' | 'open' | 'reconnecting'
 
-const EVENT_NAMES = ['job.progress', 'job.done', 'job.failed', 'job.retry']
+// The shared stream dispatches only the names listed here; an event the server
+// sends under any other name reaches no handler at all.
+const EVENT_NAMES = ['job.progress', 'job.done', 'job.failed', 'job.retry', 'notification.new']
 
 // One stream for the whole application, not one per hook.
 //
