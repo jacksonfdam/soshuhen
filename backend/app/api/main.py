@@ -13,6 +13,7 @@ from app.api import (
     routes_discovery,
     routes_health,
     routes_jobs,
+    routes_notifications,
     routes_reader,
     routes_series,
     routes_settings,
@@ -47,6 +48,7 @@ app.include_router(routes_series.router)
 app.include_router(routes_discovery.router)
 app.include_router(routes_discover.router)
 app.include_router(routes_jobs.router)
+app.include_router(routes_notifications.router)
 app.include_router(routes_settings.router)
 app.include_router(routes_auth.router)
 app.include_router(routes_health.router)
