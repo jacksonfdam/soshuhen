@@ -4,6 +4,7 @@ from pathlib import Path
 from app.downloader.paths import (
     chapter_filename,
     chapter_path,
+    existing_chapter_file,
     format_number,
     number_from_filename,
 )
@@ -41,3 +42,29 @@ def test_filename_parses_back_to_a_chapter_number():
 
 def test_a_name_without_a_chapter_marker_parses_to_nothing():
     assert number_from_filename("random.cbz") is None
+
+
+def test_a_prose_chapter_is_an_epub_with_the_same_stem():
+    comic = chapter_filename("slug", Decimal("3"), "Title")
+    prose = chapter_filename("slug", Decimal("3"), "Title", kind="prose")
+    assert comic == "slug - Ch.0003 - Title.cbz"
+    assert prose == "slug - Ch.0003 - Title.epub"
+
+
+def test_the_number_reads_back_from_either_extension():
+    assert number_from_filename("slug - Ch.0012.5 - x.epub") == Decimal("12.5")
+    assert number_from_filename("slug - Ch.0012.cbz") == Decimal("12")
+
+
+def test_existing_chapter_file_finds_either_extension(tmp_path):
+    cbz = chapter_path(tmp_path, "slug", Decimal("1"), "One")
+    cbz.parent.mkdir(parents=True)
+    cbz.write_bytes(b"x")
+    assert existing_chapter_file(tmp_path, "slug", Decimal("1"), "One") == cbz
+
+    epub = chapter_path(tmp_path, "slug", Decimal("2"), kind="prose")
+    epub.write_bytes(b"x")
+    # Asked with a title the file was written without: still found.
+    assert existing_chapter_file(tmp_path, "slug", Decimal("2"), "Two") == epub
+
+    assert existing_chapter_file(tmp_path, "slug", Decimal("3"), None) is None

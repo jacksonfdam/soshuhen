@@ -38,7 +38,9 @@ def library_payload(name: str, root: str) -> dict[str, Any]:
 
     ComicInfo import is on because the pipeline writes that file into each
     archive; conversion and repair are off because the files arrive as CBZ
-    already and rewriting them would fight the downloader.
+    already and rewriting them would fight the downloader. EPUB is scanned
+    because prose chapters arrive as EPUB, and its metadata import is on for
+    the same reason ComicInfo's is.
     """
     return {
         "name": name,
@@ -58,7 +60,7 @@ def library_payload(name: str, root: str) -> dict[str, Any]:
         "scanOnStartup": True,
         "scanCbx": True,
         "scanPdf": False,
-        "scanEpub": False,
+        "scanEpub": True,
         "scanDirectoryExclusions": [],
         "repairExtensions": False,
         "convertToCbz": False,
@@ -174,9 +176,24 @@ class KomgaClient:
         return response.json()
 
     async def ensure_library(self, name: str, root: str) -> str:
-        """Create the library if it is absent. Matching is by root path."""
+        """Create the library if it is absent. Matching is by root path.
+
+        A library created before prose existed has EPUB scanning off, and
+        Komga would then never index a single light novel. Only that switch
+        is changed - PATCH takes a partial body (since Komga 1.3.0), so every
+        setting the user may have tuned in Komga's own screens stays theirs.
+        """
         for library in await self.libraries():
             if (library.get("root") or "").rstrip("/") == root.rstrip("/"):
+                if library.get("scanEpub") is False:
+                    response = await self._request(
+                        "PATCH", f"{API}/libraries/{library['id']}", json={"scanEpub": True}
+                    )
+                    if response.status_code >= 400:
+                        raise KomgaError(
+                            f"enabling EPUB scanning failed: {response.status_code} "
+                            f"{response.text[:300]}"
+                        )
                 return library["id"]
         response = await self._request("POST", f"{API}/libraries", json=library_payload(name, root))
         if response.status_code >= 400:

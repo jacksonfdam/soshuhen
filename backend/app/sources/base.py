@@ -1,13 +1,14 @@
 """Contract for a source site, plus the registry that picks one for a URL.
 
-A source answers three questions: which manga match this title, which
-chapters exist at this URL, and which pages a chapter has. Fetching those
-pages is the downloader's job.
+Every source answers which works match a title and which chapters exist at a
+URL. What a chapter *is* depends on the kind: a comic source lists page images,
+which the downloader fetches; a prose source returns the chapter's text.
 """
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import ClassVar
 from urllib.parse import urlsplit
 
 
@@ -64,9 +65,26 @@ class PageRef:
     headers: dict[str, str] = field(default_factory=dict)
 
 
-class Source(ABC):
+@dataclass(frozen=True)
+class ChapterText:
+    """One prose chapter, already reduced to the XHTML an EPUB can carry.
+
+    Images stay references rather than bytes, so the downloader fetches them
+    through the same rate-limited path as comic pages, referer and all. The
+    body names them as {{img:N}}, an index into `images`.
+    """
+
+    title: str | None
+    body: str
+    images: list[PageRef] = field(default_factory=list)
+
+
+class SiteSource(ABC):
+    """What every site answers, whatever it publishes."""
+
     site: str
     domains: tuple[str, ...]
+    kind: ClassVar[str]
 
     @abstractmethod
     async def search(self, titles: list[str], *, limit: int = 8) -> list[Candidate]:
@@ -74,7 +92,14 @@ class Source(ABC):
 
     @abstractmethod
     async def list_chapters(self, url: str, *, language: str = "en") -> list[ChapterRef]:
-        """Every chapter the source publishes for this manga."""
+        """Every chapter the source publishes for this work."""
+
+
+class Source(SiteSource):
+    """A comic source. The name predates prose sources and stays, so the
+    templates and every native comic source keep compiling untouched."""
+
+    kind: ClassVar[str] = "comic"
 
     @abstractmethod
     async def list_pages(self, chapter_url: str, *, language: str = "en") -> list[PageRef]:
@@ -90,6 +115,26 @@ class Source(ABC):
         return data
 
 
+class ProseSource(SiteSource):
+    """A source that publishes text."""
+
+    kind: ClassVar[str] = "prose"
+
+    @abstractmethod
+    async def fetch_chapter(self, chapter_url: str, *, language: str = "en") -> ChapterText:
+        """The chapter's text. Raises ChapterUnavailable for a chapter the site
+        removed or keeps behind a paywall."""
+
+
+def kind_of(source: object) -> str:
+    """A source's kind, with comic as the answer for anything that never said.
+
+    The download tests register duck-typed fakes with no base class at all, and
+    every source written before prose existed is a comic one.
+    """
+    return getattr(source, "kind", "comic")
+
+
 @dataclass(frozen=True)
 class RegisteredSource:
     """A loaded row: the source instance plus the catalogue base_url it resolves from.
@@ -99,7 +144,7 @@ class RegisteredSource:
     class already carries - both are checked when a URL is resolved.
     """
 
-    source: Source
+    source: SiteSource
     base_url: str
 
 
@@ -117,14 +162,38 @@ def install_registry(entries: dict[str, RegisteredSource]) -> None:
     _REGISTRY.update(entries)
 
 
-def get_source(site: str) -> Source:
+def get_source(site: str) -> SiteSource:
     if site not in _REGISTRY:
         raise ValueError(f"unknown source site: {site}")
     return _REGISTRY[site].source
 
 
-def all_sources() -> list[Source]:
-    return [entry.source for entry in _REGISTRY.values()]
+def get_comic_source(site: str) -> Source:
+    """The source for a site that must publish images.
+
+    Raises rather than returning something that lacks list_pages, so a mapping
+    that crossed kinds fails here by name instead of as an AttributeError deep
+    in a download.
+    """
+    source = get_source(site)
+    if kind_of(source) != "comic":
+        raise TypeError(f"{site} is a {kind_of(source)} source, not a comic one")
+    return source  # type: ignore[return-value]
+
+
+def get_prose_source(site: str) -> ProseSource:
+    """The source for a site that must publish text. See get_comic_source."""
+    source = get_source(site)
+    if not isinstance(source, ProseSource):
+        raise TypeError(f"{site} is a {kind_of(source)} source, not a prose one")
+    return source
+
+
+def all_sources(kind: str | None = None) -> list[SiteSource]:
+    sources = [entry.source for entry in _REGISTRY.values()]
+    if kind is None:
+        return sources
+    return [source for source in sources if kind_of(source) == kind]
 
 
 def _host(url: str) -> str:
@@ -139,7 +208,7 @@ def _host(url: str) -> str:
     return host.removeprefix("www.")
 
 
-def source_for_url(url: str) -> Source:
+def source_for_url(url: str) -> SiteSource:
     """Pick the enabled source that owns a URL, so a hand-pasted link still resolves.
 
     Matches the URL's host against the host of each loaded row's base_url,

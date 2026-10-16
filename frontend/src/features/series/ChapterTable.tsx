@@ -72,6 +72,7 @@ export function ChapterTable({
   chapters,
   komgaBaseUrl,
   progress,
+  prose,
 }: {
   chapters: SeriesChapter[]
   /** Where Komga is served to a browser. Empty means no reader links at all. */
@@ -79,6 +80,8 @@ export function ChapterTable({
   /** The furthest chapter any list records as read. Lists count whole
       chapters, so 23.5 is read once progress reaches 24, not at 23. */
   progress: number
+  /** Prose chapters are EPUBs, which only Komga reads; the image reader would refuse them. */
+  prose: boolean
 }) {
   // Checked here rather than trusted from the prop: this is where the href is
   // built, so this is where a scheme the browser would execute has to stop.
@@ -187,23 +190,34 @@ export function ChapterTable({
                 <div className="inline-flex items-center gap-space-xs">
                   {/* Every chapter can be read now: one not downloaded yet is
                       streamed from its source and saved as it is read. */}
-                  <Link
-                    to={`/read/${chapter.id}`}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-space-sm py-1 font-mono text-label-sm text-primary transition-colors hover:bg-primary/[0.12]"
-                  >
-                    <Icon name="book" className="h-3.5 w-3.5" />
-                    Read
-                  </Link>
+                  {!prose && (
+                    <Link
+                      to={`/read/${chapter.id}`}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-space-sm py-1 font-mono text-label-sm text-primary transition-colors hover:bg-primary/[0.12]"
+                    >
+                      <Icon name="book" className="h-3.5 w-3.5" />
+                      Read
+                    </Link>
+                  )}
                   {komgaHref && chapter.komga_book_id && (
+                    // Komga routes an EPUB to its own reader and everything else to the
+                    // image reader, which shows a blank page for a book of text.
                     <a
-                      href={`${komgaHref}/book/${chapter.komga_book_id}/read?page=1&incognito=false`}
+                      href={`${komgaHref}/book/${chapter.komga_book_id}/${
+                        prose ? 'read-epub' : 'read?page=1&incognito=false'
+                      }`}
                       target="_blank"
                       rel="noreferrer"
-                      title="Open in Komga"
-                      aria-label="Open in Komga"
-                      className="inline-flex items-center rounded-lg px-space-xs py-1 text-outline transition-colors hover:bg-surface-container-high hover:text-on-surface"
+                      title={prose ? undefined : 'Open in Komga'}
+                      aria-label={prose ? undefined : 'Open in Komga'}
+                      className={
+                        prose
+                          ? 'inline-flex items-center gap-1.5 rounded-lg px-space-sm py-1 font-mono text-label-sm text-primary transition-colors hover:bg-primary/[0.12]'
+                          : 'inline-flex items-center rounded-lg px-space-xs py-1 text-outline transition-colors hover:bg-surface-container-high hover:text-on-surface'
+                      }
                     >
-                      <Icon name="link" className="h-3.5 w-3.5" />
+                      <Icon name={prose ? 'book' : 'link'} className="h-3.5 w-3.5" />
+                      {prose && 'Read in Komga'}
                     </a>
                   )}
                 </div>

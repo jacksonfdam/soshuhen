@@ -6,6 +6,7 @@ import { Button, EmptyState, ErrorState, Icon, NoticeBar, Skeleton, Tabs } from 
 import { ChapterTable } from './ChapterTable'
 import { CharacterGrid } from './CharacterGrid'
 import { DownloadControls } from './DownloadControls'
+import { KindControl } from './KindControl'
 import { MappingPanel } from './MappingPanel'
 import { NotesPanel } from './NotesPanel'
 import { ProgressManager } from './ProgressManager'
@@ -37,6 +38,7 @@ export function SeriesDetailPage() {
     error,
     reload,
     toggleAutoDownload,
+    setKind,
     download,
     research,
     remap,
@@ -155,6 +157,7 @@ export function SeriesDetailPage() {
                 chapters={chapters}
                 komgaBaseUrl={detail.komga_public_url}
                 progress={series.progress}
+                prose={series.kind === 'prose'}
               />
             </div>
             <div hidden={panel !== 'notes'}>
@@ -176,6 +179,7 @@ export function SeriesDetailPage() {
         <aside className="flex flex-col gap-space-md">
           <MappingPanel seriesId={series.id} mapping={mapping} onResearch={research} onRemap={remap} />
           <SyncTargets entries={entries} />
+          <KindControl kind={series.kind} onChange={setKind} />
           <DownloadControls
             autoDownload={series.auto_download}
             onToggleAutoDownload={toggleAutoDownload}

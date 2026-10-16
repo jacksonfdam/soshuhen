@@ -71,7 +71,8 @@ function Entry({
         </p>
 
         <Link
-          to={`/read/series/${row.series_id}`}
+          to={row.kind === 'prose' ? `/series/${row.series_id}` : `/read/series/${row.series_id}`}
+          state={row.kind === 'prose' ? originState(location) : undefined}
           className="mt-space-xs inline-flex w-fit items-center gap-1.5 rounded-lg px-space-sm py-1 font-mono text-label-sm text-primary transition-colors hover:bg-primary/[0.12]"
         >
           <Icon name="book" className="h-3.5 w-3.5" />

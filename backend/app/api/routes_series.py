@@ -2,7 +2,7 @@
 
 import json
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -17,12 +17,13 @@ from app.api.reading_frequency import reading_frequency
 from app.api.reading_recency import LAST_READ_AT
 from app.enums import JobType, ListStatus, ProgressSource, Provider
 from app.handlers.batching import queue_batches
+from app.handlers.match_search import series_kind
 from app.handlers.media_enrich import is_stale
 from app.handlers.progress_write import forward_only
 from app.providers import get_source
 from app.queue import repo
 from app.series_removal import remove_series
-from app.sources import source_for_url
+from app.sources import kind_of, source_for_url
 
 router = APIRouter(prefix="/api/series", tags=["series"])
 
@@ -40,6 +41,10 @@ class DownloadIn(BaseModel):
 
 class AutoDownloadIn(BaseModel):
     enabled: bool
+
+
+class KindIn(BaseModel):
+    kind: Literal["comic", "prose"]
 
 
 class ProgressIn(BaseModel):
@@ -72,7 +77,7 @@ class NotesIn(BaseModel):
 
 LIST_SQL = f"""
 select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_id,
-       s.auto_download,
+       s.auto_download, s.kind,
        coalesce(m.source_site, '') as source_site,
        coalesce(m.source_url, '') as source_url,
        coalesce(max(ch.downloaded), 0) as downloaded,
@@ -118,7 +123,7 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
 # drift from it one column at a time.
 LIST_SQL_ONE = f"""
 select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_id,
-       s.auto_download,
+       s.auto_download, s.kind,
        coalesce(m.source_site, '') as source_site,
        coalesce(m.source_url, '') as source_url,
        count(c.id) filter (where c.state = 'downloaded') as downloaded,
@@ -216,6 +221,7 @@ def _row_to_series(row: Any) -> dict[str, Any]:
         "failed": row.failed,
         "total_chapters": row.total_chapters,
         "auto_download": row.auto_download,
+        "kind": row.kind,
         "state": _state_of(row),
         "status": row.status,
         "progress": row.progress,
@@ -522,6 +528,19 @@ async def confirm_mapping(series_id: int, body: MappingIn, session: Session) -> 
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # The one place a person can still cross the comic/prose boundary by hand -
+    # a pasted link - so it is refused here rather than discovered as a
+    # download that writes the wrong kind of file.
+    expected = await series_kind(session, series_id)
+    if kind_of(source) != expected:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{source.site} publishes {kind_of(source)}, and this series is {expected}. "
+                "Change the series kind first if it is wrong."
+            ),
+        )
+
     await session.execute(
         text("update source_mapping set active = false where series_id = :series_id"),
         {"series_id": series_id},
@@ -607,6 +626,50 @@ async def set_auto_download(
         )
     await session.commit()
     return {"ok": True, "auto_download": body.enabled, "queued": queued}
+
+
+@router.post("/{series_id}/kind")
+async def set_kind(series_id: int, body: KindIn, session: Session) -> dict[str, Any]:
+    """Say what a series is when no provider did, or when one said it wrong.
+
+    Locked, so the next list sync does not put it back: the providers that
+    stay silent about format are exactly the ones a person corrects by hand.
+    The active mapping is left alone - if it is now the wrong kind, the
+    download refuses it by name, and Review is where a new one is chosen.
+    """
+    result = await session.execute(
+        text(
+            """
+            update series
+               set kind = :kind,
+                   meta = jsonb_set(coalesce(meta, '{}'::jsonb), '{kind_locked}', 'true'::jsonb)
+             where id = :id
+            returning id
+            """
+        ),
+        {"kind": body.kind, "id": series_id},
+    )
+    if result.first() is None:
+        raise HTTPException(status_code=404, detail="series not found")
+    # Review's candidates were searched as the old kind. A mapped series has already
+    # chosen its source, so only an unmapped one has stale candidates to replace.
+    mapped = (
+        await session.execute(
+            text("select 1 from source_mapping where series_id = :id and active limit 1"),
+            {"id": series_id},
+        )
+    ).first() is not None
+    if not mapped:
+        await repo.enqueue(
+            session,
+            JobType.MATCH_SEARCH,
+            {"series_id": series_id},
+            priority=0,
+            series_id=series_id,
+            dedupe_key=f"match_search:{series_id}",
+        )
+    await session.commit()
+    return {"ok": True, "kind": body.kind}
 
 
 @router.get("/{series_id}/chapters")

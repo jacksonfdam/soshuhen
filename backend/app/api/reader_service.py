@@ -48,6 +48,11 @@ class PageFailed(RuntimeError):
     """One page could not be fetched. The chapter may still be fine."""
 
 
+class ProseChapter(RuntimeError):
+    """A light novel chapter. This reader draws page images, and an EPUB opened
+    as a zip would show its embedded illustrations as if they were the pages."""
+
+
 @dataclass(frozen=True)
 class ChapterRow:
     id: int
@@ -60,6 +65,7 @@ class ChapterRow:
     chapter_url: str | None
     series_title: str
     source_site: str | None
+    series_kind: str | None
 
 
 # One page-list request per chapter at a time. A manifest and the first page
@@ -79,7 +85,8 @@ async def chapter(session: AsyncSession, chapter_id: int) -> ChapterRow:
             """
             select c.id, c.series_id, c.number, c.title, c.state, c.file_path,
                    c.komga_book_id, c.source_url as chapter_url,
-                   s.canonical_title as series_title, m.source_site
+                   s.canonical_title as series_title, m.source_site,
+                   s.kind as series_kind
               from chapter c
               join series s on s.id = c.series_id
               left join source_mapping m on m.series_id = s.id and m.active
@@ -93,7 +100,10 @@ async def chapter(session: AsyncSession, chapter_id: int) -> ChapterRow:
     row = result.first()
     if row is None:
         raise ChapterMissing(f"chapter {chapter_id} not found")
-    return ChapterRow(**row._mapping)
+    found = ChapterRow(**row._mapping)
+    if found.series_kind == "prose":
+        raise ProseChapter(f"chapter {chapter_id} belongs to a light novel")
+    return found
 
 
 def archive_of(row: ChapterRow) -> Path | None:

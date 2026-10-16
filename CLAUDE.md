@@ -130,6 +130,11 @@ sign-in it cannot perform. **Ask the providers what they are capable of; never i
 When a real list later turns up holding the same series, `list_sync` carries the locally recorded
 chapter across to it.
 
+A source declares its `kind`. Comic sources subclass `Source` and list page images; prose sources
+subclass `ProseSource` and return a `ChapterText` from `fetch_chapter`. Ask a source its kind
+(`kind_of`) rather than checking for a method, and resolve a mapping's source with
+`get_comic_source` / `get_prose_source` where the kind matters, so a crossed mapping fails by name.
+
 **`sources/` never imports from `downloader/`.** `ChapterUnavailable` lives in `sources/base.py` for
 that reason, and a handler maps it to `PermanentError`. The import went the wrong way once and was
 caught in review; it would have broken the day `downloader/runner.py` was deleted anyway.

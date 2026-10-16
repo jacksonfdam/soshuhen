@@ -35,6 +35,48 @@ def test_library_payload_leaves_the_archives_alone():
     assert payload["repairExtensions"] is False
 
 
+def test_library_payload_scans_epub_for_prose():
+    assert library_payload("Manga", "/manga")["scanEpub"] is True
+
+
+async def test_an_existing_library_with_epub_off_is_switched_on_alone():
+    calls: list[tuple[str, str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path, request.content))
+        if request.method == "GET":
+            return httpx.Response(
+                200, json=[{"id": "lib-1", "name": "Manga", "root": "/manga", "scanEpub": False}]
+            )
+        return httpx.Response(204)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = KomgaClient("http://komga", api_key="k", client=http_client)
+        assert await client.ensure_library("Manga", "/manga") == "lib-1"
+    patches = [call for call in calls if call[0] == "PATCH"]
+    assert len(patches) == 1
+    assert patches[0][1] == "/api/v1/libraries/lib-1"
+    # Partial body: Komga's PATCH leaves every field it is not sent alone.
+    assert json.loads(patches[0][2]) == {"scanEpub": True}
+
+
+async def test_an_existing_library_already_scanning_epub_is_not_patched():
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.method)
+        return httpx.Response(
+            200, json=[{"id": "lib-1", "name": "Manga", "root": "/manga", "scanEpub": True}]
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = KomgaClient("http://komga", api_key="k", client=http_client)
+        await client.ensure_library("Manga", "/manga")
+    assert calls == ["GET"]
+
+
 def test_books_carry_read_progress(fixture):
     books = parse_books(fixture("komga_books.json"))
     assert [book.completed for book in books] == [True, False, False]

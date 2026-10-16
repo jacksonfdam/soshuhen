@@ -66,6 +66,25 @@ Finish a chapter in your reader and Soshuhen writes that progress back to your l
 It only ever moves progress forward. If a list already records a higher chapter than your reader
 does, the list wins — reading somewhere else never gets undone.
 
+## Light novels
+
+A light novel on MyAnimeList or AniList is recognised as one and kept apart from manga. It is
+searched on the prose sources, LoLoBun, Novelight and EmpireNovel, never on image sites, and you
+confirm the match on Discover like any other series.
+
+Each chapter downloads as an EPUB, not a CBZ, with the series, chapter number, title and cover
+embedded, and lands in the same Komga library. Komga reads it in its own web reader; on a prose
+series a chapter shows **Read in Komga** rather than opening Soshuhen's image reader. Finishing a
+chapter there moves your lists forward the same way it does for manga.
+
+LoLoBun locks most of its chapters to its own app. Those cannot be fetched and show as skipped,
+rather than retrying. EmpireNovel sits behind a Cloudflare challenge and needs the `flaresolverr`
+compose profile; until it is running the source stays disabled.
+
+If a series is filed under the wrong kind, or no list says what it is, the **Format** control on the
+series page switches it between Comic and Light novel. A kind set there is kept, and sync does not
+change it back.
+
 ## The screens
 
 ### Home

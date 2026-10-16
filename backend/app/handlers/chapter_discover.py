@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.downloader.paths import chapter_path, number_from_filename
+from app.downloader.paths import existing_chapter_file, number_from_filename
 from app.enums import JobType
 from app.handlers.base import JobContext, PermanentError, register
 from app.handlers.batching import queue_batches
@@ -127,11 +127,10 @@ async def reconcile_with_disk(session: AsyncSession, series_id: int, slug: str) 
     )
     reconciled = 0
     for row in result.all():
-        path = chapter_path(library_root, slug, Decimal(str(row.number)), row.title)
-        if not path.exists():
-            # A file written before a title was known carries no title suffix.
-            path = chapter_path(library_root, slug, Decimal(str(row.number)))
-        if path.exists():
+        # Either format, and with or without a title: a file written before a
+        # title was known carries no title suffix.
+        path = existing_chapter_file(library_root, slug, Decimal(str(row.number)), row.title)
+        if path is not None:
             await session.execute(
                 text(
                     """

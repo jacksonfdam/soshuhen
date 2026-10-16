@@ -16,6 +16,7 @@ from app.catalogue.loader import load_catalogue
 from app.config import get_settings
 from app.cron import CRON_JOBS
 from app.db import get_sessionmaker
+from app.downloader.paths import ARCHIVE_SUFFIXES
 from app.enums import JobType, Lane, types_for
 
 # Importing the handler modules is what registers them.
@@ -202,7 +203,11 @@ async def verify_library_mount() -> None:
     if not expected:
         return
 
-    found = sum(1 for _ in library.glob("**/*.cbz")) if library.is_dir() else 0
+    found = (
+        sum(1 for path in library.glob("**/*") if path.suffix in ARCHIVE_SUFFIXES)
+        if library.is_dir()
+        else 0
+    )
     if found:
         return
 

@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.discovery.seeds import Seed, collapse, rank_score, seeds_from
 from app.enums import JobType, Provider
 from app.handlers.base import JobContext, register
-from app.handlers.list_sync import load_access_token
+from app.handlers.list_sync import load_access_token, series_kind_column
 from app.providers import get_source
 from app.providers.base import MangaMeta
 from app.queue import repo
@@ -278,7 +278,11 @@ async def handle(ctx: JobContext) -> None:
             total_chapters=entry.total_chapters if entry else None,
         )
         candidates: list[Candidate] = []
-        for source in all_sources():
+        # A light novel's title overlaps the manga it adapts, so an unfiltered search
+        # offers the wrong kind of source as the best match. Unknown format searches
+        # comic, as everywhere else.
+        kind = series_kind_column({entry.format if entry else None}) or "comic"
+        for source in all_sources(kind=kind):
             try:
                 candidates.extend(await source.search([seed.title], limit=5))
             except Exception as exc:  # noqa: BLE001 - a dead site must not stop the build

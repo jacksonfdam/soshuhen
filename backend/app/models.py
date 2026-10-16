@@ -57,6 +57,10 @@ class Series(Base):
     # place in every sync, and an unmapped series was already downloading
     # nothing. Null is the normal state, so the review queue is the default.
     review_ignored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # comic or prose. Null is unknown and behaves as comic, which is what every
+    # series did before this column existed. meta.kind_locked marks a value the
+    # user chose by hand, which a list sync must not overwrite.
+    kind: Mapped[str | None] = mapped_column(String(10))
     meta: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = _now()
 

@@ -24,8 +24,10 @@ from app.handlers.list_sync import (
     existing_series_for_entry,
     find_series_by_alias,
     merge_aliases,
+    series_kind_column,
     upsert_entry_status,
 )
+from app.handlers.match_search import series_kind
 from app.handlers.suggest_build import upsert_suggestion
 from app.providers import get_source, syncing_providers
 from app.providers.base import (
@@ -37,7 +39,7 @@ from app.providers.base import (
 )
 from app.providers.tokens import NotConnected, access_token_for
 from app.queue import repo
-from app.sources import source_for_url
+from app.sources import kind_of, source_for_url
 from app.text_utils import normalize
 
 router = APIRouter(prefix="/api", tags=["discovery"])
@@ -242,6 +244,21 @@ async def approve(
     series_id = await resolve_series_for(session, entries, aliases)
     for entry in entries:
         await upsert_entry_status(session, entry, series_id)
+    # The entries written here carry no raw payload, so list_sync's recompute from
+    # raw would find nothing: the suggestion's own format is the evidence. Only a
+    # series that has no kind yet takes it, and a locked one is the user's.
+    new_kind = series_kind_column({kind})
+    if new_kind:
+        await session.execute(
+            text(
+                """
+                update series set kind = cast(:kind as text)
+                 where id = :id and kind is null
+                   and not coalesce((meta ->> 'kind_locked')::boolean, false)
+                """
+            ),
+            {"id": series_id, "kind": new_kind},
+        )
 
     job_ids: list[int | None] = [
         await repo.enqueue(
@@ -280,10 +297,13 @@ async def approve(
     declared = meta.get("relation") != TITLE_MATCH
     if not mapped and declared and best.get("url") and confident(row.title, best):
         try:
-            site = source_for_url(best["url"]).site
+            source = source_for_url(best["url"])
+            site = source.site
         except ValueError:
-            site = None
-        if site:
+            source = site = None
+        # A best match on the other side of the comic/prose boundary is a different
+        # work by the same name: leave it for Review like any unconfident match.
+        if site and kind_of(source) == await series_kind(session, series_id):
             await session.execute(
                 text(
                     """

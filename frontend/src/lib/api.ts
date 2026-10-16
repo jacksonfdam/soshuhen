@@ -19,6 +19,8 @@ export interface Series {
   failed: number
   total_chapters: number | null
   auto_download: boolean
+  /** Comic or prose. Null when no provider said, which behaves as comic. */
+  kind: 'comic' | 'prose' | null
   state: SeriesState
   status: ListStatus | null
   progress: number
@@ -410,6 +412,8 @@ export interface ContinueReadingEntry {
   writable: boolean
   title: string
   slug: string
+  /** Prose has no in-app reader, so its Continue link goes to the series page. */
+  kind: 'comic' | 'prose'
   cover_url: string | null
   progress: number
   total_chapters: number | null
@@ -884,6 +888,11 @@ export const api = {
     request<{ auto_download: boolean; queued: number }>(`/api/series/${id}/auto-download`, {
       method: 'POST',
       body: JSON.stringify({ enabled }),
+    }),
+  setKind: (id: number, kind: 'comic' | 'prose') =>
+    request<{ ok: boolean; kind: 'comic' | 'prose' }>(`/api/series/${id}/kind`, {
+      method: 'POST',
+      body: JSON.stringify({ kind }),
     }),
   download: (id: number, from?: number, to?: number) =>
     request<{ queued: number }>(`/api/series/${id}/download`, {
