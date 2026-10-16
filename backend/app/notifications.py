@@ -19,6 +19,7 @@ from app.enums import NotificationKind
 from app.queue.repo import NOTIFY_CHANNEL
 
 EVENT = "notification.new"
+READ_EVENT = "notification.read"
 RETENTION = timedelta(days=30)
 
 
@@ -73,8 +74,29 @@ async def record(
             "ts": datetime.now(UTC).isoformat(),
         }
     )
+    await _notify(session, payload)
+    return int(notification_id)
+
+
+async def announce_read(session: AsyncSession, notification_id: int | None) -> None:
+    """Tell every open tab that a row, or with None every row, has been read.
+
+    The tab that marked it knows already; without this the others keep a badge
+    for news the user has seen until the next notification arrives, which can
+    be days.
+    """
+    payload = json.dumps(
+        {
+            "event": READ_EVENT,
+            "notification_id": notification_id,
+            "ts": datetime.now(UTC).isoformat(),
+        }
+    )
+    await _notify(session, payload)
+
+
+async def _notify(session: AsyncSession, payload: str) -> None:
     await session.execute(
         text("select pg_notify(:channel, :payload)"),
         {"channel": NOTIFY_CHANNEL, "payload": payload},
     )
-    return int(notification_id)

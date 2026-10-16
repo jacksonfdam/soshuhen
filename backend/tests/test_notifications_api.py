@@ -1,11 +1,17 @@
 """The bell's routes: what is new, how much of it is unread, and marking it read."""
 
+import asyncio
+import json
+
+import asyncpg
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
 from app.api.main import app
+from app.config import get_settings
 from app.db import get_sessionmaker
+from app.queue.repo import NOTIFY_CHANNEL
 
 pytestmark = pytest.mark.asyncio
 
@@ -149,3 +155,29 @@ async def test_read_all_marks_every_unread_row(client):
 
     assert (await client.post("/api/notifications/read-all")).json() == {"marked": 2}
     assert (await client.get("/api/notifications")).json()["unread_count"] == 0
+
+
+@pytest.fixture
+async def heard():
+    received: asyncio.Queue[str] = asyncio.Queue()
+    connection = await asyncpg.connect(get_settings().dsn)
+    await connection.add_listener(
+        NOTIFY_CHANNEL, lambda _c, _p, _ch, payload: received.put_nowait(payload)
+    )
+    yield received
+    await connection.close()
+
+
+async def test_marking_read_tells_every_open_tab(client, heard):
+    series_id = await _series()
+    nid = await _notification(series_id)
+
+    await client.post(f"/api/notifications/{nid}/read")
+    one = json.loads(await asyncio.wait_for(heard.get(), 2))
+    await client.post("/api/notifications/read-all")
+    every = json.loads(await asyncio.wait_for(heard.get(), 2))
+
+    assert one["event"] == "notification.read"
+    assert one["notification_id"] == nid
+    assert every["event"] == "notification.read"
+    assert every["notification_id"] is None

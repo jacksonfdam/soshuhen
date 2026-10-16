@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import db_session
+from app.notifications import announce_read
 
 router = APIRouter(prefix="/api", tags=["notifications"])
 
@@ -78,6 +79,7 @@ async def mark_read(notification_id: int, session: Session) -> dict[str, bool]:
     ).first()
     if found is None:
         raise HTTPException(status_code=404, detail="no such notification")
+    await announce_read(session, notification_id)
     await session.commit()
     return {"ok": True}
 
@@ -89,5 +91,6 @@ async def mark_all_read(session: Session) -> dict[str, int]:
             text("update notification set read_at = now() where read_at is null")
         )
     ).rowcount
+    await announce_read(session, None)
     await session.commit()
     return {"marked": marked}

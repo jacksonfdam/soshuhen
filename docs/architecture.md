@@ -126,7 +126,9 @@ anywhere. A screen that polls is doing it wrong.
 New chapters travel on the same channel. When `chapter_discover` or `jnc_library_sync` writes a
 `notification` row, it sends `notification.new` in the same transaction, so the event leaves only
 if the run commits. The payload names the row and nothing more. The browser re-reads
-`/api/notifications`, so the API stays the one answer to what a notification says. A tab that is
+`/api/notifications`, so the API stays the one answer to what a notification says. Marking a
+notification read sends `notification.read` the same way, so the badge in every other open tab
+follows. A tab that is
 not in front also raises a desktop notification through the browser's own Notification API. That
 needs no push service, which is also why it happens only while a tab is open.
 
