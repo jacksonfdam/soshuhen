@@ -137,21 +137,12 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        s.auto_download, s.kind,
        coalesce(m.source_site, '') as source_site,
        coalesce(m.source_url, '') as source_url,
-       count(c.id) filter (where c.state = 'downloaded') as downloaded,
-       count(c.id) as known,
-       count(c.id) filter (where c.state in ('queued', 'downloading')) as in_flight,
-       count(c.id) filter (where c.state = 'failed') as failed,
-       -- distinct: chapter and list_entry are joined in the same from, so a
-       -- series on two lists sees each chapter row twice. The same week as
-       -- chapter_discover.EXPIRY_WARNING_DAYS.
-       count(distinct c.id) filter (where c.state in ('known', 'queued', 'failed')
-                                      and c.available_until > now()
-                                      and c.available_until <= now() + interval '7 days')
-           as expiring_count,
-       min(c.available_until) filter (where c.state in ('known', 'queued', 'failed')
-                                        and c.available_until > now()
-                                        and c.available_until <= now() + interval '7 days')
-           as expiring_earliest,
+       coalesce(max(ch.downloaded), 0) as downloaded,
+       coalesce(max(ch.known), 0) as known,
+       coalesce(max(ch.in_flight), 0) as in_flight,
+       coalesce(max(ch.failed), 0) as failed,
+       coalesce(max(ch.expiring_count), 0) as expiring_count,
+       max(ch.expiring_earliest) as expiring_earliest,
        array_remove(array_agg(distinct e.provider), null) as providers,
        max(e.total_chapters) as total_chapters,
        (array_agg(e.status order by
@@ -168,8 +159,30 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        (array_agg(e.raw order by e.updated_at desc))[1] as raw
   from series s
   left join source_mapping m on m.series_id = s.id and m.active
-  left join chapter c on c.series_id = s.id
   left join list_entry e on e.series_id = s.id
+  left join (
+      -- The same per-series chapter stats as LIST_SQL, for the same reason:
+      -- joined straight to series beside list_entry, a series on two
+      -- providers counted every chapter twice here long after #34 fixed the
+      -- library card, and the two screens disagreed about the same series.
+      select series_id,
+             count(*) filter (where state = 'downloaded') as downloaded,
+             count(*) as known,
+             count(*) filter (where state in ('queued', 'downloading')) as in_flight,
+             count(*) filter (where state = 'failed') as failed,
+             -- The same week as chapter_discover.EXPIRY_WARNING_DAYS.
+             count(*) filter (where state in ('known', 'queued', 'failed')
+                                and available_until > now()
+                                and available_until <= now() + interval '7 days')
+                 as expiring_count,
+             min(available_until) filter (where state in ('known', 'queued', 'failed')
+                                            and available_until > now()
+                                            and available_until <= now() + interval '7 days')
+                 as expiring_earliest
+        from chapter
+       where series_id = :id
+       group by series_id
+  ) ch on ch.series_id = s.id
  where s.id = :id
  group by s.id, m.source_site, m.source_url
 """
