@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import get_sessionmaker
-from app.handlers.progress_push import entries_of, highest_completed
+from app.handlers.progress_push import entries_of, highest_completed, pushable_chapter
 from app.komga.client import parse_books
 from app.worker.main import enqueue_progress_push
 
@@ -122,3 +122,21 @@ async def test_the_cron_queues_a_series_only_a_key_provider_holds(mangabaka_conf
         ).scalars().all()
 
     assert queued == [series_id]
+
+
+def test_prose_progress_is_capped_at_the_lists_total():
+    # J-Novel Club numbers parts across a series (part 216 of The Apothecary
+    # Diaries); the list counts the novel's chapters its own way.
+    assert pushable_chapter(216, "prose", 150) == 150
+    assert pushable_chapter(120, "prose", 150) == 120
+
+
+def test_prose_progress_without_a_known_total_is_pushed_as_read():
+    assert pushable_chapter(216, "prose", None) == 216
+    assert pushable_chapter(216, "prose", 0) == 216
+
+
+def test_comic_progress_is_never_capped():
+    # A provider's total lags a manga's release; capping would hold readers back.
+    assert pushable_chapter(216, "comic", 150) == 216
+    assert pushable_chapter(216, None, 150) == 216

@@ -85,6 +85,27 @@ If a series is filed under the wrong kind, or no list says what it is, the **For
 series page switches it between Comic and Light novel. A kind set there is kept, and sync does not
 change it back.
 
+### J-Novel Club
+
+J-Novel Club publishes many licensed light novels in weekly parts before each volume is finished.
+With a Premium membership, Soshuhen downloads those parts, one EPUB per part. J-Novel Club numbers
+parts across the whole series, and those numbers are the chapter numbers here.
+
+Sign in either with `JNC_LOGIN` and `JNC_PASSWORD` in `.env`, which renews itself, or from the
+J-Novel Club card in Settings. The card keeps only the sign-in token, for up to 14 days, never your
+password; when it lapses the card asks you to sign in again, and downloads wait rather than fail.
+
+A Premium member can read a part only until around the 15th of the month after its volume is
+published. A series with undownloaded parts expiring within a week shows how many and when, on its
+page and in the library, and the daily discovery job logs a warning. Downloading still waits for
+you, as everywhere else.
+
+J-Novel Club's terms keep Premium content to personal, non-commercial use, and each part asks not
+to be turned into an EPUB. This is for reading your own membership's parts on your own Komga.
+
+Parts often number past the chapter count MyAnimeList or AniList hold for a novel. When they do,
+progress sent to your lists stops at the list's own total.
+
 ## The screens
 
 ### Home

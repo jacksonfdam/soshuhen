@@ -28,6 +28,11 @@ COMICK_ENABLED = "comick_enabled"
 READING_MINUTES_PER_CHAPTER = "reading_minutes_per_chapter"
 KOMGA_PUBLIC_URL = "komga_public_url"
 MANGAFIRE_WAF_PASS = "mangafire_waf_pass"
+# The J-Novel Club token saved by the Settings sign-in, and when it lapses.
+# Deliberately absent from all_settings(): the token is a credential, and
+# GET /api/settings sends everything it lists to the browser.
+JNC_TOKEN = "jnc_token"
+JNC_TOKEN_EXPIRES_AT = "jnc_token_expires_at"
 READER_DEFAULT_MODE = "reader_default_mode"
 READER_DEFAULT_SCALE = "reader_default_scale"
 READER_DEFAULT_BACKGROUND = "reader_default_background"

@@ -30,7 +30,7 @@ from app.handlers.download_chapter import build_comicinfo, load_catalogue_row
 from app.handlers.prose_download import cover_for, write_prose_chapter
 from app.queue import repo
 from app.sources import source_for_url
-from app.sources.base import ChapterUnavailable, ProseSource
+from app.sources.base import ChapterUnavailable, ProseSource, SignInRequired
 from app.sources.net import get_client
 
 # How often a lease is renewed while one chapter's pages are still arriving.
@@ -181,6 +181,27 @@ async def handle(ctx: JobContext) -> None:
                     page_bytes = await fetch_chapter(
                         source, row["chapter_url"], client, on_page=keep_lease
                     )
+            except SignInRequired as exc:
+                # The source needs a sign-in it no longer has. Nothing is wrong
+                # with these chapters: put back what this batch had not reached,
+                # keep what it already saved, and say what to do. The next
+                # download after a sign-in picks them up.
+                await ctx.session.execute(
+                    text(
+                        "update chapter set state = 'known'"
+                        " where id = any(cast(:ids as bigint[])) and state = 'downloading'"
+                    ),
+                    {"ids": [r["id"] for r in wanted.values()]},
+                )
+                if placed:
+                    await ctx.enqueue(
+                        JobType.KOMGA_SCAN,
+                        {"series_id": first["series_id"]},
+                        series_id=first["series_id"],
+                        dedupe_key=f"komga_scan:{first['series_id']}",
+                    )
+                await ctx.session.commit()
+                raise PermanentError(str(exc)) from exc
             except ChapterUnavailable as exc:
                 # Decision (#95): one chapter the source refuses skips that
                 # chapter, not the whole batch - per-chapter listing means a

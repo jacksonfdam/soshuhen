@@ -30,7 +30,7 @@ from app.providers import mangabaka
 from app.queue import repo
 from app.reader import cache as reader_cache_files
 from app.sources import source_for_url
-from app.sources.base import ChapterUnavailable, ProseSource
+from app.sources.base import ChapterUnavailable, ProseSource, SignInRequired
 from app.sources.net import CatalogueRow, get_client
 
 # How often a lease is renewed while one chapter's pages are still arriving.
@@ -257,6 +257,13 @@ async def handle(ctx: JobContext) -> None:
         async with semaphore:
             try:
                 await write_prose_chapter(ctx, row, source, client, cover, destination)
+            except SignInRequired as exc:
+                # A lapsed sign-in, not a broken chapter: leave it waiting.
+                await ctx.session.execute(
+                    text("update chapter set state = 'known' where id = :id"), {"id": chapter_id}
+                )
+                await ctx.session.commit()
+                raise PermanentError(str(exc)) from exc
             except ChapterUnavailable as exc:
                 # The same answer a comic chapter gets in pages_from_source.
                 await ctx.session.execute(

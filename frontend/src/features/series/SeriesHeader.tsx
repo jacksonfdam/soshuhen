@@ -64,6 +64,15 @@ export function SeriesHeader({
         {series.kind === 'prose' && !format?.toLowerCase().includes('novel') && (
           <Badge tone="tertiary">Light novel</Badge>
         )}
+        {series.expiring && (
+          <Badge tone="warning">
+            {series.expiring.count} {series.expiring.count === 1 ? 'part expires' : 'parts expire'}{' '}
+            {new Date(series.expiring.earliest).toLocaleDateString(undefined, {
+              day: 'numeric',
+              month: 'short',
+            })}
+          </Badge>
+        )}
         {/* The reader is Komga's, not this application's. Offered only once a
             scan has matched the series there and someone has said what address
             Komga answers on. */}

@@ -7,6 +7,7 @@ which the downloader fetches; a prose source returns the chapter's text.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from typing import ClassVar
 from urllib.parse import urlsplit
@@ -17,6 +18,17 @@ class NotConfigured(RuntimeError):
 
     Distinct from a failed call: nothing is wrong, the target simply does not
     exist here, so a caller records an absence instead of retrying.
+    """
+
+
+class SignInRequired(NotConfigured):
+    """The account a source signs in with has to sign in again.
+
+    Its own class rather than plain NotConfigured, because the cure differs:
+    a chapter refused for this reason is waiting on the user, not broken, and
+    nothing about it may be marked skipped - the download handlers catch this,
+    and only this, to put chapters back. A source that is simply not set up
+    for one chapter (ComiciViewer's paid pages) still raises NotConfigured.
     """
 
 
@@ -50,6 +62,9 @@ class ChapterRef:
     title: str | None = None
     volume: str | None = None
     language: str = "en"
+    # When a source stops serving this chapter to the signed-in account. None,
+    # for every source but one, means it never expires.
+    available_until: datetime | None = None
 
 
 @dataclass(frozen=True)

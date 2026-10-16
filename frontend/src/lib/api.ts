@@ -19,6 +19,8 @@ export interface Series {
   failed: number
   total_chapters: number | null
   auto_download: boolean
+  /** Parts the source stops serving within a week and that are not downloaded. */
+  expiring: { count: number; earliest: string } | null
   /** Comic or prose. Null when no provider said, which behaves as comic. */
   kind: 'comic' | 'prose' | null
   state: SeriesState
@@ -34,6 +36,12 @@ export interface Series {
   last_read_at: string | null
   /** Komga's own id for the series, once a scan has matched it. */
   komga_series_id: string | null
+}
+
+export interface JncSession {
+  via: 'env' | 'settings' | 'none'
+  expires_at: string | null
+  level: string | null
 }
 
 export interface Candidate {
@@ -56,6 +64,8 @@ export interface SeriesChapter {
   file_path: string | null
   /** Komga's own id for the book, once it has indexed the downloaded file. */
   komga_book_id: string | null
+  /** When the source stops serving this chapter. Null means it never expires. */
+  available_until: string | null
 }
 
 export type ReaderMode = 'paged_ltr' | 'paged_rtl' | 'long_strip' | 'double'
@@ -884,6 +894,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ chapter }),
     }),
+  jncSession: () => request<JncSession>('/api/sources/jnovelclub/session'),
+  jncSignIn: (login: string, password: string) =>
+    request<{ signed_in: boolean; expires_at: string }>('/api/sources/jnovelclub/sign-in', {
+      method: 'POST',
+      body: JSON.stringify({ login, password }),
+    }),
+  jncSignOut: () =>
+    request<{ signed_in: boolean }>('/api/sources/jnovelclub/sign-in', { method: 'DELETE' }),
   setAutoDownload: (id: number, enabled: boolean) =>
     request<{ auto_download: boolean; queued: number }>(`/api/series/${id}/auto-download`, {
       method: 'POST',

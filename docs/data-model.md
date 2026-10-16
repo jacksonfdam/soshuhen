@@ -93,7 +93,11 @@ Search results awaiting confirmation. Replaced wholesale on each `match_search`.
 What exists and what is held locally. Unique on `(series_id, number)`.
 
 `id`, `series_id`, `number` (`Numeric`), `title`, `source_url`, `state`, `file_path`,
-`komga_book_id`, `discovered_at`
+`komga_book_id`, `discovered_at`, `available_until`
+
+`available_until` is when the source stops serving the chapter to the signed-in account; null, which
+is every chapter of every source but J-Novel Club's pre-publication parts, means never. Discovery
+writes it on every run, so a date the source moves is followed.
 
 **`state` is the record of what is missing**, reconciled against Komga rather than the filesystem, so
 moving files by hand does not cause a redownload.
@@ -156,7 +160,10 @@ Only OAuth providers appear here. A provider authenticating with a configured ke
 
 ### `setting`
 Key/value strings for what the interface may change: concurrency, batch size, cron expressions.
-Credentials live in the environment, never here.
+
+One credential lives here: `jnc_token` and `jnc_token_expires_at`, the J-Novel Club token saved by the
+Settings sign-in. They are never part of `GET /api/settings`, which sends what it lists to the
+browser, and no password is ever stored; every other credential stays in the environment.
 
 ## Discovery
 

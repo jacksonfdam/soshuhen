@@ -147,6 +147,19 @@ Searching and listing chapters works without any of this, and MangaDex caches an
 but not authenticated ones — so signing in makes searches *slower*. Leave these empty unless your
 account needs to see titles that are otherwise restricted.
 
+### J-Novel Club (optional)
+
+```
+JNC_LOGIN=
+JNC_PASSWORD=
+```
+
+Your J-Novel Club email and password. With both set, Soshuhen signs in and renews the token on its
+own, and the J-Novel Club card in Settings shows "Signed in from .env" with nothing to change. Leave
+them empty to sign in from that card instead, which stores only the token, never the password, and
+asks again when it lapses after up to 14 days. Search works without either; downloading parts needs
+a Premium membership.
+
 ### Comick (optional)
 
 ```

@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     mangadex_username: str = ""
     mangadex_password: str = ""
 
+    # J-Novel Club sign-in. When both are set they sign in and renew by
+    # themselves, and the Settings sign-in is disabled; when not, a token saved
+    # from Settings is used instead. The password lives only here, never in
+    # the database.
+    jnc_login: str = ""
+    jnc_password: str = ""
+
     # Self-hosted comick-source-api. It scrapes search results and chapter
     # lists, but has no endpoint for page images, so it never touches
     # downloading itself.
