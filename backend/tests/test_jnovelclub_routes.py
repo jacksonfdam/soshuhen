@@ -27,6 +27,7 @@ async def clean(monkeypatch):
         await session.execute(
             text("delete from setting where key in ('jnc_token', 'jnc_token_expires_at')")
         )
+        await session.execute(text("delete from job where type = 'jnc_library_sync'"))
         await session.commit()
     await seed_jnovelclub()
     yield
@@ -152,3 +153,24 @@ async def test_an_expired_saved_token_reads_as_signed_out(client):
         await session.commit()
     session_info = (await client.get("/api/sources/jnovelclub/session")).json()
     assert session_info["via"] == "none"
+
+
+async def test_signing_in_queues_a_library_sync(client, accepted):
+    await client.post(
+        "/api/sources/jnovelclub/sign-in", json={"login": "me@example.test", "password": "pw"}
+    )
+    async with get_sessionmaker()() as session:
+        queued = (
+            await session.execute(
+                text("select count(*) from job where type = 'jnc_library_sync'")
+            )
+        ).scalar_one()
+    assert queued == 1
+
+
+async def test_the_sync_button_queues_one_sync(client):
+    first = (await client.post("/api/sources/jnovelclub/library-sync")).json()
+    second = (await client.post("/api/sources/jnovelclub/library-sync")).json()
+    assert first["ok"] is True and first["job_id"] is not None
+    # Deduped: a second press while one is waiting adds nothing.
+    assert second["job_id"] is None

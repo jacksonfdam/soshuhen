@@ -25,6 +25,7 @@ from app.handlers import (  # noqa: F401
     chapter_discover,
     download_batch,
     download_chapter,
+    jnc_library_sync,
     komga_read_progress,
     komga_scan,
     list_sync,
@@ -36,6 +37,7 @@ from app.handlers import (  # noqa: F401
     progress_write,
     status_write,
     suggest_build,
+    volume_download,
 )
 from app.providers import syncing_providers
 from app.providers.tokens import keyed_providers
@@ -137,6 +139,13 @@ async def enqueue_progress_push() -> None:
     log.info("cron: queued progress push for %d series", len(series_ids))
 
 
+async def enqueue_jnc_library_sync() -> None:
+    async with get_sessionmaker()() as session:
+        await repo.enqueue(session, JobType.JNC_LIBRARY_SYNC, {}, dedupe_key="jnc_library_sync")
+        await session.commit()
+    log.info("cron: queued J-Novel Club library sync")
+
+
 # Keyed by the ids in app.cron, which is also what the dashboard reports on.
 # A job named there with nothing to run here would be reported as scheduled
 # and never fire.
@@ -145,6 +154,7 @@ ENQUEUERS = {
     "chapter_discover": enqueue_chapter_discover,
     "progress_push": enqueue_progress_push,
     "anime_list_sync": enqueue_anime_list_sync,
+    "jnc_library_sync": enqueue_jnc_library_sync,
 }
 
 

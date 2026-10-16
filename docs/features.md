@@ -106,6 +106,15 @@ to be turned into an EPUB. This is for reading your own membership's parts on yo
 Parts often number past the chapter count MyAnimeList or AniList hold for a novel. When they do,
 progress sent to your lists stops at the list's own total.
 
+Volumes you own on J-Novel Club download by themselves, as J-Novel Club's own EPUB, for every series
+mapped to J-Novel Club: buying a volume is the decision to have it. Each lands in the same Komga
+series as the parts, right after the parts it collects, and J-Novel Club's file is never modified -
+Soshuhen sets its number and position through Komga instead. When J-Novel Club revises a volume, the
+new edition replaces the old file. Pre-orders wait until they are out. Volumes of series you have
+not mapped are named in the library sync's log rather than added, since series only come from your
+lists. The library is read every six hours, after a sign-in, and when you press **Sync library
+now** on the J-Novel Club card; the series page lists each owned volume with where it stands.
+
 ## The screens
 
 ### Home

@@ -39,6 +39,18 @@ export function JNovelClubCard() {
     }
   }
 
+  const syncLibrary = async () => {
+    setBusy(true)
+    setFailure(null)
+    try {
+      await api.jncLibrarySync()
+    } catch (caught) {
+      setFailure(messageOf(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const signOut = async () => {
     setBusy(true)
     try {
@@ -71,10 +83,17 @@ export function JNovelClubCard() {
       tone={signedIn ? 'ok' : 'neutral'}
       statusLabel={statusLabel}
     >
-      {session?.via === 'settings' && (
-        <Button variant="surface" onClick={signOut} disabled={busy}>
-          Sign out
-        </Button>
+      {session && session.via !== 'none' && (
+        <div className="flex flex-wrap gap-space-xs">
+          <Button variant="surface" onClick={syncLibrary} disabled={busy}>
+            Sync library now
+          </Button>
+          {session.via === 'settings' && (
+            <Button variant="surface" onClick={signOut} disabled={busy}>
+              Sign out
+            </Button>
+          )}
+        </div>
       )}
       {session?.via === 'none' && (
         <form

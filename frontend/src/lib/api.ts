@@ -205,11 +205,24 @@ export interface SeriesReadingFrequency {
   first_event_at: string | null
 }
 
+export interface SeriesVolume {
+  number: number
+  title: string | null
+  status: 'owned' | 'preorder'
+  state: string
+  last_updated: string | null
+  /** A newer edition exists than the file on disk; it is downloading again. */
+  revised: boolean
+  komga_book_id: string | null
+}
+
 export interface SeriesDetail {
   series: Series
   metadata: SeriesMetadata
   mapping: { source_site: string; source_url: string } | null
   chapters: SeriesChapter[]
+  /** Volumes owned on J-Novel Club. Empty for every other series. */
+  volumes: SeriesVolume[]
   entries: SeriesEntry[]
   reading_minutes_per_chapter: number
   /** Where Komga is served to a browser. Empty until it is configured. */
@@ -899,6 +912,10 @@ export const api = {
     request<{ signed_in: boolean; expires_at: string }>('/api/sources/jnovelclub/sign-in', {
       method: 'POST',
       body: JSON.stringify({ login, password }),
+    }),
+  jncLibrarySync: () =>
+    request<{ ok: boolean; job_id: number | null }>('/api/sources/jnovelclub/library-sync', {
+      method: 'POST',
     }),
   jncSignOut: () =>
     request<{ signed_in: boolean }>('/api/sources/jnovelclub/sign-in', { method: 'DELETE' }),

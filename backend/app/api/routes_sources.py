@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import settings_store
 from app.api.deps import db_session
 from app.config import get_settings
+from app.enums import JobType
+from app.queue import repo
 from app.sources import jnovel_auth, registry
 from app.sources.base import get_prose_source
 from app.sources.jnovelclub import API_BASE as JNC_API_BASE
@@ -157,9 +159,21 @@ async def jnc_sign_in(body: JncSignIn, session: Session) -> dict[str, Any]:
     await settings_store.set_value(
         session, settings_store.JNC_TOKEN_EXPIRES_AT, signed_in.expires_at.isoformat()
     )
+    # A fresh sign-in is when the library is most likely to hold something
+    # new; waiting up to six hours for the cron would look broken.
+    await repo.enqueue(session, JobType.JNC_LIBRARY_SYNC, {}, dedupe_key="jnc_library_sync")
     await session.commit()
     await registry.reload(session)
     return {"signed_in": True, "expires_at": signed_in.expires_at.isoformat()}
+
+
+@router.post("/jnovelclub/library-sync")
+async def jnc_library_sync(session: Session) -> dict[str, Any]:
+    job_id = await repo.enqueue(
+        session, JobType.JNC_LIBRARY_SYNC, {}, dedupe_key="jnc_library_sync"
+    )
+    await session.commit()
+    return {"ok": True, "job_id": job_id}
 
 
 @router.delete("/jnovelclub/sign-in")

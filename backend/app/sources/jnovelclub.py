@@ -10,6 +10,7 @@ volume 16 is parts 204-216), so they are the chapter numbers as they come.
 """
 
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import ClassVar
@@ -36,6 +37,8 @@ SITE = "jnovelclub"
 API_BASE = "https://labs.j-novel.club"
 WEB_BASE = "https://j-novel.club"
 JSON = {"format": "json"}
+# The page size the web app asks the library for.
+LIBRARY_PAGE = 100
 
 _SERIES_SLUG = re.compile(r"/series/([^/?#]+)")
 _PART_SLUG = re.compile(r"/read/([^/?#]+)")
@@ -76,6 +79,77 @@ def expires_at(publishing: datetime) -> datetime:
 
 def _instant(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
+
+
+
+@dataclass(frozen=True)
+class OwnedVolume:
+    """One volume in the signed-in account's J-Novel Club library."""
+
+    series_slug: str
+    volume_id: str
+    number: Decimal
+    title: str | None
+    status: str  # "owned" or "preorder"
+    last_updated: datetime | None
+    epub_link: str | None
+
+
+def parse_library(payload: dict) -> tuple[list[OwnedVolume], bool, int]:
+    """One page of the library, whether it was the last, and how many entries
+    it held before any were skipped - paging counts those, not the parsed ones.
+
+    Field names come from J-Novel Club's own message definitions (LibraryBook,
+    Download) and from the clients that already download owned books; the
+    account this was built with owned none, so no live page was seen.
+    """
+    books = payload.get("books") or []
+    volumes: list[OwnedVolume] = []
+    for book in books:
+        try:
+            parsed = _owned_volume(book)
+        except (ValueError, ArithmeticError, TypeError, AttributeError):
+            # No live library page has been seen. One entry in a shape this
+            # does not expect is skipped, rather than failing every series'
+            # sync on every run until someone reads a log.
+            parsed = None
+        if parsed is not None:
+            volumes.append(parsed)
+    last = bool((payload.get("pagination") or {}).get("lastPage", True))
+    return volumes, last, len(books)
+
+
+def _owned_volume(book: dict) -> OwnedVolume | None:
+    volume = book.get("volume") or {}
+    serie = book.get("serie") or {}
+    if not volume.get("id") or volume.get("number") is None or not serie.get("slug"):
+        return None
+    link = next(
+        (d.get("link") for d in book.get("downloads") or [] if d.get("type") == "EPUB"),
+        None,
+    )
+    updated = book.get("lastUpdated")
+    return OwnedVolume(
+        series_slug=str(serie["slug"]),
+        volume_id=str(volume["id"]),
+        number=Decimal(str(volume["number"])),
+        title=volume.get("title") or None,
+        status="preorder" if book.get("status") == "PREORDER" else "owned",
+        last_updated=_instant(updated) if isinstance(updated, str) else None,
+        epub_link=link or None,
+    )
+
+
+def parse_part_ranges(payload: dict) -> dict[Decimal, tuple[Decimal, Decimal]]:
+    """Each volume number's first and last part, from the series aggregate."""
+    ranges: dict[Decimal, tuple[Decimal, Decimal]] = {}
+    for entry in payload.get("volumes") or []:
+        volume = entry.get("volume") or {}
+        numbers = [Decimal(p["number"]) for p in entry.get("parts") or [] if "number" in p]
+        if volume.get("number") is None or not numbers:
+            continue
+        ranges[Decimal(str(volume["number"]))] = (min(numbers), max(numbers))
+    return ranges
 
 
 class JNovelClubSource(ProseSource):
@@ -162,6 +236,44 @@ class JNovelClubSource(ProseSource):
             return response.json().get("level")
         except Exception:  # noqa: BLE001 - see the docstring
             return None
+
+    async def library(self) -> list[OwnedVolume]:
+        """Every volume the signed-in account owns or has pre-ordered."""
+        volumes: list[OwnedVolume] = []
+        skip = 0
+        while True:
+            token = await self.keeper.token()
+            response = await self.client.get(
+                f"{API_BASE}/app/v2/me/library",
+                params={**JSON, "include": "serie", "limit": LIBRARY_PAGE, "skip": skip},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if response.status_code in (401, 410):
+                await self.keeper.invalidate(token)
+                raise SignInRequired("J-Novel Club refused the sign-in; sign in again")
+            response.raise_for_status()
+            page, last, raw = parse_library(response.json())
+            volumes.extend(page)
+            if last or raw == 0:
+                return volumes
+            skip += raw
+
+    async def part_ranges(self, series_slug: str) -> dict[Decimal, tuple[Decimal, Decimal]]:
+        response = await self.client.get(
+            f"{API_BASE}/app/v2/series/{series_slug}/aggregate", params=JSON
+        )
+        response.raise_for_status()
+        return parse_part_ranges(response.json())
+
+    async def fetch_volume(self, link: str) -> bytes:
+        """The volume's EPUB, fetched from the link the library handed out.
+
+        No Authorization header: the link carries its own, and the bearer
+        token must never travel to whatever host the link points at.
+        """
+        response = await self.client.get(link, follow_redirects=True)
+        response.raise_for_status()
+        return response.content
 
     async def _session_alive(self, token: str) -> bool:
         """Whether J-Novel Club still accepts this token, asked of /me.

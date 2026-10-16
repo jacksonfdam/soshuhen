@@ -193,6 +193,23 @@ export function PipelineFields({
         />
       </FieldCard>
       <FieldCard
+        label="J-Novel Club library"
+        hint={hoursHint(draft.cron_jnc_library_sync ?? '')}
+        description={
+          <>
+            Download volumes you own on J-Novel Club (
+            <code className="font-mono text-primary">cron_jnc_library_sync</code>).
+          </>
+        }
+      >
+        <CronInput
+          settingKey="cron_jnc_library_sync"
+          label="J-Novel Club library"
+          value={draft.cron_jnc_library_sync ?? ''}
+          onChange={(value) => onChange('cron_jnc_library_sync', value)}
+        />
+      </FieldCard>
+      <FieldCard
         label="Anime Sync (suggestions)"
         hint={hoursHint(draft.cron_anime_list_sync ?? '')}
         description={

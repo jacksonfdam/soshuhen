@@ -27,6 +27,11 @@ class KomgaBook:
     path: str
     completed: bool
     page: int
+    # Read so a volume book already numbered the way we want is left alone.
+    number: str | None = None
+    number_sort: float | None = None
+    number_lock: bool = False
+    number_sort_lock: bool = False
 
     @property
     def filename(self) -> str:
@@ -80,6 +85,7 @@ def parse_books(payload: Any) -> list[KomgaBook]:
     books: list[KomgaBook] = []
     for item in items or []:
         progress = item.get("readProgress") or {}
+        metadata = item.get("metadata") or {}
         books.append(
             KomgaBook(
                 id=item.get("id", ""),
@@ -88,6 +94,10 @@ def parse_books(payload: Any) -> list[KomgaBook]:
                 path=item.get("url", ""),
                 completed=bool(progress.get("completed")),
                 page=int(progress.get("page") or 0),
+                number=metadata.get("number"),
+                number_sort=metadata.get("numberSort"),
+                number_lock=bool(metadata.get("numberLock")),
+                number_sort_lock=bool(metadata.get("numberSortLock")),
             )
         )
     return books
@@ -260,6 +270,12 @@ class KomgaClient:
         response = await self._request(
             "PUT", f"{API}/series/{series_id}/thumbnails/{thumbnail_id}/selected"
         )
+        response.raise_for_status()
+
+    async def update_book_metadata(self, book_id: str, body: dict[str, Any]) -> None:
+        """PATCH a book's metadata. Fields left out of `body` are unchanged
+        (Komga BookController, PATCH /api/v1/books/{bookId}/metadata)."""
+        response = await self._request("PATCH", f"{API}/books/{book_id}/metadata", json=body)
         response.raise_for_status()
 
     async def book_pages(self, book_id: str) -> list[dict[str, Any]]:
