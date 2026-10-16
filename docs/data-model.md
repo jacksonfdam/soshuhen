@@ -171,6 +171,24 @@ reclaiming, and a **partial unique index on `(type, dedupe_key)` restricted to `
 Append-only progress. `job_id`, `ts`, `level`, `message`, `pct`. This is the operational log the
 interface shows; container stdout is for when a container will not start.
 
+### `notification`
+What one discovery run found new for one series. A run that found three chapters writes one row,
+not three. The columns:
+
+- `kind`: `chapters`, `volumes` or `parts`. A `parts` row is a J-Novel Club volume that was
+  already known and has grown.
+- `count`, `first_number` and `last_number`: how many items, and their range.
+- `volume_number`: for `parts` only, the volume the parts belong to.
+- `created_at`, and `read_at`, which is null until the user reads it.
+
+The series' title and cover are read through `series_id` rather than copied in, so a renamed
+series reads correctly in old notifications. The rows go with their series through the cascade.
+
+Rows are written only by `chapter_discover` and `jnc_library_sync`, through
+`app/notifications.py`. Neither writes one on a series' first discovery, which would announce the
+whole backlog as new. Read rows older than 30 days are deleted whenever a new row is written.
+Unread rows stay until they are read.
+
 ## Accounts and configuration
 
 ### `provider_token`

@@ -244,6 +244,28 @@ class JobEvent(Base):
     pct: Mapped[float | None] = mapped_column(Numeric(5, 2))
 
 
+class Notification(Base):
+    """What one discovery run found new for one series, until it has been read."""
+
+    __tablename__ = "notification"
+    __table_args__ = (
+        Index("ix_notification_created", desc("created_at")),
+        Index("ix_notification_unread", "created_at", postgresql_where=text("read_at is null")),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    series_id: Mapped[int] = mapped_column(
+        ForeignKey("series.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    count: Mapped[int] = mapped_column(Integer, nullable=False)
+    first_number: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    last_number: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    volume_number: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    created_at: Mapped[datetime] = _now()
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ProviderToken(Base):
     __tablename__ = "provider_token"
 
