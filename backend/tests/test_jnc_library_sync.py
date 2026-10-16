@@ -9,7 +9,7 @@ from sqlalchemy import text
 from app.db import get_sessionmaker
 from app.enums import JobType, Lane, lane_of
 from app.handlers.base import JobContext
-from app.handlers.jnc_library_sync import handle, needs_download
+from app.handlers.jnc_library_sync import handle, needs_download, volume_news
 from app.queue import repo
 from app.sources.base import ProseSource, RegisteredSource, SignInRequired, install_registry
 from app.sources.jnovelclub import OwnedVolume
@@ -18,7 +18,7 @@ from app.sources.jnovelclub import OwnedVolume
 @pytest.fixture(autouse=True)
 async def clean():
     async with get_sessionmaker()() as session:
-        await session.execute(text("truncate series, job restart identity cascade"))
+        await session.execute(text("truncate series, job, notification restart identity cascade"))
         await session.commit()
 
 
@@ -66,9 +66,10 @@ class FakeJnc(ProseSource):
     site = "jnovelclub"
     domains = ("j-novel.club",)
 
-    def __init__(self, owned=None, signed_in=True):
+    def __init__(self, owned=None, signed_in=True, ranges=None):
         self.owned = owned or []
         self.signed_in = signed_in
+        self.ranges = ranges if ranges is not None else {Decimal(16): (Decimal(204), Decimal(216))}
 
     async def search(self, titles, *, limit=8):
         return []
@@ -85,7 +86,7 @@ class FakeJnc(ProseSource):
         return self.owned
 
     async def part_ranges(self, series_slug):
-        return {Decimal(16): (Decimal(204), Decimal(216))}
+        return self.ranges
 
 
 def _owned(number=16, *, slug="the-apothecary-diaries", status="owned", updated=OLD):
@@ -255,3 +256,79 @@ async def test_a_number_taken_by_another_edition_skips_that_volume_only():
             {"j": ctx.job.id},
         )).scalar_one()
         assert "volume 16" in log
+
+
+D = Decimal
+
+
+def test_volume_news():
+    assert volume_news(before=None, status="owned", last_part=D(216)).new_volume
+    assert not volume_news(before=None, status="preorder", last_part=None).new_volume
+    assert volume_news(before=("preorder", None), status="owned", last_part=D(216)).new_volume
+    assert not volume_news(before=("owned", D(216)), status="owned", last_part=D(216)).new_volume
+    assert volume_news(
+        before=("owned", D(214)), status="owned", last_part=D(216)
+    ).new_parts == (D(215), D(216))
+    assert volume_news(before=("owned", D(216)), status="owned", last_part=D(216)).new_parts is None
+    # A range unknown last time is not a range that grew.
+    assert volume_news(before=("owned", None), status="owned", last_part=D(216)).new_parts is None
+
+
+async def _notifications(session):
+    return (
+        await session.execute(
+            text(
+                "select kind, count, first_number, last_number, volume_number"
+                " from notification order by id"
+            )
+        )
+    ).all()
+
+
+async def test_first_sync_of_a_series_records_nothing():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned()]))
+        assert await _notifications(session) == []
+
+
+async def test_a_newly_owned_volume_is_announced():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned(16)]))
+        await _run(session, FakeJnc([_owned(16), _owned(17)]))
+        assert await _notifications(session) == [
+            ("volumes", 1, D("17.00"), D("17.00"), None)
+        ]
+
+
+async def test_a_preorder_is_not_news_until_it_is_owned():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned(16)]))
+        await _run(session, FakeJnc([_owned(16), _owned(17, status="preorder")]))
+        assert await _notifications(session) == []
+        await _run(session, FakeJnc([_owned(16), _owned(17)]))
+        assert [n.kind for n in await _notifications(session)] == ["volumes"]
+
+
+async def test_new_parts_of_a_known_volume_are_announced():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned(16)], ranges={D(16): (D(204), D(214))}))
+        await _run(session, FakeJnc([_owned(16)], ranges={D(16): (D(204), D(216))}))
+        assert await _notifications(session) == [
+            ("parts", 2, D("215.00"), D("216.00"), D("16.00"))
+        ]
+
+
+async def test_a_volume_skipped_for_its_number_announces_nothing():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned(16)]))
+        other_edition = OwnedVolume(
+            "the-apothecary-diaries", "VOL-16-OTHER", D(16), "Volume 16", "owned", OLD,
+            "https://cdn.example/v.epub?sig=y",
+        )
+        await _run(session, FakeJnc([_owned(16), other_edition]))
+        assert await _notifications(session) == []

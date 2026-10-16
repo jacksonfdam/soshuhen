@@ -8,15 +8,18 @@ named in the log: a series is created by a reading list, never by a shop.
 
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.enums import JobType
+from app.enums import JobType, NotificationKind
 from app.handlers.base import JobContext, register
+from app.notifications import record
 from app.sources.base import SignInRequired, get_prose_source
 
 SITE = "jnovelclub"
@@ -57,6 +60,39 @@ def needs_download(
     if downloaded_updated is None:
         return True
     return last_updated is not None and downloaded_updated < last_updated
+
+
+@dataclass(frozen=True)
+class VolumeNews:
+    new_volume: bool
+    #: First and last new part, inclusive.
+    new_parts: tuple[Decimal, Decimal] | None
+
+
+def volume_news(
+    *,
+    before: tuple[str, Decimal | None] | None,
+    status: str,
+    last_part: Decimal | None,
+) -> VolumeNews:
+    """What one upserted volume adds that the user can now read.
+
+    `before` is the volume's (status, last_part) ahead of the upsert, or None
+    when the volume is new. A pre-order cannot be read yet, so it is news only
+    on the sync that finds it owned.
+    """
+    new_volume = status == "owned" and (before is None or before[0] == "preorder")
+    new_parts = None
+    # A range unknown last time is not one that grew: there is nothing to say
+    # which of its parts are new.
+    if (
+        before is not None
+        and before[1] is not None
+        and last_part is not None
+        and last_part > before[1]
+    ):
+        new_parts = (before[1] + 1, last_part)
+    return VolumeNews(new_volume, new_parts)
 
 
 async def series_by_slug(session: AsyncSession) -> dict[str, int]:
@@ -105,6 +141,20 @@ async def handle(ctx: JobContext) -> None:
             unmapped.append(slug)
             continue
         ranges = await source.part_ranges(slug)
+        known = {
+            row.source_volume_id: (row.status, row.last_part)
+            for row in await ctx.session.execute(
+                text(
+                    "select source_volume_id, status, last_part from volume"
+                    " where series_id = :s"
+                ),
+                {"s": series_id},
+            )
+        }
+        # On a series' first sync every owned volume is new to this table, and
+        # announcing a whole shelf the user already bought is not news.
+        first_sync = not known
+        new_volumes: list[Decimal] = []
         for volume in volumes:
             first, last = ranges.get(volume.number, (None, None))
             try:
@@ -135,6 +185,23 @@ async def handle(ctx: JobContext) -> None:
                 continue
             if volume.status == "preorder":
                 preorders += 1
+            if not first_sync:
+                news = volume_news(
+                    before=known.get(volume.volume_id), status=volume.status, last_part=last
+                )
+                if news.new_volume:
+                    new_volumes.append(volume.number)
+                if news.new_parts:
+                    first_new, last_new = news.new_parts
+                    # J-Novel Club numbers parts with whole numbers, so the
+                    # range names every new part exactly.
+                    await record(
+                        ctx.session,
+                        series_id,
+                        NotificationKind.PARTS,
+                        [Decimal(n) for n in range(int(first_new), int(last_new) + 1)],
+                        volume_number=volume.number,
+                    )
             if not needs_download(
                 status=volume.status,
                 has_link=volume.epub_link is not None,
@@ -157,6 +224,7 @@ async def handle(ctx: JobContext) -> None:
                 text("update volume set state = 'queued' where id = :id"), {"id": row.id}
             )
             queued += 1
+        await record(ctx.session, series_id, NotificationKind.VOLUMES, new_volumes)
 
     await ctx.session.commit()
     summary = f"{len(owned)} owned on J-Novel Club, {queued} queued"
