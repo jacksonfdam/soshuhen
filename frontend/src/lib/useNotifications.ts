@@ -53,6 +53,12 @@ export function useNotifications(onOpen: (n: AppNotification) => void): {
   open.current = onOpen
 
   useJobEvents((event) => {
+    // Another tab marked something read: this tab's badge would otherwise keep
+    // counting it until the next notification, which can be days.
+    if (event.event === 'notification.read') {
+      reload()
+      return
+    }
     if (event.event !== 'notification.new') return
     if (document.visibilityState === 'visible') {
       reload()

@@ -23,7 +23,8 @@ export type StreamStatus = 'connecting' | 'open' | 'reconnecting'
 
 // The shared stream dispatches only the names listed here; an event the server
 // sends under any other name reaches no handler at all.
-const EVENT_NAMES = ['job.progress', 'job.done', 'job.failed', 'job.retry', 'notification.new']
+const EVENT_NAMES = ['job.progress', 'job.done', 'job.failed', 'job.retry', 'notification.new',
+  'notification.read']
 
 // One stream for the whole application, not one per hook.
 //
