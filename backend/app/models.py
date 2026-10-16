@@ -89,6 +89,8 @@ class ListEntry(Base):
     status: Mapped[ListStatus] = mapped_column(String(20), nullable=False)
     user_progress_chapter: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_chapters: Mapped[int | None] = mapped_column(Integer)
+    user_progress_volume: Mapped[int | None] = mapped_column(Integer)
+    total_volumes: Mapped[int | None] = mapped_column(Integer)
     cover_url: Mapped[str | None] = mapped_column(Text)
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     updated_at: Mapped[datetime] = mapped_column(

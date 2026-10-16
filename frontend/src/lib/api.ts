@@ -114,6 +114,8 @@ export interface SeriesEntry {
   provider_media_id: string
   status: ListStatus | null
   user_progress_chapter: number
+  /** Volumes read as the list records them. Null when the list never said. */
+  user_progress_volume: number | null
   updated_at: string | null
 }
 

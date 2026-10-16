@@ -412,7 +412,7 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
         text(
             """
             select e.provider, e.provider_media_id, e.status, e.user_progress_chapter,
-                   e.updated_at, e.raw,
+                   e.user_progress_volume, e.updated_at, e.raw,
                    exists (
                        select 1 from provider_token t where t.provider = 'anilist'
                    ) as anilist_connected
@@ -467,6 +467,7 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
                 "provider_media_id": e.provider_media_id,
                 "status": e.status,
                 "user_progress_chapter": e.user_progress_chapter,
+                "user_progress_volume": e.user_progress_volume,
                 "updated_at": e.updated_at.isoformat() if e.updated_at else None,
             }
             for e in entry_rows

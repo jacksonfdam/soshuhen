@@ -20,6 +20,7 @@ from app.providers.base import (
     MangaMeta,
     QueryUnsupported,
     TokenSet,
+    WriteRefused,
 )
 
 API_BASE = "https://api.myanimelist.net/v2"
@@ -188,15 +189,23 @@ class MyAnimeListSource(ListSource):
         )
         return parse_manga_search(page)
 
-    async def push_progress(self, access_token: str, media_id: str, chapter: int) -> None:
+    async def push_progress(
+        self, access_token: str, media_id: str, chapter: int | None, volume: int | None = None
+    ) -> None:
         headers = {"Authorization": f"Bearer {access_token}"}
-        data = {"num_chapters_read": chapter}
+        data = {}
+        if chapter is not None:
+            data["num_chapters_read"] = chapter
+        if volume is not None:
+            data["num_volumes_read"] = volume
         url = f"{API_BASE}/manga/{media_id}/my_list_status"
         if self._client is not None:
             response = await self._client.patch(url, data=data, headers=headers)
         else:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.patch(url, data=data, headers=headers)
+        if response.status_code in (400, 422):
+            raise WriteRefused(f"MyAnimeList refused the progress write: {response.text[:200]}")
         response.raise_for_status()
 
     async def set_status(self, access_token: str, media_id: str, status: ListStatus) -> None:
@@ -312,6 +321,8 @@ def parse_page(page: dict[str, Any]) -> list[ListEntryDTO]:
                 synonyms=synonyms,
                 progress_chapter=int(status.get("num_chapters_read") or 0),
                 total_chapters=node.get("num_chapters") or None,
+                progress_volume=int(status.get("num_volumes_read") or 0),
+                total_volumes=node.get("num_volumes") or None,
                 cover_url=(node.get("main_picture") or {}).get("large"),
                 kind=MEDIA_TYPE_MAP.get(node.get("media_type") or ""),
                 raw=item,

@@ -34,6 +34,7 @@ export function SyncTargets({ entries }: { entries: SeriesEntry[] }) {
                 {entry.status && KNOWN_STATUSES.has(entry.status) && <StatusPill status={entry.status} />}
                 <span className="font-mono text-label-sm text-outline">
                   Ch {formatChapter(entry.user_progress_chapter)}
+                  {entry.user_progress_volume ? <> · Vol {entry.user_progress_volume}</> : null}
                   {entry.updated_at && <> · {relativeTime(entry.updated_at)}</>}
                 </span>
               </div>
