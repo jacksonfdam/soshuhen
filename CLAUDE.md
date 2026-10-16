@@ -59,7 +59,12 @@ and share `image: soshuhen:local`. Build once and recreate the containers that m
 
 ```bash
 docker compose build api && docker compose up -d --force-recreate api worker worker-download
+docker compose ps
 ```
+
+Read the `ps` output, not just the `up` output: `up` reports only the services it touched. Once,
+`web`, `komga`, `comick` and `flaresolverr` were found stopped after a rebuild that never touched
+them, and the interface was down until `docker compose ps` showed it.
 
 Building a single service used to leave the others on stale code, and the symptom was a job failing
 with `no handler registered` — a build problem wearing a code problem's clothes. There are two
