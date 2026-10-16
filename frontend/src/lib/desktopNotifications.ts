@@ -6,9 +6,20 @@
 
 const ENABLED_KEY = 'soshuhen.desktopNotifications'
 
+// Android Chrome exposes Notification and grants the permission, then throws
+// on the constructor: it raises notifications only through a service worker.
+// Once that has happened the browser is treated as unsupported, so the panel
+// stops offering a switch that can never fire.
+let constructorRefused = false
+
 /** The API exists only in a secure context: HTTPS, or localhost. */
 export function supported(): boolean {
-  return typeof window !== 'undefined' && 'Notification' in window && window.isSecureContext
+  return (
+    !constructorRefused &&
+    typeof window !== 'undefined' &&
+    'Notification' in window &&
+    window.isSecureContext
+  )
 }
 
 export function permission(): NotificationPermission | 'unsupported' {
@@ -47,13 +58,19 @@ export function show(opts: {
   onClick: () => void
 }): void {
   if (permission() !== 'granted' || !enabled()) return
-  const notification = new Notification(opts.title, {
-    body: opts.body,
-    icon: opts.icon,
-    // One tag per row: two open tabs hearing the same event replace each
-    // other's notification instead of stacking a duplicate.
-    tag: `soshuhen-${opts.id}`,
-  })
+  let notification: Notification
+  try {
+    notification = new Notification(opts.title, {
+      body: opts.body,
+      icon: opts.icon,
+      // One tag per row: two open tabs hearing the same event replace each
+      // other's notification instead of stacking a duplicate.
+      tag: `soshuhen-${opts.id}`,
+    })
+  } catch {
+    constructorRefused = true
+    return
+  }
   notification.onclick = () => {
     window.focus()
     opts.onClick()
