@@ -66,6 +66,30 @@ Finish a chapter in your reader and Soshuhen writes that progress back to your l
 It only ever moves progress forward. If a list already records a higher chapter than your reader
 does, the list wins — reading somewhere else never gets undone.
 
+### Told when something new is out
+
+The bell in the header counts what discovery has found since you last looked. Open it to see one
+line per series, such as "Frieren: 3 new chapters (128–130)". Click a line to go to the series and
+mark it read, or use "Mark all as read".
+
+What counts as new:
+- A chapter a source lists for the first time, whether or not you download it.
+- A J-Novel Club volume you now own. A pre-order counts from the day it is released, not before.
+- New parts of a J-Novel Club volume you already have.
+
+A series you have just mapped does not announce its whole backlog: its first discovery is
+silent. Read notifications are cleared after 30 days.
+
+With a Soshuhen tab open but not in front, the same news also arrives as a desktop notification
+from your browser. Turn it on with "Enable desktop notifications" at the bottom of the panel. The
+switch that then appears mutes notifications in that browser without revoking the permission.
+
+Desktop notifications use the browser's own notification support, with no push service and nothing
+outside your installation. That has two consequences:
+- They need the interface served over HTTPS or from `localhost`. Over plain HTTP on a LAN address
+  the browser does not offer them, and the switch does not appear.
+- They arrive only while a tab is open. With none open, the news waits in the bell.
+
 ## Light novels
 
 A light novel on MyAnimeList or AniList is recognised as one and kept apart from manga. It is
