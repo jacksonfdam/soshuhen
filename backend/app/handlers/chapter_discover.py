@@ -14,10 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.downloader.paths import existing_chapter_file, number_from_filename
-from app.enums import JobType
+from app.enums import JobType, NotificationKind
 from app.handlers.base import JobContext, PermanentError, register
 from app.handlers.batching import queue_batches
 from app.komga import from_settings
+from app.notifications import record
 from app.sources import ChapterRef, source_for_url
 
 
@@ -43,9 +44,11 @@ async def active_mapping(session: AsyncSession, series_id: int) -> tuple[str, st
 
 async def upsert_chapters(
     session: AsyncSession, series_id: int, chapters: list[ChapterRef]
-) -> None:
+) -> list[Decimal]:
+    """Store what the source lists, and say which numbers were not stored before."""
+    inserted: list[Decimal] = []
     for chapter in chapters:
-        await session.execute(
+        row = await session.execute(
             text(
                 """
                 insert into chapter (series_id, number, title, source_url, state,
@@ -56,6 +59,9 @@ async def upsert_chapters(
                    set title = coalesce(excluded.title, chapter.title),
                        source_url = excluded.source_url,
                        available_until = excluded.available_until
+                -- xmax is 0 only on a row this statement created, not on one
+                -- that on conflict updated.
+                returning number, (xmax = 0) as inserted
                 """
             ),
             {
@@ -66,6 +72,20 @@ async def upsert_chapters(
                 "available_until": chapter.available_until,
             },
         )
+        stored = row.one()
+        if stored.inserted:
+            inserted.append(stored.number)
+    return inserted
+
+
+async def announce_new_chapters(
+    session: AsyncSession, series_id: int, *, had_chapters: bool, inserted: list[Decimal]
+) -> int | None:
+    # A newly mapped series inserts its whole backlog on its first discovery,
+    # which is not news.
+    if not had_chapters:
+        return None
+    return await record(session, series_id, NotificationKind.CHAPTERS, inserted)
 
 
 # A week is long enough to notice and act, and short enough that the warning
@@ -213,7 +233,16 @@ async def handle(ctx: JobContext) -> None:
     chapters = await source_for_url(url).list_chapters(url)
     await ctx.log(f"{len(chapters)} chapters published", pct=40)
 
-    await upsert_chapters(ctx.session, series_id, chapters)
+    had_chapters = (
+        await ctx.session.execute(
+            text("select exists (select 1 from chapter where series_id = :id)"),
+            {"id": series_id},
+        )
+    ).scalar_one()
+    inserted = await upsert_chapters(ctx.session, series_id, chapters)
+    await announce_new_chapters(
+        ctx.session, series_id, had_chapters=had_chapters, inserted=inserted
+    )
 
     count, earliest = await expiring_soon(ctx.session, series_id)
     if count:
