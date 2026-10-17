@@ -35,8 +35,11 @@ on conflict (series_id, source_volume_id) do update
        title = excluded.title,
        status = excluded.status,
        last_updated = excluded.last_updated,
-       first_part = excluded.first_part,
-       last_part = excluded.last_part
+       -- A volume's part range only grows. An aggregate that leaves a volume
+       -- out says nothing about its parts, and writing null over the range
+       -- would cost its reading progress and the next sync's parts news.
+       first_part = coalesce(excluded.first_part, volume.first_part),
+       last_part = coalesce(excluded.last_part, volume.last_part)
 returning id, state, downloaded_updated, last_updated
 """
 

@@ -332,3 +332,16 @@ async def test_a_volume_skipped_for_its_number_announces_nothing():
         )
         await _run(session, FakeJnc([_owned(16), other_edition]))
         assert await _notifications(session) == []
+
+
+async def test_a_sync_without_a_part_range_keeps_the_known_one():
+    async with get_sessionmaker()() as session:
+        await _mapped_series(session)
+        await _run(session, FakeJnc([_owned(16)], ranges={D(16): (D(204), D(214))}))
+        await _run(session, FakeJnc([_owned(16)], ranges={}))
+        rows = await _volumes(session)
+        assert (rows[0].first_part, rows[0].last_part) == (D("204.00"), D("214.00"))
+        await _run(session, FakeJnc([_owned(16)], ranges={D(16): (D(204), D(216))}))
+        assert await _notifications(session) == [
+            ("parts", 2, D("215.00"), D("216.00"), D("16.00"))
+        ]
