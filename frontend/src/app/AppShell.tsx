@@ -9,6 +9,7 @@ import { useNotice } from '../lib/useNotice'
 import { syncLists } from '../lib/sync'
 import { Badge, Button, NoticeBar } from '../ui'
 import { Icon, type IconName } from '../ui/Icon'
+import { NotificationBell } from './NotificationBell'
 
 type Integration = { name: string; state: string; detail: string | null }
 
@@ -157,6 +158,7 @@ export function AppShell() {
                 </span>
               ))}
             </div>
+            <NotificationBell />
             <Button variant="surface" size="sm" icon="sync" className="shrink-0 whitespace-nowrap" onClick={syncAll}>
               Sync all
             </Button>

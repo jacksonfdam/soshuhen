@@ -827,6 +827,31 @@ export interface SourcePage {
   size: number
 }
 
+export type NotificationKind = 'chapters' | 'volumes' | 'parts'
+
+/** Not `Notification`: that name is the browser's, and this file is imported
+    by the code that raises one. */
+export interface AppNotification {
+  id: number
+  series_id: number
+  series_title: string
+  cover_url: string | null
+  kind: NotificationKind
+  count: number
+  first_number: number
+  last_number: number
+  /** Set on `parts` only: the volume the new parts belong to. */
+  volume_number: number | null
+  created_at: string
+  read_at: string | null
+}
+
+export interface NotificationPage {
+  items: AppNotification[]
+  /** Every unread row, not the unread rows on this page. */
+  unread_count: number
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
@@ -1069,4 +1094,9 @@ export const api = {
     request<HiddenResult>(`/api/discovery/unmatched/${id}/hide`, { method: 'POST' }),
   unhideUnmatched: (id: number) =>
     request<HiddenResult>(`/api/discovery/unmatched/${id}/hide`, { method: 'DELETE' }),
+  notifications: () => request<NotificationPage>('/api/notifications'),
+  markNotificationRead: (id: number) =>
+    request<{ ok: boolean }>(`/api/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () =>
+    request<{ marked: number }>('/api/notifications/read-all', { method: 'POST' }),
 }

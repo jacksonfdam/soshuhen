@@ -92,6 +92,10 @@ holds, then queues the difference — **only for a series the user has opted in*
 deliberate stop. Confirming a mapping says what a series *is*, not that its backlog should be
 fetched.
 
+It also records one `chapters` notification for the chapters this run inserted, except on a
+series' first discovery, which would otherwise announce the whole backlog. The notification is
+written in the run's own transaction, so a run that fails and retries announces its chapters once.
+
 ### `download_batch`
 **Payload** `{chapter_ids}` · **Enqueues** `komga_scan`
 
@@ -196,6 +200,17 @@ retries only that one rather than replaying the successes.
 **Payload** `{series_id}` · **Enqueues** nothing
 
 Fills metadata a list provider did not supply.
+
+### `jnc_library_sync`
+**Payload** `{}` · **Enqueues** `volume_download`
+
+Reads the J-Novel Club library into `volume` rows for series mapped to J-Novel Club, and queues
+the owned volumes that are not on disk at their current revision.
+
+It also announces what became readable. A volume found owned for the first time, including a
+pre-order that has now been released, becomes a `volumes` notification for its series. A known
+volume whose last part grew becomes a `parts` notification for that volume. A pre-order is not
+announced, and nothing is announced on a series' first sync, when every volume is new to the table.
 
 ## Adding a job type
 

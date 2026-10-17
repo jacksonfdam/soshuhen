@@ -31,6 +31,14 @@ class ChapterState(StrEnum):
     STREAMING = "streaming"
 
 
+class NotificationKind(StrEnum):
+    CHAPTERS = "chapters"
+    VOLUMES = "volumes"
+    #: New parts of a J-Novel Club volume already known: the volume is not new,
+    #: but what can be read of it is.
+    PARTS = "parts"
+
+
 class JobState(StrEnum):
     PENDING = "pending"
     LEASED = "leased"
