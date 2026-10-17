@@ -113,6 +113,9 @@ class SourceMapping(Base):
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     confirmed_at: Mapped[datetime] = _now()
+    #: Set by the first discovery run against this mapping. Until then nothing
+    #: it lists is news: a new mapping's chapters are a backlog, not releases.
+    discovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     series: Mapped[Series] = relationship(back_populates="mappings")
 

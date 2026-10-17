@@ -56,7 +56,8 @@ display-only.
 
 ### `source_mapping`
 The confirmed link from a series to a source URL. `active` is false for superseded mappings rather
-than deleting history.
+than deleting history. `discovered_at` is set by the first `chapter_discover` run against the
+mapping. Until it is set, nothing the mapping lists is announced as new.
 
 ### `site_catalogue`
 Every source site the pipeline knows how to reach, and how to reach it.
@@ -185,8 +186,8 @@ The series' title and cover are read through `series_id` rather than copied in, 
 series reads correctly in old notifications. The rows go with their series through the cascade.
 
 Rows are written only by `chapter_discover` and `jnc_library_sync`, through
-`app/notifications.py`. Neither writes one on a series' first discovery, which would announce the
-whole backlog as new. Read rows older than 30 days are deleted whenever a new row is written.
+`app/notifications.py`. Neither writes one on the first discovery of a mapping or the first sync
+of a series, which would announce a whole backlog as new. Read rows older than 30 days are deleted whenever a new row is written.
 Unread rows stay until they are read.
 
 ## Accounts and configuration

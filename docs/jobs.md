@@ -92,8 +92,9 @@ holds, then queues the difference — **only for a series the user has opted in*
 deliberate stop. Confirming a mapping says what a series *is*, not that its backlog should be
 fetched.
 
-It also records one `chapters` notification for the chapters this run inserted, except on a
-series' first discovery, which would otherwise announce the whole backlog. The notification is
+It also records one `chapters` notification for the chapters this run inserted, except on the
+first discovery of the active mapping (`source_mapping.discovered_at` still null). A new series, or
+one moved to another source, would otherwise announce a backlog as new releases. The notification is
 written in the run's own transaction, so a run that fails and retries announces its chapters once.
 
 ### `download_batch`
