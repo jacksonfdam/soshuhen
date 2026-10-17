@@ -57,7 +57,9 @@ export function NotificationBell() {
     <div ref={panel} className="relative shrink-0">
       <IconButton
         icon="bell"
-        label="Notifications"
+        // The badge sits outside the button, so the count has to be in its name
+        // for a screen reader to hear it.
+        label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
         aria-expanded={open}
         aria-haspopup="true"
         onClick={() => setOpen((current) => !current)}

@@ -118,8 +118,11 @@ That makes at most one `volumes` notification per series per run, plus one `part
 volume that grew. In practice that is one per series, since J-Novel Club releases parts into the
 newest volume.
 
-The savepoint per volume stays. The notifications are recorded after the loop, before the existing
-`commit`, so a volume skipped for an `IntegrityError` contributes nothing.
+The savepoint per volume stays. A `parts` notification is recorded inside the per-volume loop,
+once that volume's savepoint has exited. The series' `volumes` notification is recorded after the
+loop. Both come before the existing `commit` and after the `continue` that skips a volume for an
+`IntegrityError`, so a skipped volume contributes nothing. Neither runs inside a savepoint, so a
+later savepoint rolling back cannot undo it.
 
 ### API, `app/api/routes_notifications.py`
 

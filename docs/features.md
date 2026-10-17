@@ -78,7 +78,8 @@ What counts as new:
 - New parts of a J-Novel Club volume you already have.
 
 A series you have just mapped does not announce its whole backlog: its first discovery is
-silent. Read notifications are cleared after 30 days.
+silent. The same holds when you move a series to another source, whose first listing may hold
+chapters the old one never had. Read notifications are cleared after 30 days.
 
 With a Soshuhen tab open but not in front, the same news also arrives as a desktop notification
 from your browser. Turn it on with "Enable desktop notifications" at the bottom of the panel. The

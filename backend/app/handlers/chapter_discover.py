@@ -79,11 +79,13 @@ async def upsert_chapters(
 
 
 async def announce_new_chapters(
-    session: AsyncSession, series_id: int, *, had_chapters: bool, inserted: list[Decimal]
+    session: AsyncSession, series_id: int, *, first_discovery: bool, inserted: list[Decimal]
 ) -> int | None:
-    # A newly mapped series inserts its whole backlog on its first discovery,
-    # which is not news.
-    if not had_chapters:
+    # A mapping's first discovery inserts its backlog, which is not news. That
+    # holds per mapping, not per series: a new source can list chapters the old
+    # one never had - earlier numbers, .5 extras - without any of them being
+    # new releases.
+    if first_discovery:
         return None
     return await record(session, series_id, NotificationKind.CHAPTERS, inserted)
 
@@ -233,15 +235,19 @@ async def handle(ctx: JobContext) -> None:
     chapters = await source_for_url(url).list_chapters(url)
     await ctx.log(f"{len(chapters)} chapters published", pct=40)
 
-    had_chapters = (
+    first_discovery = (
         await ctx.session.execute(
-            text("select exists (select 1 from chapter where series_id = :id)"),
+            text(
+                "update source_mapping set discovered_at = now()"
+                " where series_id = :id and active and discovered_at is null"
+                " returning id"
+            ),
             {"id": series_id},
         )
-    ).scalar_one()
+    ).first() is not None
     inserted = await upsert_chapters(ctx.session, series_id, chapters)
     await announce_new_chapters(
-        ctx.session, series_id, had_chapters=had_chapters, inserted=inserted
+        ctx.session, series_id, first_discovery=first_discovery, inserted=inserted
     )
 
     count, earliest = await expiring_soon(ctx.session, series_id)
