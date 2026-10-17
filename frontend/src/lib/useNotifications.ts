@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { api, type AppNotification, type NotificationPage } from './api'
 import { show } from './desktopNotifications'
 import { formatChapter } from './format'
+import { anotherTabVisible } from './tabPresence'
 import { useAsyncData, type AsyncData } from './useAsyncData'
 import { useEventStreamStatus, useJobEvents } from './useEvents'
 
@@ -51,6 +52,12 @@ export function useNotifications(onOpen: (n: AppNotification) => void): {
   const { reload, setData } = page
   const open = useRef(onOpen)
   open.current = onOpen
+  const latest = useRef(page.data)
+  latest.current = page.data
+  // Rows announced while this tab was hidden, waiting for the reload that
+  // brings them. The reload goes through useAsyncData, so an older answer
+  // arriving late cannot overwrite a newer one.
+  const pending = useRef(new Set<number>())
 
   useJobEvents((event) => {
     // Another tab marked something read: this tab's badge would otherwise keep
@@ -60,27 +67,37 @@ export function useNotifications(onOpen: (n: AppNotification) => void): {
       return
     }
     if (event.event !== 'notification.new') return
-    if (document.visibilityState === 'visible') {
-      reload()
-      return
+    if (document.visibilityState !== 'visible' && event.notification_id !== undefined) {
+      pending.current.add(event.notification_id)
     }
-    // One request serves both the list and the popup's content.
-    api
-      .notifications()
-      .then((fresh) => {
-        setData(fresh)
-        const found = fresh.items.find((item) => item.id === event.notification_id)
-        if (!found) return
+    reload()
+  })
+
+  useEffect(() => {
+    if (page.data === null || pending.current.size === 0) return
+    const arrived = page.data.items.filter((item) => pending.current.has(item.id))
+    // Only what arrived is settled. A change to the list that lands first - a
+    // row marked read in the panel - must not drop a popup still on its way.
+    for (const item of arrived) pending.current.delete(item.id)
+    const waiting = arrived.filter((item) => item.read_at === null)
+    if (waiting.length === 0) return
+    // A user looking at the app in another tab has the badge already.
+    anotherTabVisible().then((elsewhere) => {
+      if (elsewhere) return
+      for (const found of waiting) {
         show({
           id: found.id,
           title: found.series_title,
           body: summary(found),
           icon: found.cover_url ?? undefined,
-          onClick: () => open.current(found),
+          // The row as it is when clicked, not as it was when shown: it may
+          // have been read in the panel since.
+          onClick: () =>
+            open.current(latest.current?.items.find((item) => item.id === found.id) ?? found),
         })
-      })
-      .catch(reload)
-  })
+      }
+    })
+  }, [page.data])
 
   // Whatever arrived while the stream was down is caught up in the list. It is
   // not raised on the desktop after the fact.
