@@ -1,5 +1,6 @@
 """Finishing a chapter in the reader moves the lists and Komga forward."""
 
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -178,3 +179,84 @@ async def test_the_komga_job_marks_the_book_read(monkeypatch):
         await session.commit()
         await komga_read_progress.handle(JobContext(session=session, job=job))
     assert fake.marked == [("book-9", True)]
+
+
+async def _run_progress_write() -> None:
+    async with get_sessionmaker()() as session:
+        job = await repo.lease(session, types=EVERY_TYPE)
+        await session.commit()
+        await progress_write.handle(JobContext(session=session, job=job))
+        await session.commit()
+
+
+async def _events(series_id: int) -> list[tuple[int, datetime, datetime]]:
+    async with get_sessionmaker()() as session:
+        rows = await session.execute(
+            text(
+                "select chapter, created_at, now() as db_now from progress_event"
+                " where series_id = :s order by id"
+            ),
+            {"s": series_id},
+        )
+        return [(int(r.chapter), r.created_at, r.db_now) for r in rows.all()]
+
+
+async def test_a_completion_with_read_at_records_that_time(client):
+    series_id = await _series_at(3)
+    chapter_id = await _chapter(series_id, "4")
+    read_at = datetime.now(UTC) - timedelta(days=2)
+    await client.post(
+        f"/api/reader/chapters/{chapter_id}/complete", json={"read_at": read_at.isoformat()}
+    )
+    await _run_progress_write()
+    [(chapter, created_at, _)] = await _events(series_id)
+    assert (chapter, created_at) == (4, read_at)
+
+
+async def test_a_completion_without_a_body_still_works(client):
+    series_id = await _series_at(3)
+    chapter_id = await _chapter(series_id, "4")
+    response = await client.post(f"/api/reader/chapters/{chapter_id}/complete")
+    assert response.json()["progress_queued"] is True
+    assert "read_at" not in (await _jobs(JobType.PROGRESS_WRITE))[0]
+
+
+async def test_replayed_out_of_order_keeps_the_higher_chapter_with_its_time(client):
+    """Offline, 4 then 5 were read; the queue replays 5 first, then 4."""
+    series_id = await _series_at(3)
+    four = await _chapter(series_id, "4")
+    five = await _chapter(series_id, "5")
+    t1 = datetime.now(UTC) - timedelta(hours=3)
+    t2 = datetime.now(UTC) - timedelta(hours=2)
+    await client.post(f"/api/reader/chapters/{five}/complete", json={"read_at": t2.isoformat()})
+    await client.post(f"/api/reader/chapters/{four}/complete", json={"read_at": t1.isoformat()})
+    [payload] = await _jobs(JobType.PROGRESS_WRITE)
+    assert (payload["chapter"], payload["read_at"]) == (5, t2.isoformat())
+    await _run_progress_write()
+    [(chapter, created_at, _)] = await _events(series_id)
+    assert (chapter, created_at) == (5, t2)
+
+
+async def test_a_raised_chapter_carries_its_own_time(client):
+    """4 at t1 is waiting; 5 at t2 raises it, and the time must move with it."""
+    series_id = await _series_at(3)
+    four = await _chapter(series_id, "4")
+    five = await _chapter(series_id, "5")
+    t1 = datetime.now(UTC) - timedelta(hours=3)
+    t2 = datetime.now(UTC) - timedelta(hours=2)
+    await client.post(f"/api/reader/chapters/{four}/complete", json={"read_at": t1.isoformat()})
+    await client.post(f"/api/reader/chapters/{five}/complete", json={"read_at": t2.isoformat()})
+    [payload] = await _jobs(JobType.PROGRESS_WRITE)
+    assert (payload["chapter"], payload["read_at"]) == (5, t2.isoformat())
+
+
+async def test_a_future_completion_time_is_clamped(client):
+    series_id = await _series_at(3)
+    chapter_id = await _chapter(series_id, "4")
+    future = datetime.now(UTC) + timedelta(days=1)
+    await client.post(
+        f"/api/reader/chapters/{chapter_id}/complete", json={"read_at": future.isoformat()}
+    )
+    await _run_progress_write()
+    [(_, created_at, db_now)] = await _events(series_id)
+    assert created_at <= db_now

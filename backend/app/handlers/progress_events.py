@@ -6,6 +6,8 @@ a number the user stated by hand. Neither of them changes what it pushes
 outward — this only writes down that the push happened.
 """
 
+from datetime import datetime
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +43,7 @@ async def record(
     before: int,
     chapter: int,
     source: ProgressSource,
+    at: datetime | None = None,
 ) -> bool:
     """Write one event for a forward movement. Returns whether one was written.
 
@@ -54,7 +57,8 @@ async def record(
         text(
             """
             insert into progress_event (series_id, chapter, delta, source, created_at)
-            values (:series_id, :chapter, :delta, :source, now())
+            values (:series_id, :chapter, :delta, :source,
+                    least(coalesce(cast(:at as timestamptz), now()), now()))
             """
         ),
         {
@@ -62,6 +66,9 @@ async def record(
             "chapter": chapter,
             "delta": chapter - before,
             "source": str(source),
+            # Clamped to now() in the SQL: a phone's fast clock must not date
+            # reading in the future, where it would lead every recency order.
+            "at": at,
         },
     )
     return True

@@ -66,6 +66,11 @@ class PositionIn(BaseModel):
     read_at: AwareDatetime | None = None
 
 
+class CompleteIn(BaseModel):
+    # When the chapter was finished, from a client replaying offline reading.
+    read_at: AwareDatetime | None = None
+
+
 class PrefsIn(BaseModel):
     mode: Literal["paged_ltr", "paged_rtl", "long_strip", "double"]
     scale: Literal["fit_width", "fit_height", "fit_screen"]
@@ -143,7 +148,9 @@ async def resume(series_id: int, session: Session) -> dict[str, int]:
 
 
 @router.post("/chapters/{chapter_id}/complete")
-async def complete(chapter_id: int, session: Session) -> dict[str, bool]:
+async def complete(
+    chapter_id: int, session: Session, body: CompleteIn | None = None
+) -> dict[str, bool]:
     """Finishing a chapter here says the same thing finishing it in Komga does.
 
     A refusal is not an error. Rereading an old chapter, or reading a series on
@@ -164,7 +171,13 @@ async def complete(chapter_id: int, session: Session) -> dict[str, bool]:
         and forward_only(bounds.current, chapter) is not None
     )
     if progress_queued:
-        await queue_progress_write(session, row.series_id, chapter, source=ProgressSource.READER)
+        await queue_progress_write(
+            session,
+            row.series_id,
+            chapter,
+            source=ProgressSource.READER,
+            read_at=body.read_at if body else None,
+        )
 
     komga_queued = False
     if row.komga_book_id is not None:

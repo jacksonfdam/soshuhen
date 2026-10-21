@@ -9,6 +9,8 @@ The forward-only guard is the same rule progress_push applies to Komga-derived
 numbers: a list that already records more must never be lowered by us.
 """
 
+from datetime import datetime
+
 from sqlalchemy import text
 
 from app.enums import JobType, ProgressSource, Provider
@@ -21,6 +23,12 @@ from app.providers.tokens import access_token_for, keyed_providers
 def forward_only(current: int, requested: int) -> int | None:
     """The chapter to write, or None when it would not move the list forward."""
     return requested if requested > current else None
+
+
+def read_at(payload: dict) -> datetime | None:
+    """When the chapter was read, for a completion a client replayed offline."""
+    raw = payload.get("read_at")
+    return datetime.fromisoformat(raw) if raw else None
 
 
 async def newest_requested(ctx: JobContext, series_id: int) -> int | None:
@@ -107,6 +115,7 @@ async def handle(ctx: JobContext) -> None:
             # Payloads queued before the reader existed carry no source, and
             # every one of them came from the progress button.
             source=ProgressSource(ctx.payload.get("source", ProgressSource.MANUAL)),
+            at=read_at(ctx.payload),
         )
 
     await ctx.log(f"chapter {chapter} recorded, {pushed} lists updated", pct=100)
