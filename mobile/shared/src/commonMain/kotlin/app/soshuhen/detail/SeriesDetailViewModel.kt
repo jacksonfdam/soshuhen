@@ -2,10 +2,15 @@ package app.soshuhen.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.soshuhen.api.Resume
 import app.soshuhen.api.Series
+import app.soshuhen.api.SeriesDetail
 import app.soshuhen.api.SoshuhenApi
+import app.soshuhen.api.SoshuhenJson
+import app.soshuhen.core.LocalStore
 import app.soshuhen.ui.FAILED_FIRST
 import app.soshuhen.ui.LoadState
+import app.soshuhen.ui.OFFLINE
 import app.soshuhen.ui.UNREACHABLE
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -20,11 +25,15 @@ data class DetailUi(val series: Series, val rows: List<ChapterRow>, val continue
 class SeriesDetailViewModel(
     private val seriesId: Long,
     private val api: StateFlow<SoshuhenApi?>,
+    private val local: LocalStore,
 ) : ViewModel() {
     private val _state = MutableStateFlow<LoadState<DetailUi>>(LoadState.Loading)
     val state: StateFlow<LoadState<DetailUi>> = _state
 
     private var loading: Job? = null
+
+    private fun ui(detail: SeriesDetail, resume: Resume?) =
+        DetailUi(detail.series, chapterRows(detail), continueChapter(detail, resume))
 
     init {
         // Every address the session settles on, not only the first: when the
@@ -44,14 +53,17 @@ class SeriesDetailViewModel(
         loading = viewModelScope.launch {
             val previous = _state.value
             _state.value = try {
-                val detail = client.seriesDetail(seriesId)
+                val json = client.seriesDetailJson(seriesId)
+                val detail = SoshuhenJson.decodeFromString<SeriesDetail>(json)
                 val resume = client.resume(seriesId)
-                LoadState.Loaded(DetailUi(detail.series, chapterRows(detail), continueChapter(detail, resume)))
+                local.saveDetail(seriesId, json)
+                LoadState.Loaded(ui(detail, resume))
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 if (previous is LoadState.Loaded) previous.copy(refreshFailed = UNREACHABLE)
-                else LoadState.Failed(FAILED_FIRST)
+                else local.detailSnapshot(seriesId)?.let { LoadState.Loaded(ui(it, null), refreshFailed = OFFLINE) }
+                    ?: LoadState.Failed(FAILED_FIRST)
             }
         }
     }

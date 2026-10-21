@@ -3,6 +3,10 @@ package app.soshuhen.library
 import app.soshuhen.api.Fixtures
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.soshuhenHttpClient
+import app.soshuhen.core.LocalStore
+import app.soshuhen.core.testDatabase
+import app.soshuhen.db.SoshuhenDatabase
+import app.soshuhen.ui.OFFLINE
 import app.soshuhen.ui.LoadState
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockEngineConfig
@@ -31,8 +35,19 @@ import kotlin.test.assertNull
 class LibraryViewModelTest {
     private val dispatcher = StandardTestDispatcher()
 
-    @BeforeTest fun setUp() = Dispatchers.setMain(dispatcher)
-    @AfterTest fun tearDown() = Dispatchers.resetMain()
+    private lateinit var db: SoshuhenDatabase
+    private lateinit var store: LocalStore
+
+    @BeforeTest fun setUp() {
+        Dispatchers.setMain(dispatcher)
+        db = testDatabase(dispatcher)
+        store = LocalStore(db)
+    }
+
+    @AfterTest fun tearDown() {
+        Dispatchers.resetMain()
+        db.close()
+    }
 
     /** Answers in turn: true is the fixture library, false is a 500. */
     private fun api(vararg replies: Boolean): SoshuhenApi {
@@ -53,13 +68,13 @@ class LibraryViewModelTest {
     }
 
     @Test fun firstLoadFailureIsFailed() = runTest(dispatcher) {
-        val vm = LibraryViewModel(MutableStateFlow(api(false)))
+        val vm = LibraryViewModel(MutableStateFlow(api(false)), store)
         advanceUntilIdle()
         assertIs<LoadState.Failed>(vm.state.value)
     }
 
     @Test fun loadsTheLibrary() = runTest(dispatcher) {
-        val vm = LibraryViewModel(MutableStateFlow(api(true)))
+        val vm = LibraryViewModel(MutableStateFlow(api(true)), store)
         advanceUntilIdle()
         val state = assertIs<LoadState.Loaded<List<app.soshuhen.api.Series>>>(vm.state.value)
         // The fixture's second row is prose, which the app does not show.
@@ -68,7 +83,7 @@ class LibraryViewModelTest {
     }
 
     @Test fun refreshFailureKeepsTheLoadedRows() = runTest(dispatcher) {
-        val vm = LibraryViewModel(MutableStateFlow(api(true, false)))
+        val vm = LibraryViewModel(MutableStateFlow(api(true, false)), store)
         advanceUntilIdle()
         vm.refresh()
         advanceUntilIdle()
@@ -79,18 +94,39 @@ class LibraryViewModelTest {
     }
 
     @Test fun noServerYetIsLoading() = runTest(dispatcher) {
-        val vm = LibraryViewModel(MutableStateFlow(null))
+        val vm = LibraryViewModel(MutableStateFlow(null), store)
         advanceUntilIdle()
         assertIs<LoadState.Loading>(vm.state.value)
     }
 
     @Test fun aServerFoundAtANewAddressReloadsByItself() = runTest(dispatcher) {
         val api = MutableStateFlow<SoshuhenApi?>(api(false))
-        val vm = LibraryViewModel(api)
+        val vm = LibraryViewModel(api, store)
         advanceUntilIdle()
         assertIs<LoadState.Failed>(vm.state.value)
         api.value = api(true)
         advanceUntilIdle()
         assertIs<LoadState.Loaded<List<app.soshuhen.api.Series>>>(vm.state.value)
+    }
+
+    @Test fun offlineWithASnapshotShowsTheSnapshot() = runTest(dispatcher) {
+        store.saveSeries(Fixtures.SERIES)
+        val vm = LibraryViewModel(MutableStateFlow(api(false)), store)
+        advanceUntilIdle()
+        val state = assertIs<LoadState.Loaded<List<app.soshuhen.api.Series>>>(vm.state.value)
+        assertEquals(listOf(243L), state.data.map { it.id })
+        assertEquals(OFFLINE, state.refreshFailed)
+    }
+
+    @Test fun offlineWithoutASnapshotIsFailed() = runTest(dispatcher) {
+        val vm = LibraryViewModel(MutableStateFlow(api(false)), store)
+        advanceUntilIdle()
+        assertIs<LoadState.Failed>(vm.state.value)
+    }
+
+    @Test fun aSuccessfulLoadSavesTheSnapshot() = runTest(dispatcher) {
+        LibraryViewModel(MutableStateFlow(api(true)), store)
+        advanceUntilIdle()
+        assertEquals(2, store.seriesSnapshot()!!.size)
     }
 }

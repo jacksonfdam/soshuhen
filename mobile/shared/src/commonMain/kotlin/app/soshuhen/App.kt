@@ -13,7 +13,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.soshuhen.core.AppGraph
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
+import coil3.disk.DiskCache
+import coil3.network.CacheStrategy
+import coil3.network.NetworkRequest
+import coil3.network.NetworkResponse
 import coil3.network.ktor3.KtorNetworkFetcherFactory
+import coil3.request.Options
 import app.soshuhen.onboarding.OnboardingScreen
 import app.soshuhen.onboarding.OnboardingViewModel
 import app.soshuhen.ui.theme.SoshuhenTheme
@@ -24,7 +29,16 @@ fun App(graph: AppGraph, appVersion: String) {
     // stack that could be pointed anywhere but the server.
     setSingletonImageLoaderFactory { context ->
         ImageLoader.Builder(context)
-            .components { add(KtorNetworkFetcherFactory(httpClient = { graph.client })) }
+            .components {
+                add(KtorNetworkFetcherFactory(httpClient = { graph.client }, cacheStrategy = { KeepCovers }))
+            }
+            // Explicit so covers survive offline and the size is ours to state.
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(graph.cacheDir / "covers")
+                    .maxSizeBytes(COVER_CACHE_BYTES)
+                    .build()
+            }
             .build()
     }
     SoshuhenTheme {
@@ -41,7 +55,6 @@ fun App(graph: AppGraph, appVersion: String) {
                         OnboardingScreen(model)
                     }
                     else -> {
-                        LaunchedEffect(Unit) { graph.session.refreshLocation() }
                         MainShell(graph, appVersion)
                     }
                 }
@@ -51,3 +64,25 @@ fun App(graph: AppGraph, appVersion: String) {
 }
 
 private object Loading
+
+private const val COVER_CACHE_BYTES = 256L * 1024 * 1024
+
+/**
+ * The server sends max-age=86400 on covers. Honoured, Coil would revalidate
+ * after a day, fail away from home and show initials. The price is that a
+ * changed cover appears only once the app's cache is cleared.
+ */
+private object KeepCovers : CacheStrategy {
+    override suspend fun read(
+        cacheResponse: NetworkResponse,
+        networkRequest: NetworkRequest,
+        options: Options,
+    ) = CacheStrategy.ReadResult(cacheResponse)
+
+    override suspend fun write(
+        cacheResponse: NetworkResponse?,
+        networkRequest: NetworkRequest,
+        networkResponse: NetworkResponse,
+        options: Options,
+    ) = CacheStrategy.WriteResult(networkResponse)
+}

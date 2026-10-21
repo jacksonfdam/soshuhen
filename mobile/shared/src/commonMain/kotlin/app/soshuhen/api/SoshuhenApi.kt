@@ -4,6 +4,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 
@@ -14,10 +15,16 @@ class SoshuhenApi(val baseUrl: String, private val client: HttpClient) {
 
     suspend fun identity(): Identity = checked(client.get("$baseUrl/api/identity")).body()
 
-    suspend fun series(): List<Series> = checked(client.get("$baseUrl/api/series")).body()
+    // The raw bodies exist so a snapshot stores exactly what the server said;
+    // the typed calls decode the same text.
+    suspend fun seriesJson(): String = checked(client.get("$baseUrl/api/series")).bodyAsText()
 
-    suspend fun seriesDetail(id: Long): SeriesDetail =
-        checked(client.get("$baseUrl/api/series/$id")).body()
+    suspend fun series(): List<Series> = SoshuhenJson.decodeFromString(seriesJson())
+
+    suspend fun seriesDetailJson(id: Long): String =
+        checked(client.get("$baseUrl/api/series/$id")).bodyAsText()
+
+    suspend fun seriesDetail(id: Long): SeriesDetail = SoshuhenJson.decodeFromString(seriesDetailJson(id))
 
     suspend fun resume(seriesId: Long): Resume? {
         val response = client.get("$baseUrl/api/reader/series/$seriesId/resume")

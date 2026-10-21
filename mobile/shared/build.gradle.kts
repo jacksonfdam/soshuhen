@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.room)
 }
 
 kotlin {
@@ -31,6 +33,8 @@ kotlin {
             implementation(libs.lifecycle.viewmodel.compose)
             implementation(libs.datastore.preferences.core)
             implementation(libs.okio)
+            implementation(libs.room.runtime)
+            implementation(libs.sqlite.bundled)
             implementation(libs.material3.navigation.suite)
             implementation(libs.material3.adaptive.layout)
             implementation(libs.material3.adaptive.navigation)
@@ -50,4 +54,13 @@ kotlin {
             implementation(libs.ktor.client.mock)
         }
     }
+}
+
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
+dependencies {
+    add("kspAndroid", libs.room.compiler)
+    add("kspJvm", libs.room.compiler)
 }

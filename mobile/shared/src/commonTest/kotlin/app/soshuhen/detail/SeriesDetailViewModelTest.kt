@@ -3,6 +3,10 @@ package app.soshuhen.detail
 import app.soshuhen.api.Fixtures
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.soshuhenHttpClient
+import app.soshuhen.core.LocalStore
+import app.soshuhen.core.testDatabase
+import app.soshuhen.db.SoshuhenDatabase
+import app.soshuhen.ui.OFFLINE
 import app.soshuhen.ui.LoadState
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockEngineConfig
@@ -30,8 +34,19 @@ import kotlin.test.assertNotNull
 class SeriesDetailViewModelTest {
     private val dispatcher = StandardTestDispatcher()
 
-    @BeforeTest fun setUp() = Dispatchers.setMain(dispatcher)
-    @AfterTest fun tearDown() = Dispatchers.resetMain()
+    private lateinit var db: SoshuhenDatabase
+    private lateinit var store: LocalStore
+
+    @BeforeTest fun setUp() {
+        Dispatchers.setMain(dispatcher)
+        db = testDatabase(dispatcher)
+        store = LocalStore(db)
+    }
+
+    @AfterTest fun tearDown() {
+        Dispatchers.resetMain()
+        db.close()
+    }
 
     private fun api(detailOk: () -> Boolean): SoshuhenApi {
         val json = headersOf(HttpHeaders.ContentType, "application/json")
@@ -51,7 +66,7 @@ class SeriesDetailViewModelTest {
     }
 
     @Test fun loadsRowsAndWhatToContinue() = runTest(dispatcher) {
-        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), store)
         advanceUntilIdle()
         val ui = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value).data
         assertEquals(listOf(2.5, 2.0, 1.0), ui.rows.map { it.number })
@@ -60,7 +75,7 @@ class SeriesDetailViewModelTest {
 
     @Test fun detailRefreshFailureKeepsLoadedRows() = runTest(dispatcher) {
         var ok = true
-        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { ok }))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { ok }), store)
         advanceUntilIdle()
         ok = false
         vm.refresh()
@@ -72,11 +87,20 @@ class SeriesDetailViewModelTest {
 
     @Test fun aServerFoundAtANewAddressReloadsByItself() = runTest(dispatcher) {
         val api = MutableStateFlow<SoshuhenApi?>(api { false })
-        val vm = SeriesDetailViewModel(1, api)
+        val vm = SeriesDetailViewModel(1, api, store)
         advanceUntilIdle()
         assertIs<LoadState.Failed>(vm.state.value)
         api.value = api { true }
         advanceUntilIdle()
         assertIs<LoadState.Loaded<DetailUi>>(vm.state.value)
+    }
+
+    @Test fun detailOfflineShowsTheSnapshot() = runTest(dispatcher) {
+        store.saveDetail(1, Fixtures.DETAIL)
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { false }), store)
+        advanceUntilIdle()
+        val state = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value)
+        assertEquals(3, state.data.rows.size)
+        assertEquals(OFFLINE, state.refreshFailed)
     }
 }

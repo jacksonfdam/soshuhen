@@ -18,6 +18,9 @@ coil = "3.6.3"
 splashscreen = "1.2.0"
 activity = "1.13.0"
 okio = "3.18.2"
+room = "2.8.5"
+sqlite = "2.7.1"
+ksp = "2.3.12"
 android-compileSdk = "37"
 android-targetSdk = "37"
 android-minSdk = "29"
@@ -48,6 +51,9 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 coil-network-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "splashscreen" }
 activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
+room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 
@@ -58,3 +64,5 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-kmp-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+room = { id = "androidx.room", version.ref = "room" }

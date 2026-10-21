@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.soshuhen.api.Series
 import app.soshuhen.api.SoshuhenApi
+import app.soshuhen.api.SoshuhenJson
+import app.soshuhen.core.LocalStore
 import app.soshuhen.ui.FAILED_FIRST
 import app.soshuhen.ui.LoadState
+import app.soshuhen.ui.OFFLINE
 import app.soshuhen.ui.UNREACHABLE
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -15,7 +18,10 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
-class LibraryViewModel(private val api: StateFlow<SoshuhenApi?>) : ViewModel() {
+class LibraryViewModel(
+    private val api: StateFlow<SoshuhenApi?>,
+    private val local: LocalStore,
+) : ViewModel() {
     private val _state = MutableStateFlow<LoadState<List<Series>>>(LoadState.Loading)
     val state: StateFlow<LoadState<List<Series>>> = _state
     private val _status = MutableStateFlow<String?>("reading")
@@ -43,14 +49,18 @@ class LibraryViewModel(private val api: StateFlow<SoshuhenApi?>) : ViewModel() {
         loading = viewModelScope.launch {
             val previous = _state.value
             _state.value = try {
-                LoadState.Loaded(comics(client.series()))
+                val json = client.seriesJson()
+                val rows = SoshuhenJson.decodeFromString<List<Series>>(json)
+                local.saveSeries(json)
+                LoadState.Loaded(comics(rows))
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 // Over loaded data a failure is a banner, not a blank screen:
                 // the laptop went to sleep, the library did not vanish.
                 if (previous is LoadState.Loaded) previous.copy(refreshFailed = UNREACHABLE)
-                else LoadState.Failed(FAILED_FIRST)
+                else local.seriesSnapshot()?.let { LoadState.Loaded(comics(it), refreshFailed = OFFLINE) }
+                    ?: LoadState.Failed(FAILED_FIRST)
             }
         }
     }

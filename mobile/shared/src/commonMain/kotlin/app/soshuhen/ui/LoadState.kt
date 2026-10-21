@@ -13,4 +13,5 @@ sealed interface LoadState<out T> {
 }
 
 const val UNREACHABLE = "Can't reach the server. Showing what was loaded."
+const val OFFLINE = "Offline. Showing the last sync."
 const val FAILED_FIRST = "Can't reach the server."

@@ -14,7 +14,9 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 // runCurrent, not advanceUntilIdle: the session collects in backgroundScope,
@@ -22,9 +24,16 @@ import kotlin.test.assertNull
 class SessionTest {
     private val client = soshuhenHttpClient(MockEngine { respondOk() })
 
-    private fun session(store: ServerStore, answers: Map<String, Identity>, wifi: Pair<String, Int>?, scope: kotlinx.coroutines.CoroutineScope): Session {
-        val probe: suspend (ServerAddress) -> Identity? = { answers[it.host] }
-        return Session(store, ServerLocator(probe, ServerScanner(probe)), FakeNetworkInfo(wifi), client, scope)
+    private fun session(
+        store: ServerStore,
+        answers: Map<String, Identity>,
+        wifi: Pair<String, Int>?,
+        scope: kotlinx.coroutines.CoroutineScope,
+        network: FakeNetworkInfo = FakeNetworkInfo(wifi),
+        onProbe: () -> Unit = {},
+    ): Session {
+        val probe: suspend (ServerAddress) -> Identity? = { onProbe(); answers[it.host] }
+        return Session(store, ServerLocator(probe, ServerScanner(probe)), network, client, scope)
     }
 
     @Test fun apiIsNullUntilAServerIsSaved() = runTest {
@@ -52,5 +61,27 @@ class SessionTest {
         s.refreshLocation()
         runCurrent()
         assertEquals("http://10.0.0.20:8080", s.api.value?.baseUrl)
+    }
+
+    @Test fun atHomeIsTrueOnlyWhenTheInstanceAnswers() = runTest {
+        val saved = SavedServer(ServerAddress("http", "10.0.0.20", 8080), "id-1")
+        val home = session(FakeServerStore(saved), mapOf("10.0.0.20" to identity(id = "id-1")), "10.0.0.1" to 24, backgroundScope)
+        val away = session(FakeServerStore(saved), emptyMap(), null, backgroundScope)
+        assertFalse(home.atHome.value)
+        runCurrent()
+        assertTrue(home.atHome.value)
+        assertFalse(away.atHome.value)
+    }
+
+    @Test fun aNetworkChangeRelocates() = runTest {
+        val saved = SavedServer(ServerAddress("http", "10.0.0.20", 8080), "id-1")
+        val network = FakeNetworkInfo("10.0.0.1" to 24)
+        var probes = 0
+        session(FakeServerStore(saved), mapOf("10.0.0.20" to identity(id = "id-1")), null, backgroundScope, network) { probes++ }
+        runCurrent()
+        val first = probes
+        network.changeEvents.emit(Unit)
+        runCurrent()
+        assertTrue(probes > first)
     }
 }

@@ -28,4 +28,6 @@ dependencies {
     implementation(libs.splashscreen)
     implementation(libs.coroutines.core)
     implementation(libs.ktor.client.core)
+    implementation(libs.okio)
+    implementation(libs.room.runtime)
 }

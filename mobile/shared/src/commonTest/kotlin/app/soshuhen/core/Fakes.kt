@@ -1,6 +1,8 @@
 package app.soshuhen.core
 
 import app.soshuhen.server.SavedServer
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -12,5 +14,7 @@ class FakeServerStore(initial: SavedServer? = null) : ServerStore {
 }
 
 class FakeNetworkInfo(var wifi: Pair<String, Int>?) : NetworkInfo {
+    val changeEvents = MutableSharedFlow<Unit>()
+    override val changes: Flow<Unit> = changeEvents
     override fun wifiAddress(): Pair<String, Int>? = wifi
 }
