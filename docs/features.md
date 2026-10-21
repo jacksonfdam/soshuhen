@@ -325,3 +325,21 @@ Komga and any Komga-compatible app on iOS or Android remain readers of the same 
 meets in your lists: what you read in Komga reaches them through `progress_push`, what you read
 elsewhere reaches them through that app's own tracker, and Komga is brought up to the lists each time
 it indexes the series.
+
+## Android app
+
+An Android app for phone and tablet lives in `mobile/`. It talks only to your Soshuhen server on the
+home network, and never to a source site or a list provider: covers come from the server too.
+
+- **Finding the server.** On first run it scans the Wi-Fi it is on for a Soshuhen server and lists
+  what answers. If none does, type its address (`192.168.1.20` or `192.168.1.20:8080`). The phone
+  reaches the server by its LAN IP, not by a name like `soshuhen.test`, which only your computer
+  knows. If the server's address changes later, the app finds it again by itself.
+- **The library.** The same layout as the web: Continue reading, the list-status tabs, and the
+  cover grid with unread counts. Pull down to refresh. If the server stops answering, what was
+  loaded stays on screen with a notice.
+- **A series.** How far you have read, how many chapters the server holds, and every chapter with
+  read or unread and whether it is downloaded. On a tablet the series opens beside the grid.
+
+Reading, and copying the series you choose to the device so they can be read offline, come next.
+Building and installing: `mobile/README.md`.

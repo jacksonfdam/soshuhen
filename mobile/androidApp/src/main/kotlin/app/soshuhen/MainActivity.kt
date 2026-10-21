@@ -14,6 +14,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val graph = (application as SoshuhenApplication).graph
-        setContent { App(graph) }
+        setContent { App(graph, BuildConfig.VERSION_NAME) }
     }
 }

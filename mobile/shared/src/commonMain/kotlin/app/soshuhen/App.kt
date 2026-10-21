@@ -19,7 +19,7 @@ import app.soshuhen.onboarding.OnboardingViewModel
 import app.soshuhen.ui.theme.SoshuhenTheme
 
 @Composable
-fun App(graph: AppGraph) {
+fun App(graph: AppGraph, appVersion: String) {
     // Covers through the app's own client: same timeouts, and no second HTTP
     // stack that could be pointed anywhere but the server.
     setSingletonImageLoaderFactory { context ->
@@ -40,7 +40,7 @@ fun App(graph: AppGraph) {
                     )
                     else -> {
                         LaunchedEffect(Unit) { graph.session.refreshLocation() }
-                        MainShell(graph)
+                        MainShell(graph, appVersion)
                     }
                 }
             }

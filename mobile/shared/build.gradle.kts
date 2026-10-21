@@ -21,6 +21,7 @@ kotlin {
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)
+            implementation(libs.compose.backhandler)
             implementation(libs.material3)
             implementation(libs.coroutines.core)
             implementation(libs.serialization.json)
