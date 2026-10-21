@@ -66,12 +66,23 @@ class SafChapterFolder(
     override suspend fun write(slug: String, fileName: String, append: Boolean, block: suspend (Sink) -> Unit) {
         val file = withContext(Dispatchers.IO) {
             val dir = seriesDir(slug, create = true)!!
-            dir.findFile(fileName) ?: dir.createFile(BINARY, fileName) ?: throw FolderUnavailable("Cannot create $fileName")
+            dir.findFile(fileName) ?: createNamed(dir, fileName)
         }
         val out = withContext(Dispatchers.IO) {
             mapIo { resolver.openOutputStream(file.uri, if (append) "wa" else "w") } ?: throw FolderUnavailable("Cannot open $fileName")
         }
         withContext(Dispatchers.IO) { mapIo { out.sink().buffer().use { block(it) } } }
+    }
+
+    // A provider may append an extension to the type it was given or otherwise
+    // alter the display name. Later steps address the file by the exact server
+    // name, and the .part to final rename depends on it, so name it again.
+    private fun createNamed(dir: DocumentFile, fileName: String): DocumentFile {
+        val created = dir.createFile(BINARY, fileName) ?: throw FolderUnavailable("Cannot create $fileName")
+        if (created.name == fileName) return created
+        val renamed = DocumentsContract.renameDocument(resolver, created.uri, fileName)
+            ?: throw FolderUnavailable("Cannot name $fileName")
+        return DocumentFile.fromSingleUri(context, renamed) ?: throw FolderUnavailable("Cannot name $fileName")
     }
 
     override suspend fun size(slug: String, fileName: String): Long? = withContext(Dispatchers.IO) {
@@ -87,6 +98,10 @@ class SafChapterFolder(
 
     override suspend fun delete(uri: String) {
         withContext(Dispatchers.IO) {
+            // exists() swallows the SecurityException of a revoked permission and
+            // answers false, which would read as a file already gone and make the
+            // index forget one that is still on disk.
+            tree()
             val file = DocumentFile.fromSingleUri(context, Uri.parse(uri))
             if (file == null || !file.exists()) throw ChapterFileMissing()
             if (!file.delete()) throw FolderUnavailable("Cannot delete")
@@ -94,6 +109,7 @@ class SafChapterFolder(
     }
 
     override suspend fun exists(uri: String): Boolean = withContext(Dispatchers.IO) {
+        tree()
         DocumentFile.fromSingleUri(context, Uri.parse(uri))?.exists() == true
     }
 

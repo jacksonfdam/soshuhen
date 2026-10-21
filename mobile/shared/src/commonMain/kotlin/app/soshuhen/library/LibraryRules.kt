@@ -44,3 +44,6 @@ fun visible(all: List<Series>, status: String?, query: String, marked: Set<Long>
             (needle.isEmpty() || it.title.contains(needle, ignoreCase = true))
     }
 }
+
+/** Away from home only a series kept on the device has anything to open. */
+fun reachable(series: Series, atHome: Boolean, marked: Set<Long>): Boolean = atHome || series.id in marked

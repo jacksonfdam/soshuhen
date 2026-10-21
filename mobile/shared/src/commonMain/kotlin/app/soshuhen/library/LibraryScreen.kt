@@ -55,6 +55,16 @@ fun LibraryScreen(
     val marked by model.marked.collectAsStateWithLifecycle()
     val atHome by model.atHome.collectAsStateWithLifecycle()
     var notice by remember { mutableStateOf<String?>(null) }
+    // One rule for the grid and the continue row, so neither opens what the
+    // device cannot show.
+    val open = { series: Series ->
+        if (reachable(series, atHome, marked)) {
+            notice = null
+            onOpen(series.id)
+        } else {
+            notice = NOT_ON_DEVICE
+        }
+    }
 
     when (val s = state) {
         LoadState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -95,22 +105,14 @@ fun LibraryScreen(
                 }
                 val continuing = continueReading(comics(all))
                 if (continuing.isNotEmpty() && query.isBlank()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) { ContinueRow(continuing, coverUrl, onOpen) }
+                    item(span = { GridItemSpan(maxLineSpan) }) { ContinueRow(continuing, coverUrl, { reachable(it, atHome, marked) }, open) }
                 }
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     StatusChips(comics(all), marked, status, model::setStatus)
                 }
                 items(shown, key = { it.id }) { series ->
-                    // Away from home only a marked series has anything to open.
-                    val reachable = atHome || series.id in marked
-                    CoverCard(series, coverUrl(series.id), dimmed = !reachable) {
-                        if (reachable) {
-                            notice = null
-                            onOpen(series.id)
-                        } else {
-                            notice = NOT_ON_DEVICE
-                        }
-                    }
+                    val reachable = reachable(series, atHome, marked)
+                    CoverCard(series, coverUrl(series.id), dimmed = !reachable) { open(series) }
                 }
             }
         }
@@ -129,12 +131,21 @@ private fun Banner(message: String) {
 }
 
 @Composable
-private fun ContinueRow(series: List<Series>, coverUrl: (Long) -> String, onOpen: (Long) -> Unit) {
+private fun ContinueRow(
+    series: List<Series>,
+    coverUrl: (Long) -> String,
+    isReachable: (Series) -> Boolean,
+    onOpen: (Series) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.space.sm)) {
         Text("Continue reading", style = MaterialTheme.typography.titleMedium)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.space.md)) {
             items(series, key = { it.id }) { s ->
-                Column(Modifier.width(Tokens.coverMinWidth).clickable { onOpen(s.id) }) {
+                Column(
+                    Modifier.width(Tokens.coverMinWidth)
+                        .alpha(if (isReachable(s)) 1f else Tokens.dimmed)
+                        .clickable { onOpen(s) },
+                ) {
                     CoverImage(coverUrl(s.id), s.title)
                     Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
                     Text("Chapter ${s.progress + 1}", style = MaterialTheme.typography.bodySmall, color = Tokens.onSurfaceVariant)

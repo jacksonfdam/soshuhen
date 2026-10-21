@@ -3,6 +3,7 @@ package app.soshuhen.library
 import app.soshuhen.api.Series
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
@@ -81,5 +82,14 @@ class LibraryRulesTest {
     @Test fun onDeviceIgnoresReadingStatus() {
         val all = listOf(series(1, status = "completed"), series(2, status = null))
         assertEquals(listOf(1L, 2L), visible(all, ON_DEVICE, "", marked = setOf(1, 2)).map { it.id })
+    }
+
+    @Test fun atHomeEverySeriesIsReachable() {
+        assertTrue(reachable(series(1), atHome = true, marked = emptySet()))
+    }
+
+    @Test fun awayOnlyAMarkedSeriesIsReachable() {
+        assertTrue(reachable(series(1), atHome = false, marked = setOf(1)))
+        assertFalse(reachable(series(2), atHome = false, marked = setOf(1)))
     }
 }
