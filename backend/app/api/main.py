@@ -8,6 +8,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.api import (
     routes_auth,
+    routes_chapters,
     routes_dashboard,
     routes_discover,
     routes_discovery,
@@ -58,6 +59,7 @@ app.include_router(routes_dashboard.router)
 app.include_router(routes_stats.router)
 app.include_router(routes_sources.router)
 app.include_router(routes_reader.router)
+app.include_router(routes_chapters.router)
 
 
 @app.get("/api/health")
