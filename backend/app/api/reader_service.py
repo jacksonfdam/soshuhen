@@ -7,6 +7,7 @@ cache becomes a download.
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
@@ -297,26 +298,43 @@ async def position_in(session: AsyncSession, row: ChapterRow) -> int | None:
 
 
 async def save_position(
-    session: AsyncSession, series_id: int, chapter_id: int, page: int
-) -> None:
+    session: AsyncSession,
+    series_id: int,
+    chapter_id: int,
+    page: int,
+    read_at: datetime | None = None,
+) -> bool:
+    """Store where reading stands. Returns whether the row was written.
+
+    `read_at` comes from a client that read offline and is replaying it later.
+    Given one, the write applies only if it is newer than what is stored, so a
+    position from this morning's train cannot overwrite this evening's. Without
+    one the write always applies, which is what the web reader relies on.
+    """
     owner = await session.execute(
         text("select 1 from chapter where id = :c and series_id = :s"),
         {"c": chapter_id, "s": series_id},
     )
     if owner.first() is None:
         raise ChapterMissing(f"chapter {chapter_id} is not part of series {series_id}")
-    await session.execute(
+    # Clamped to now(): a phone whose clock runs fast would otherwise win every
+    # replay, including against reading done after it.
+    newer_only = "where reading_position.updated_at < excluded.updated_at" if read_at else ""
+    result = await session.execute(
         text(
-            """
+            f"""
             insert into reading_position (series_id, chapter_id, page, updated_at)
-            values (:s, :c, :p, now())
+            values (:s, :c, :p, least(coalesce(cast(:at as timestamptz), now()), now()))
             on conflict (series_id) do update
                set chapter_id = excluded.chapter_id, page = excluded.page,
                    updated_at = excluded.updated_at
+             {newer_only}
+            returning 1
             """
         ),
-        {"s": series_id, "c": chapter_id, "p": page},
+        {"s": series_id, "c": chapter_id, "p": page, "at": read_at},
     )
+    return result.first() is not None
 
 
 async def effective_prefs(session: AsyncSession, series_id: int) -> dict[str, Any]:

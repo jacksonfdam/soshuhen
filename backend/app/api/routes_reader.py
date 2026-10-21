@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import reader_service as service
@@ -62,6 +62,8 @@ def _chapter_ref(row: service.ChapterRow) -> dict[str, Any]:
 class PositionIn(BaseModel):
     chapter_id: int
     page: int = Field(ge=0)
+    # Sent by a client replaying reading done offline; the web reader sends none.
+    read_at: AwareDatetime | None = None
 
 
 class PrefsIn(BaseModel):
@@ -106,9 +108,11 @@ async def page(chapter_id: int, index: int, session: Session) -> Response:
 @router.put("/series/{series_id}/position")
 async def save_position(series_id: int, body: PositionIn, session: Session) -> dict[str, bool]:
     with service_errors():
-        await service.save_position(session, series_id, body.chapter_id, body.page)
+        applied = await service.save_position(
+            session, series_id, body.chapter_id, body.page, body.read_at
+        )
     await session.commit()
-    return {"ok": True}
+    return {"ok": True, "applied": applied}
 
 
 @router.get("/series/{series_id}/prefs")
