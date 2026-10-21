@@ -1,5 +1,7 @@
 package app.soshuhen.detail
 
+import app.soshuhen.core.Availability
+import app.soshuhen.core.chapterRows
 import app.soshuhen.api.Resume
 import app.soshuhen.api.Series
 import app.soshuhen.api.SeriesChapter

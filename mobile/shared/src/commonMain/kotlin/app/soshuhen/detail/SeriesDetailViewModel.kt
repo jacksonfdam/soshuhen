@@ -1,5 +1,7 @@
 package app.soshuhen.detail
 
+import app.soshuhen.core.ChapterRow
+import app.soshuhen.core.chapterRows
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.soshuhen.api.Resume
