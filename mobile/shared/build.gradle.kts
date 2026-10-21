@@ -19,6 +19,10 @@ kotlin {
     jvm()
 
     sourceSets {
+        // java.util.zip is the same code on both targets, so it lives once.
+        val jvmAndroidMain by creating { dependsOn(commonMain.get()) }
+        androidMain.get().dependsOn(jvmAndroidMain)
+        jvmMain.get().dependsOn(jvmAndroidMain)
         commonMain.dependencies {
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
