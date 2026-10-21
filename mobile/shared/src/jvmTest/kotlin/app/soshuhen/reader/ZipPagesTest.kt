@@ -91,8 +91,7 @@ class ZipPagesTest {
         assertEquals(0, ZipPages(cache).pageCount(source(zip())))
     }
 
-    @Test fun pageCountOfNonZipThrowsOrIsZero() = runTest {
-        val count = runCatching { ZipPages(cache).pageCount(source("not a zip".toByteArray())) }
-        assertTrue(count.isFailure || count.getOrNull() == 0)
+    @Test fun pageCountOfNonZipIsZero() = runTest {
+        assertEquals(0, ZipPages(cache).pageCount(source("not a zip".toByteArray())))
     }
 }

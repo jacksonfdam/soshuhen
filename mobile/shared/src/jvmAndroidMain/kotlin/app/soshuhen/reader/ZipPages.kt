@@ -11,7 +11,6 @@ import okio.Source
 import okio.buffer
 import okio.sink
 import okio.source
-import java.io.OutputStream
 import java.util.zip.ZipInputStream
 
 /**
@@ -44,13 +43,16 @@ class ZipPages(
 
     override suspend fun pageCount(source: Source): Int = withContext(Dispatchers.IO) {
         var count = 0
+        val scratch = ByteArray(DRAIN_BUFFER)
         ZipInputStream(source.buffer().inputStream()).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
                 if (isPage(entry.name)) {
                     // Draining is what notices a cut-off archive: a header alone
                     // reads fine, only the data after it runs out.
-                    zip.copyTo(OutputStream.nullOutputStream())
+                    // A plain loop: OutputStream.nullOutputStream() is API 33 and
+                    // minSdk is 29, where it would throw an Error, not an Exception.
+                    while (zip.read(scratch) != -1) continue
                     count++
                 }
             }
@@ -107,6 +109,7 @@ class ZipPages(
 
     private companion object {
         const val DONE = ".done"
+        const val DRAIN_BUFFER = 8192
         // The reader moves between neighbouring chapters; a few cover that
         // without a long read filling the phone's storage.
         const val KEPT = 5
