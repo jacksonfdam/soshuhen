@@ -31,8 +31,9 @@ def read_at(payload: dict) -> datetime | None:
     return datetime.fromisoformat(raw) if raw else None
 
 
-async def newest_requested(ctx: JobContext, series_id: int) -> int | None:
-    """The highest chapter any queued write for this series is carrying.
+async def newest_requested(ctx: JobContext, series_id: int) -> tuple[int, datetime | None] | None:
+    """The highest chapter any queued write for this series is carrying, and
+    when it was read.
 
     One job per series is the rule (the route dedupes on the series), so a
     click that arrives while a write is in flight raises the chapter on the
@@ -41,28 +42,41 @@ async def newest_requested(ctx: JobContext, series_id: int) -> int | None:
 
     Not base.latest_payload: that helper answers "latest", which is the right
     rule for a status or a note because neither has an order of its own. A
-    chapter does — it only moves forward — so this takes max() across every
-    queued payload instead of the newest row, or a write could be applied out
-    of order relative to one still waiting behind it.
+    chapter does — it only moves forward — so this takes the highest chapter
+    across every queued payload instead of the newest row, or a write could be
+    applied out of order relative to one still waiting behind it.
+
+    The time comes from the same row as the chapter. Taken from the leased
+    snapshot instead, an offline chapter 5 raised onto a job already in flight
+    would be dated by when chapter 4 was read.
     """
     result = await ctx.session.execute(
         text(
             """
-            select max((payload->>'chapter')::int) as chapter
+            select (payload->>'chapter')::int as chapter, payload->>'read_at' as read_at
               from job
              where type = :type and series_id = :series_id
                and state in ('pending', 'leased')
+             order by (payload->>'chapter')::int desc
+             limit 1
             """
         ),
         {"type": str(JobType.PROGRESS_WRITE), "series_id": series_id},
     )
-    return result.scalar_one()
+    row = result.first()
+    if row is None:
+        return None
+    return row.chapter, read_at({"read_at": row.read_at})
 
 
 @register(JobType.PROGRESS_WRITE)
 async def handle(ctx: JobContext) -> None:
     series_id = int(ctx.payload["series_id"])
-    chapter = max(int(ctx.payload["chapter"]), await newest_requested(ctx, series_id) or 0)
+    chapter = int(ctx.payload["chapter"])
+    at = read_at(ctx.payload)
+    newest = await newest_requested(ctx, series_id)
+    if newest is not None and newest[0] >= chapter:
+        chapter, at = newest
 
     # A left join, so an entry whose provider has no stored token is still
     # seen. Joining it away made the job report "1 list updated" and never say
@@ -115,7 +129,7 @@ async def handle(ctx: JobContext) -> None:
             # Payloads queued before the reader existed carry no source, and
             # every one of them came from the progress button.
             source=ProgressSource(ctx.payload.get("source", ProgressSource.MANUAL)),
-            at=read_at(ctx.payload),
+            at=at,
         )
 
     await ctx.log(f"chapter {chapter} recorded, {pushed} lists updated", pct=100)

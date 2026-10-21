@@ -260,3 +260,23 @@ async def test_a_future_completion_time_is_clamped(client):
     await _run_progress_write()
     [(_, created_at, db_now)] = await _events(series_id)
     assert created_at <= db_now
+
+
+async def test_a_leased_job_raised_mid_flight_records_the_raised_time(client):
+    """4 at t1 is leased by a worker; 5 at t2 arrives before the handler runs."""
+    series_id = await _series_at(3)
+    four = await _chapter(series_id, "4")
+    five = await _chapter(series_id, "5")
+    t1 = datetime.now(UTC) - timedelta(hours=3)
+    t2 = datetime.now(UTC) - timedelta(hours=2)
+    await client.post(f"/api/reader/chapters/{four}/complete", json={"read_at": t1.isoformat()})
+    async with get_sessionmaker()() as session:
+        job = await repo.lease(session, types=EVERY_TYPE)
+        await session.commit()
+        await client.post(
+            f"/api/reader/chapters/{five}/complete", json={"read_at": t2.isoformat()}
+        )
+        await progress_write.handle(JobContext(session=session, job=job))
+        await session.commit()
+    [(chapter, created_at, _)] = await _events(series_id)
+    assert (chapter, created_at) == (5, t2)
