@@ -91,7 +91,7 @@ private fun LibraryPanes(graph: AppGraph) {
         listPane = {
             AnimatedPane {
                 LibraryScreen(
-                    model = viewModel { LibraryViewModel(graph.session.api, graph.local) },
+                    model = viewModel { LibraryViewModel(graph.session.api, graph.local, graph.session.atHome) },
                     coverUrl = coverUrl,
                     onOpen = { id -> scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, id) } },
                 )
@@ -107,7 +107,7 @@ private fun LibraryPanes(graph: AppGraph) {
                 } else {
                     // Keyed by id, so opening another series gets its own model.
                     SeriesDetailScreen(
-                        viewModel(key = "series-$id") { SeriesDetailViewModel(id, graph.session.api, graph.local) },
+                        viewModel(key = "series-$id") { SeriesDetailViewModel(id, graph.session.api, graph.local, graph.library) },
                         coverUrl(id),
                     )
                 }

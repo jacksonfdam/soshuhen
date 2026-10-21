@@ -66,6 +66,8 @@ object Tokens {
         val full = 999.dp
     }
 
+    // A series that cannot be opened from here: drawn, but visibly out of reach.
+    const val dimmed = 0.4f
     const val coverAspect = 2f / 3f
     val coverMinWidth = 112.dp
     // Forms and lists stop growing here on a tablet, so a line stays readable.

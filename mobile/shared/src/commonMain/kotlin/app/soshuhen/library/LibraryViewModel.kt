@@ -14,7 +14,9 @@ import app.soshuhen.ui.UNREACHABLE
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -22,7 +24,14 @@ import kotlinx.coroutines.launch
 class LibraryViewModel(
     private val api: StateFlow<SoshuhenApi?>,
     private val local: LocalStore,
+    atHome: StateFlow<Boolean>,
 ) : ViewModel() {
+    val atHome: StateFlow<Boolean> = atHome
+
+    /** The series kept on this device. */
+    val marked: StateFlow<Set<Long>> = local.markedIds()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
     private val _state = MutableStateFlow<LoadState<List<Series>>>(LoadState.Loading)
     val state: StateFlow<LoadState<List<Series>>> = _state
     private val _status = MutableStateFlow<String?>("reading")

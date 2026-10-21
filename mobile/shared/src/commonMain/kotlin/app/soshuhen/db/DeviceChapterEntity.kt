@@ -31,6 +31,9 @@ interface DeviceChapterDao {
     @Query("SELECT * FROM device_chapter WHERE series_id = :seriesId ORDER BY number")
     fun forSeries(seriesId: Long): Flow<List<DeviceChapterEntity>>
 
+    @Query("SELECT * FROM device_chapter WHERE chapter_id = :chapterId")
+    suspend fun get(chapterId: Long): DeviceChapterEntity?
+
     @Query("SELECT chapter_id FROM device_chapter")
     fun ids(): Flow<List<Long>>
 }

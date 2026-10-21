@@ -73,4 +73,13 @@ class LibraryRulesTest {
     @Test fun searchIgnoresCase() {
         assertEquals(1, visible(listOf(series(title = "Frieren")), null, "frie").size)
     }
+
+    @Test fun onDeviceTabShowsOnlyMarked() {
+        assertEquals(listOf(2L), visible(listOf(series(1), series(2)), ON_DEVICE, "", marked = setOf(2)).map { it.id })
+    }
+
+    @Test fun onDeviceIgnoresReadingStatus() {
+        val all = listOf(series(1, status = "completed"), series(2, status = null))
+        assertEquals(listOf(1L, 2L), visible(all, ON_DEVICE, "", marked = setOf(1, 2)).map { it.id })
+    }
 }

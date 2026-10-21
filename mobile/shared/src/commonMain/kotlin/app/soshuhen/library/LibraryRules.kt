@@ -12,6 +12,9 @@ fun unread(s: Series): Int = totalChapters(s)?.let { max(0, it - s.progress) } ?
 
 val STATUS_ORDER = listOf("reading", "plan_to_read", "completed", "on_hold", "dropped")
 
+/** Not a list status: the series kept on this device, offered beside the statuses. */
+const val ON_DEVICE = "on_device"
+
 val STATUS_LABEL = mapOf(
     "reading" to "Reading",
     "plan_to_read" to "Plan to read",
@@ -34,10 +37,10 @@ fun continueReading(all: List<Series>): List<Series> = all
 /** Comics only: the app has no reader for prose yet. A null kind is a comic. */
 fun comics(all: List<Series>): List<Series> = all.filter { it.kind != "prose" }
 
-fun visible(all: List<Series>, status: String?, query: String): List<Series> {
+fun visible(all: List<Series>, status: String?, query: String, marked: Set<Long> = emptySet()): List<Series> {
     val needle = query.trim()
     return comics(all).filter {
-        (status == null || it.status == status) &&
+        (status == null || (if (status == ON_DEVICE) it.id in marked else it.status == status)) &&
             (needle.isEmpty() || it.title.contains(needle, ignoreCase = true))
     }
 }

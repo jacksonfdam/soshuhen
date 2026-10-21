@@ -18,6 +18,7 @@ coil = "3.6.3"
 splashscreen = "1.2.0"
 activity = "1.13.0"
 okio = "3.18.2"
+documentfile = "1.1.0"
 room = "2.8.5"
 sqlite = "2.7.1"
 ksp = "2.3.12"
@@ -54,6 +55,7 @@ activity-compose = { module = "androidx.activity:activity-compose", version.ref 
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
+documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 

@@ -58,6 +58,8 @@ open class LocalStore(
     fun deviceChapters(seriesId: Long): Flow<List<DeviceChapter>> =
         db.deviceChapters().forSeries(seriesId).map { rows -> rows.map { it.toChapter() } }
 
+    suspend fun deviceChapter(chapterId: Long): DeviceChapter? = db.deviceChapters().get(chapterId)?.toChapter()
+
     fun allDeviceChapterIds(): Flow<Set<Long>> = db.deviceChapters().ids().map { it.toSet() }
 
     suspend fun indexChapter(c: DeviceChapter) = db.deviceChapters().put(

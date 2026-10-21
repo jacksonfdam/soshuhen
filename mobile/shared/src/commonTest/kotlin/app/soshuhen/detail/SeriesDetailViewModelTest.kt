@@ -4,6 +4,8 @@ import app.soshuhen.api.Fixtures
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.soshuhenHttpClient
 import app.soshuhen.core.FailingStore
+import app.soshuhen.core.DeviceLibrary
+import app.soshuhen.core.FakeChapterFolder
 import app.soshuhen.core.LocalStore
 import app.soshuhen.core.testDatabase
 import app.soshuhen.db.SoshuhenDatabase
@@ -68,7 +70,7 @@ class SeriesDetailViewModelTest {
     }
 
     @Test fun loadsRowsAndWhatToContinue() = runTest(dispatcher) {
-        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), store)
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), store, DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         val ui = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value).data
         assertEquals(listOf(2.5, 2.0, 1.0), ui.rows.map { it.number })
@@ -77,7 +79,7 @@ class SeriesDetailViewModelTest {
 
     @Test fun detailRefreshFailureKeepsLoadedRows() = runTest(dispatcher) {
         var ok = true
-        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { ok }), store)
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { ok }), store, DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         ok = false
         vm.refresh()
@@ -89,7 +91,7 @@ class SeriesDetailViewModelTest {
 
     @Test fun aServerFoundAtANewAddressReloadsByItself() = runTest(dispatcher) {
         val api = MutableStateFlow<SoshuhenApi?>(api { false })
-        val vm = SeriesDetailViewModel(1, api, store)
+        val vm = SeriesDetailViewModel(1, api, store, DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         assertIs<LoadState.Failed>(vm.state.value)
         api.value = api { true }
@@ -99,14 +101,14 @@ class SeriesDetailViewModelTest {
 
     @Test fun detailOfflineShowsTheSnapshot() = runTest(dispatcher) {
         store.saveDetail(1, Fixtures.DETAIL)
-        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { false }), store)
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { false }), store, DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         val state = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value)
         assertEquals(3, state.data.rows.size)
         assertEquals(OFFLINE, state.refreshFailed)
     }
     @Test fun aFailedSaveDoesNotChangeWhatIsShown() = runTest(dispatcher) {
-        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), FailingStore(db))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), FailingStore(db), DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         val state = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value)
         assertEquals(3, state.data.rows.size)

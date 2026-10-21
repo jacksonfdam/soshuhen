@@ -33,14 +33,23 @@ class DataStoreServerStore(context: Context) : ServerStore {
         }
     }
 
+    // Kept across a change of server: the folder belongs to the phone, and the
+    // files in it are the user's, not the server's.
     override suspend fun clear() {
-        store.edit { it.clear() }
+        store.edit { prefs -> prefs.asMap().keys.filter { it != FOLDER }.forEach { prefs.remove(it) } }
+    }
+
+    override val folder: Flow<String?> = store.data.map { it[FOLDER] }
+
+    override suspend fun saveFolder(uri: String) {
+        store.edit { it[FOLDER] = uri }
     }
 
     private companion object {
         val SCHEME = stringPreferencesKey("server_scheme")
         val HOST = stringPreferencesKey("server_host")
         val PORT = intPreferencesKey("server_port")
+        val FOLDER = stringPreferencesKey("chapter_folder")
         val INSTANCE_ID = stringPreferencesKey("instance_id")
     }
 }

@@ -62,4 +62,16 @@ class DetailRulesTest {
     @Test fun nothingToContinueIsNull() {
         assertNull(continueChapter(detail(progress = 3), null))
     }
+
+    @Test fun indexedChapterIsOnDevice() {
+        assertEquals(Availability.OnDevice, chapterRows(detail(0), onDevice = setOf(25)).single { it.id == 25L }.availability)
+    }
+
+    @Test fun onDeviceWinsOverNotDownloaded() {
+        assertEquals(Availability.OnDevice, chapterRows(detail(0), onDevice = setOf(20)).single { it.id == 20L }.availability)
+    }
+
+    @Test fun continueCanUseAChapterOnlyOnTheDevice() {
+        assertEquals(20L, continueChapter(detail(progress = 1), null, onDevice = setOf(20))?.id)
+    }
 }

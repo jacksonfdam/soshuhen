@@ -12,6 +12,9 @@ class FakeServerStore(initial: SavedServer? = null) : ServerStore {
     override val saved: StateFlow<SavedServer?> = state
     override suspend fun save(server: SavedServer) { state.value = server }
     override suspend fun clear() { state.value = null }
+    private val picked = MutableStateFlow<String?>(null)
+    override val folder: StateFlow<String?> = picked
+    override suspend fun saveFolder(uri: String) { picked.value = uri }
 }
 
 class FakeNetworkInfo(var wifi: Pair<String, Int>?) : NetworkInfo {

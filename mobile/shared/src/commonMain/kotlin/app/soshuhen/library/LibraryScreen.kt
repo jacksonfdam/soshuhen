@@ -27,14 +27,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.soshuhen.api.Series
 import app.soshuhen.ui.CoverImage
 import app.soshuhen.ui.LoadState
 import app.soshuhen.ui.theme.Tokens
+
+const val NOT_ON_DEVICE = "Not on this device. Mark it at home to read it here."
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,6 +52,9 @@ fun LibraryScreen(
     val state by model.state.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
     val query by model.query.collectAsStateWithLifecycle()
+    val marked by model.marked.collectAsStateWithLifecycle()
+    val atHome by model.atHome.collectAsStateWithLifecycle()
+    var notice by remember { mutableStateOf<String?>(null) }
 
     when (val s = state) {
         LoadState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -61,7 +70,7 @@ fun LibraryScreen(
         }
         is LoadState.Loaded -> PullToRefreshBox(isRefreshing = false, onRefresh = model::refresh) {
             val all = s.data
-            val shown = visible(all, status, query)
+            val shown = visible(all, status, query, marked)
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(Tokens.coverMinWidth),
                 contentPadding = PaddingValues(Tokens.space.lg),
@@ -70,6 +79,9 @@ fun LibraryScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 s.refreshFailed?.let { message ->
+                    item(span = { GridItemSpan(maxLineSpan) }) { Banner(message) }
+                }
+                notice?.let { message ->
                     item(span = { GridItemSpan(maxLineSpan) }) { Banner(message) }
                 }
                 item(span = { GridItemSpan(maxLineSpan) }) {
@@ -86,9 +98,20 @@ fun LibraryScreen(
                     item(span = { GridItemSpan(maxLineSpan) }) { ContinueRow(continuing, coverUrl, onOpen) }
                 }
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    StatusChips(comics(all), status, model::setStatus)
+                    StatusChips(comics(all), marked, status, model::setStatus)
                 }
-                items(shown, key = { it.id }) { CoverCard(it, coverUrl(it.id)) { onOpen(it.id) } }
+                items(shown, key = { it.id }) { series ->
+                    // Away from home only a marked series has anything to open.
+                    val reachable = atHome || series.id in marked
+                    CoverCard(series, coverUrl(series.id), dimmed = !reachable) {
+                        if (reachable) {
+                            notice = null
+                            onOpen(series.id)
+                        } else {
+                            notice = NOT_ON_DEVICE
+                        }
+                    }
+                }
             }
         }
     }
@@ -130,7 +153,7 @@ private fun ContinueRow(series: List<Series>, coverUrl: (Long) -> String, onOpen
 }
 
 @Composable
-private fun StatusChips(all: List<Series>, status: String?, onChange: (String?) -> Unit) {
+private fun StatusChips(all: List<Series>, marked: Set<Long>, status: String?, onChange: (String?) -> Unit) {
     LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.space.sm)) {
         items(STATUS_ORDER) { key ->
             FilterChip(
@@ -140,14 +163,21 @@ private fun StatusChips(all: List<Series>, status: String?, onChange: (String?) 
             )
         }
         item {
+            FilterChip(
+                selected = status == ON_DEVICE,
+                onClick = { onChange(ON_DEVICE) },
+                label = { Text("On device ${all.count { it.id in marked }}") },
+            )
+        }
+        item {
             FilterChip(selected = status == null, onClick = { onChange(null) }, label = { Text("All ${all.size}") })
         }
     }
 }
 
 @Composable
-private fun CoverCard(series: Series, coverUrl: String, onClick: () -> Unit) {
-    Column(Modifier.clickable(onClick = onClick)) {
+private fun CoverCard(series: Series, coverUrl: String, dimmed: Boolean, onClick: () -> Unit) {
+    Column(Modifier.alpha(if (dimmed) Tokens.dimmed else 1f).clickable(onClick = onClick)) {
         Box {
             CoverImage(coverUrl, series.title)
             val count = unread(series)

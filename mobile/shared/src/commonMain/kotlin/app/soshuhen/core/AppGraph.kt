@@ -17,10 +17,12 @@ class AppGraph(
     val client: HttpClient,
     scope: CoroutineScope,
     val local: LocalStore,
+    val folder: ChapterFolder,
     // The platform's cache directory, which common code cannot name itself.
     val cacheDir: Path,
 ) {
     val probe = identityProbe(client)
     val scanner = ServerScanner(probe)
+    val library = DeviceLibrary(local, folder)
     val session = Session(store, ServerLocator(probe, scanner), network, client, scope)
 }

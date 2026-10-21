@@ -44,6 +44,7 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.documentfile)
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.cio)
