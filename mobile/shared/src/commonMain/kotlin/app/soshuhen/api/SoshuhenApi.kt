@@ -103,9 +103,20 @@ class SoshuhenApi(val baseUrl: String, private val client: HttpClient) {
     // prepareGet(...).execute streams: a chapter is tens of megabytes and the
     // phone must not hold one in memory. That is why the channel is only valid
     // inside [read].
-    suspend fun <T> archive(chapterId: Long, from: Long, read: suspend (ArchiveDownload) -> T): T =
+    // [ifRange] is the ETag the bytes before [from] came from: when the archive
+    // has been rebuilt since, the server sends it whole instead of a tail that
+    // belongs to another file, and [ArchiveDownload.restarted] says so.
+    suspend fun <T> archive(
+        chapterId: Long,
+        from: Long,
+        ifRange: String? = null,
+        read: suspend (ArchiveDownload) -> T,
+    ): T =
         client.prepareGet("$baseUrl/api/chapters/$chapterId/archive") {
-            if (from > 0) header(HttpHeaders.Range, "bytes=$from-")
+            if (from > 0) {
+                header(HttpHeaders.Range, "bytes=$from-")
+                ifRange?.let { header(HttpHeaders.IfRange, it) }
+            }
             // The default 15 s request timeout covers the whole body and would
             // cut off any copy over weak Wi-Fi; a stalled socket is what to detect.
             timeout {

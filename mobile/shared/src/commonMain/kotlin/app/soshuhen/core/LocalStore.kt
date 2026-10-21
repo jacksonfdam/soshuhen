@@ -5,6 +5,7 @@ import app.soshuhen.api.SeriesDetail
 import app.soshuhen.api.SoshuhenJson
 import app.soshuhen.db.DeviceChapterEntity
 import app.soshuhen.db.ImportLogEntity
+import app.soshuhen.db.ImportPartEntity
 import app.soshuhen.db.MarkedEntity
 import app.soshuhen.db.OutboxEntity
 import app.soshuhen.db.ProblemEntity
@@ -89,6 +90,12 @@ open class LocalStore(
     suspend fun logImport(entry: ImportLogEntity) = db.importLog().put(entry)
 
     fun importLog(): Flow<List<ImportLogEntity>> = db.importLog().newestFirst()
+
+    suspend fun savePartEtag(chapterId: Long, etag: String) = db.importParts().put(ImportPartEntity(chapterId, etag))
+
+    suspend fun partEtag(chapterId: Long): String? = db.importParts().etag(chapterId)
+
+    suspend fun forgetPart(chapterId: Long) = db.importParts().delete(chapterId)
 
     private suspend fun save(key: String, json: String) =
         db.snapshots().put(SnapshotEntity(key, json, clock().toEpochMilliseconds()))
