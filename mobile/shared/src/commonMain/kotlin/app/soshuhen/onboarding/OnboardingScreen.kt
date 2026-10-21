@@ -42,20 +42,16 @@ fun OnboardingScreen(model: OnboardingViewModel) {
     ) {
         Column(Modifier.widthIn(max = Tokens.contentMaxWidth), verticalArrangement = Arrangement.spacedBy(Tokens.space.lg)) {
             Text("Find your Soshuhen server", style = MaterialTheme.typography.headlineMedium)
-            val found = when (val s = state) {
-                is OnboardingState.Scanning -> s.found
-                is OnboardingState.Done -> s.found
-                else -> emptyList()
-            }
-            if (state is OnboardingState.Scanning) {
+            val ui = state
+            if (ui.scanning) {
                 Text("Looking on this network…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
-            found.forEach { ServerRow(it) { model.choose(it) } }
-            if (state is OnboardingState.Done && found.isEmpty()) {
+            ui.found.forEach { ServerRow(it) { model.choose(it) } }
+            if (!ui.scanning && ui.found.isEmpty()) {
                 Text("No server found on this network.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (state is OnboardingState.Done) {
+            if (!ui.scanning) {
                 TextButton(onClick = model::rescan) { Text("Scan again") }
             }
             Text("Or type its address", style = MaterialTheme.typography.titleMedium)
@@ -67,14 +63,14 @@ fun OnboardingScreen(model: OnboardingViewModel) {
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { model.submitAddress(address) }),
-                isError = state is OnboardingState.Failed,
-                supportingText = (state as? OnboardingState.Failed)?.let { { Text(it.message) } },
+                isError = state.error != null,
+                supportingText = state.error?.let { { Text(it) } },
                 modifier = Modifier.fillMaxWidth(),
             )
             Button(
                 onClick = { model.submitAddress(address) },
-                enabled = state !is OnboardingState.Checking,
-            ) { Text(if (state is OnboardingState.Checking) "Connecting…" else "Connect") }
+                enabled = !state.checking,
+            ) { Text(if (state.checking) "Connecting…" else "Connect") }
         }
     }
 }

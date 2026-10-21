@@ -35,9 +35,11 @@ fun App(graph: AppGraph, appVersion: String) {
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (saved) {
                     Loading -> Unit
-                    null -> OnboardingScreen(
-                        viewModel { OnboardingViewModel(graph.scanner, graph.probe, graph.network, graph.store) },
-                    )
+                    null -> {
+                        val model = viewModel { OnboardingViewModel(graph.scanner, graph.probe, graph.network, graph.store) }
+                        LaunchedEffect(Unit) { model.onShown() }
+                        OnboardingScreen(model)
+                    }
                     else -> {
                         LaunchedEffect(Unit) { graph.session.refreshLocation() }
                         MainShell(graph, appVersion)

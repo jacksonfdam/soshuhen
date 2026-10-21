@@ -14,17 +14,23 @@ import app.soshuhen.server.subnetHosts
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
-sealed interface OnboardingState {
-    data class Scanning(val found: List<FoundServer>) : OnboardingState
-    data class Done(val found: List<FoundServer>) : OnboardingState
-    data object Checking : OnboardingState
-    data class Failed(val message: String) : OnboardingState
-}
+/**
+ * One state, not a choice between states: a mistyped address must not hide
+ * the servers the scan found, and the scan must not wipe the error a moment
+ * later.
+ */
+data class OnboardingUi(
+    val found: List<FoundServer> = emptyList(),
+    val scanning: Boolean = false,
+    val checking: Boolean = false,
+    val error: String? = null,
+)
 
 class OnboardingViewModel(
     private val scanner: ServerScanner,
@@ -33,11 +39,21 @@ class OnboardingViewModel(
     private val store: ServerStore,
     private val scanBudget: Duration = 15.seconds,
 ) : ViewModel() {
-    private val _state = MutableStateFlow<OnboardingState>(OnboardingState.Scanning(emptyList()))
-    val state: StateFlow<OnboardingState> = _state
+    private val _state = MutableStateFlow(OnboardingUi())
+    val state: StateFlow<OnboardingUi> = _state
     private var scanning: Job? = null
+    // This model outlives the screen (it belongs to the activity), so after a
+    // server was chosen and then forgotten it must start over, not resume.
+    private var finished = false
 
     init {
+        rescan()
+    }
+
+    fun onShown() {
+        if (!finished) return
+        finished = false
+        _state.value = OnboardingUi()
         rescan()
     }
 
@@ -45,45 +61,52 @@ class OnboardingViewModel(
         scanning?.cancel()
         scanning = viewModelScope.launch {
             val wifi = network.wifiAddress()
+            // Off Wi-Fi there is nothing to scan; the address field is the
+            // only way in, and a spinner would only make the person wait.
             if (wifi == null) {
-                // Off Wi-Fi there is nothing to scan; the address field is the
-                // only way in, and a spinner would only make the person wait.
-                _state.value = OnboardingState.Done(emptyList())
+                _state.update { it.copy(scanning = false) }
                 return@launch
             }
-            val found = mutableListOf<FoundServer>()
-            _state.value = OnboardingState.Scanning(emptyList())
+            _state.update { it.copy(found = emptyList(), scanning = true) }
             // A budget for the whole scan, so a network that drops every probe
             // still ends with the field rather than an endless spinner.
             withTimeoutOrNull(scanBudget) {
-                scanner.scan(subnetHosts(wifi.first, wifi.second)).collect {
-                    found += it
-                    _state.value = OnboardingState.Scanning(found.toList())
+                scanner.scan(subnetHosts(wifi.first, wifi.second)).collect { server ->
+                    _state.update { it.copy(found = it.found + server) }
                 }
             }
-            _state.value = OnboardingState.Done(found.toList())
+            _state.update { it.copy(scanning = false) }
         }
     }
 
     fun choose(server: FoundServer) {
-        viewModelScope.launch { store.save(SavedServer(server.address, server.identity.instanceId)) }
+        viewModelScope.launch { save(SavedServer(server.address, server.identity.instanceId)) }
     }
 
     fun submitAddress(input: String) {
+        if (_state.value.checking) return
         val address = parseServerAddress(input)
         if (address == null) {
-            _state.value = OnboardingState.Failed("Not an address. Try 192.168.1.20 or 192.168.1.20:8080.")
+            _state.update { it.copy(error = "Not an address. Try 192.168.1.20 or 192.168.1.20:8080.") }
             return
         }
-        scanning?.cancel()
-        _state.value = OnboardingState.Checking
+        _state.update { it.copy(checking = true, error = null) }
         viewModelScope.launch {
             val identity = probe(address)
             if (identity == null || identity.app != "soshuhen") {
-                _state.value = OnboardingState.Failed("No Soshuhen server answered at ${address.baseUrl}.")
+                _state.update {
+                    it.copy(checking = false, error = "No Soshuhen server answered at ${address.baseUrl}.")
+                }
             } else {
-                store.save(SavedServer(address, identity.instanceId))
+                save(SavedServer(address, identity.instanceId))
             }
         }
+    }
+
+    private suspend fun save(server: SavedServer) {
+        scanning?.cancel()
+        store.save(server)
+        finished = true
+        _state.update { it.copy(checking = false, scanning = false) }
     }
 }
