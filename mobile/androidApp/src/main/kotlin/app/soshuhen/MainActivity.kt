@@ -13,6 +13,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { App() }
+        val graph = (application as SoshuhenApplication).graph
+        setContent { App(graph) }
     }
 }

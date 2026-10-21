@@ -68,4 +68,6 @@ object Tokens {
 
     const val coverAspect = 2f / 3f
     val coverMinWidth = 112.dp
+    // Forms and lists stop growing here on a tablet, so a line stays readable.
+    val contentMaxWidth = 560.dp
 }

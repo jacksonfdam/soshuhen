@@ -25,4 +25,6 @@ dependencies {
     implementation(project(":shared"))
     implementation(libs.activity.compose)
     implementation(libs.splashscreen)
+    implementation(libs.coroutines.core)
+    implementation(libs.ktor.client.core)
 }
