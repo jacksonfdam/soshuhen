@@ -1,6 +1,7 @@
 package app.soshuhen.core
 
 import okio.Buffer
+import okio.ForwardingSource
 import okio.Sink
 import okio.Source
 
@@ -62,7 +63,20 @@ class FakeChapterFolder : ChapterFolder {
 
     override suspend fun exists(uri: String) = uri in files
 
-    override suspend fun read(uri: String): Source = Buffer().write(files[uri] ?: throw ChapterFileMissing())
+    // Every source handed out, so a test can see that each one was closed:
+    // on Android each is an open file descriptor.
+    val opened = mutableListOf<ClosingSource>()
+
+    class ClosingSource(delegate: Source) : ForwardingSource(delegate) {
+        var closed = false
+        override fun close() {
+            closed = true
+            super.close()
+        }
+    }
+
+    override suspend fun read(uri: String): Source =
+        ClosingSource(Buffer().write(files[uri] ?: throw ChapterFileMissing())).also { opened += it }
 
     fun put(slug: String, name: String): String = uri(slug, name).also { files[it] = byteArrayOf(1, 2, 3) }
 }

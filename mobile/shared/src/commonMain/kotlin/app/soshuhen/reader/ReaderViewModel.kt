@@ -46,11 +46,17 @@ sealed interface ReaderState {
 
 const val NOT_ON_DEVICE = "Not on this device. It will be copied the next time you are home."
 const val FILE_MISSING = "This chapter's file is missing from the folder. It will be copied again at home."
+const val FILE_UNREADABLE = "This chapter's file could not be read. It will be copied again at home."
+
+// Only a chapter the server holds as a file is ever copied, so the promise in
+// NOT_ON_DEVICE would be false for one it never downloaded.
+const val NOT_DOWNLOADED = "Not downloaded on the server yet."
 
 // Duplicated from the series screen on purpose: feature packages do not import
 // from each other.
 const val READER_FOLDER_GONE = "The chapters folder is not available. Pick it again in Settings."
 const val SERVER_FAILED = "The server could not open this chapter."
+const val OPEN_FAILED = "This chapter could not be opened."
 
 // The server's own defaults, for a series opened away from home before its
 // settings were ever fetched.
@@ -122,7 +128,7 @@ class ReaderViewModel(
         _state.value = ReaderState.Ready(ui.copy(prefs = p))
         viewModelScope.launch {
             keep { local.savePrefs(seriesId, p) }
-            outbox.prefs(seriesId, p)
+            keep { outbox.prefs(seriesId, p) }
             sendIfHome()
         }
     }
@@ -146,6 +152,10 @@ class ReaderViewModel(
                 throw e
             } catch (_: FolderUnavailable) {
                 ReaderState.Unavailable(READER_FOLDER_GONE)
+            } catch (_: Exception) {
+                // A database or provider failure is one chapter that will not
+                // open, not a reason to take the whole app down.
+                ReaderState.Unavailable(OPEN_FAILED)
             }
         }
     }
@@ -161,8 +171,10 @@ class ReaderViewModel(
         val opened: Pair<PageSource, Int?> = when {
             row.availability == Availability.OnDevice -> {
                 val chapter = device.first { it.chapterId == chapterId }
-                val files = fromDevice(chapter) ?: return ReaderState.Unavailable(FILE_MISSING)
-                PageSource.Device(files) to null
+                when (val found = fromDevice(chapter)) {
+                    is DeviceOpen.Pages -> PageSource.Device(found.files) to null
+                    is DeviceOpen.Lost -> return ReaderState.Unavailable(found.message)
+                }
             }
             // Only a chapter the server holds as a file: a manifest for any
             // other would have the server fetch it from its source.
@@ -176,6 +188,7 @@ class ReaderViewModel(
                 }
                 PageSource.Server(client, chapterId, manifest.pageCount) to manifest.position
             }
+            row.availability == Availability.NotDownloaded -> return ReaderState.Unavailable(NOT_DOWNLOADED)
             else -> return ReaderState.Unavailable(NOT_ON_DEVICE)
         }
         val (source, saved) = opened
@@ -202,18 +215,36 @@ class ReaderViewModel(
     private fun readable(row: ChapterRow, home: Boolean) =
         row.availability == Availability.OnDevice || (home && row.availability == Availability.OnServer)
 
-    private suspend fun fromDevice(chapter: DeviceChapter): List<okio.Path>? {
+    private sealed interface DeviceOpen {
+        class Pages(val files: List<okio.Path>) : DeviceOpen
+        class Lost(val message: String) : DeviceOpen
+    }
+
+    private suspend fun fromDevice(chapter: DeviceChapter): DeviceOpen {
         val source = try {
             if (!folder.exists(chapter.uri)) null else folder.read(chapter.uri)
         } catch (_: ChapterFileMissing) {
             null
+        } ?: return forget(chapter, FILE_MISSING)
+        // Closed here on every path: on a cache hit ZipPages never touches the
+        // source, and each one left open is a file descriptor held by SAF.
+        return try {
+            DeviceOpen.Pages(source.use { pages.extract(chapter.chapterId, it) })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: FolderUnavailable) {
+            throw e
+        } catch (_: Exception) {
+            // A cut-off or corrupt archive: the copy is what is broken, and
+            // the next import replaces it once the index no longer holds it.
+            forget(chapter, FILE_UNREADABLE)
         }
-        if (source == null) {
-            // Forgotten so the next import at home sees it missing and copies it again.
-            local.forgetChapter(chapter.chapterId)
-            return null
-        }
-        return pages.extract(chapter.chapterId, source)
+    }
+
+    // Forgotten so the next import at home sees the chapter missing and copies it again.
+    private suspend fun forget(chapter: DeviceChapter, message: String): DeviceOpen {
+        local.forgetChapter(chapter.chapterId)
+        return DeviceOpen.Lost(message)
     }
 
     private suspend fun rows(client: SoshuhenApi?, device: List<DeviceChapter>): List<ChapterRow> {
@@ -254,8 +285,9 @@ class ReaderViewModel(
     // one position, not ten rows replacing each other.
     private fun queuePosition(chapterId: Long, page: Int) {
         pendingPosition?.cancel()
+        // A failed write loses this one position; the next turn writes another.
         val save: suspend () -> Unit = {
-            outbox.position(seriesId, chapterId, page)
+            keep { outbox.position(seriesId, chapterId, page) }
             sendIfHome()
         }
         savePosition = save
@@ -277,7 +309,7 @@ class ReaderViewModel(
         if (completed) return
         completed = true
         viewModelScope.launch {
-            outbox.complete(seriesId, ui.chapter.id)
+            keep { outbox.complete(seriesId, ui.chapter.id) }
             keep { local.raiseProgress(seriesId, floor(ui.chapter.number).toInt()) }
             sendIfHome()
         }

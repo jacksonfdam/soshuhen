@@ -59,7 +59,12 @@ class ReaderViewModelTest {
     private fun pagesOf(count: Int): List<Path> = List(count) { "/cache/reader/$it.jpg".toPath() }
 
     private var devicePages = 5
+    private var extractFails: Exception? = null
+
+    // Never reads the source, as ZipPages does not when the chapter is already
+    // in its cache: closing it is the caller's job either way.
     private val extractor = PageExtractor { chapterId, _: Source ->
+        extractFails?.let { throw it }
         extracted += chapterId
         pagesOf(devicePages)
     }
@@ -108,7 +113,7 @@ class ReaderViewModelTest {
         )
     }
 
-    private fun reader(chapterId: Long, startPage: Int? = null) =
+    private fun reader(chapterId: Long, startPage: Int? = null, outbox: Outbox = this.outbox) =
         ReaderViewModel(1, chapterId, startPage, api, home, store, folder, extractor, outbox)
 
     private fun ReaderViewModel.ui(): ReaderUi = assertIs<ReaderState.Ready>(state.value).ui
@@ -157,7 +162,7 @@ class ReaderViewModelTest {
         home.value = true
         val vm = reader(12)
         advanceUntilIdle()
-        assertIs<ReaderState.Unavailable>(vm.state.value)
+        assertEquals("Not downloaded on the server yet.", assertIs<ReaderState.Unavailable>(vm.state.value).message)
         // Asking for its manifest would make the server fetch it from the source.
         assertFalse(requests.any { it.second.startsWith("/api/reader/chapters/12") })
     }
@@ -361,5 +366,56 @@ class ReaderViewModelTest {
         job.cancel()
         runCurrent()
         assertFalse(ReaderKeys.emit(ReaderKey.Next))
+    }
+
+    @Test fun awayFromHomeANotDownloadedChapterSaysSo() = runTest(dispatcher) {
+        store.saveDetail(1, Fixtures.DETAIL)
+        val vm = reader(12)
+        advanceUntilIdle()
+        // Not "copied the next time you are home": only a chapter the server
+        // holds as a file is ever copied.
+        assertEquals("Not downloaded on the server yet.", assertIs<ReaderState.Unavailable>(vm.state.value).message)
+    }
+
+    @Test fun everySourceOpenedFromTheFolderIsClosed() = runTest(dispatcher) {
+        store.saveDetail(1, Fixtures.DETAIL)
+        onDevice(11, 1.0)
+        reader(11)
+        advanceUntilIdle()
+        reader(11)
+        advanceUntilIdle()
+        assertEquals(2, folder.opened.size)
+        assertTrue(folder.opened.all { it.closed })
+    }
+
+    @Test fun anUnreadableArchiveIsUnavailableAndForgotten() = runTest(dispatcher) {
+        store.saveDetail(1, Fixtures.DETAIL)
+        onDevice(11, 1.0)
+        extractFails = okio.IOException("invalid zip")
+        val vm = reader(11)
+        advanceUntilIdle()
+        assertEquals(
+            "This chapter's file could not be read. It will be copied again at home.",
+            assertIs<ReaderState.Unavailable>(vm.state.value).message,
+        )
+        assertNull(store.deviceChapter(11))
+        assertTrue(folder.opened.all { it.closed })
+    }
+
+    @Test fun aFailedOutboxWriteLosesThatEventOnly() = runTest(dispatcher) {
+        store.saveDetail(1, Fixtures.DETAIL)
+        onDevice(11, 1.0)
+        val vm = reader(11, outbox = Outbox(QueueFailingStore(db)) { Instant.parse("2026-10-21T08:10:00Z") })
+        advanceUntilIdle()
+        vm.goTo(4)
+        vm.setPrefs(ReaderPrefs("double", "fit_height", "gray"))
+        advanceUntilIdle()
+        vm.goTo(2)
+        assertEquals(2, vm.ui().page)
+        assertEquals(ReaderPrefs("double", "fit_height", "gray"), store.prefsSnapshot(1))
+    }
+
+    private class QueueFailingStore(db: SoshuhenDatabase) : LocalStore(db) {
+        override suspend fun enqueue(entry: app.soshuhen.db.OutboxEntity) = error("disk full")
     }
 }

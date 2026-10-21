@@ -130,7 +130,7 @@ open class LocalStore(
         else db.problems().put(ProblemEntity(ProblemEntity.ONLY_ROW, message, at = clock().toEpochMilliseconds()))
     }
 
-    suspend fun enqueue(entry: OutboxEntity) = db.outbox().put(entry)
+    open suspend fun enqueue(entry: OutboxEntity) = db.outbox().put(entry)
 
     suspend fun outbox(): List<OutboxEntity> = db.outbox().all()
 
