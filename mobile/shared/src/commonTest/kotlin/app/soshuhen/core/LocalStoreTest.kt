@@ -1,6 +1,8 @@
 package app.soshuhen.core
 
 import app.soshuhen.api.Fixtures
+import app.soshuhen.db.ImportLogEntity
+import app.soshuhen.db.OutboxEntity
 import app.soshuhen.db.SoshuhenDatabase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -64,5 +66,25 @@ class LocalStoreTest {
         assertEquals("b", store.problem().first())
         store.setProblem(null)
         assertNull(store.problem().first())
+    }
+
+    @Test fun theOutboxKeepsOrderAndDropsByKind() = runTest {
+        store.enqueue(OutboxEntity(kind = "position", seriesId = 1, chapterId = 10, page = 3, readAt = "t", body = null))
+        store.enqueue(OutboxEntity(kind = "complete", seriesId = 1, chapterId = 10, page = null, readAt = "t", body = null))
+        store.enqueue(OutboxEntity(kind = "position", seriesId = 2, chapterId = 20, page = 1, readAt = "t", body = null))
+        val queued = store.outbox()
+        assertEquals(listOf("position", "complete", "position"), queued.map { it.kind })
+        assertTrue(queued.zipWithNext().all { (a, b) -> a.id < b.id })
+        store.dropQueued(seriesId = 1, kind = "position")
+        assertEquals(listOf("complete", "position"), store.outbox().map { it.kind })
+        store.dequeue(store.outbox().first().id)
+        assertEquals(listOf(2L), store.outbox().map { it.seriesId })
+    }
+
+    @Test fun theImportLogListsNewestFirst() = runTest {
+        store.logImport(ImportLogEntity(1, 7, "A", 1.0, importedAt = 100))
+        store.logImport(ImportLogEntity(2, 7, "A", 2.0, importedAt = 300))
+        store.logImport(ImportLogEntity(3, 8, "B", 1.0, importedAt = 200))
+        assertEquals(listOf(2L, 3L, 1L), store.importLog().first().map { it.chapterId })
     }
 }

@@ -10,3 +10,8 @@ import kotlin.coroutines.CoroutineContext
 // outside the virtual clock advanceUntilIdle() drives, and its result would
 // land after the test had already looked.
 expect fun testDatabase(queryContext: CoroutineContext = Dispatchers.IO): SoshuhenDatabase
+
+class FailingStore(db: SoshuhenDatabase) : LocalStore(db) {
+    override suspend fun saveSeries(json: String) = error("disk full")
+    override suspend fun saveDetail(id: Long, json: String) = error("disk full")
+}

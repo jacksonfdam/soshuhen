@@ -9,13 +9,22 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
-/** The one current import problem. A second row would be a second banner. */
+/**
+ * The one current import problem. A second row would be a second banner.
+ * The plan asked for CHECK (id = 1), which Room cannot declare on an entity;
+ * a primary key that is always [ONLY_ROW], written with REPLACE, gives the
+ * same guarantee. It has no default so no caller can pick another id.
+ */
 @Entity(tableName = "problem")
 data class ProblemEntity(
-    @PrimaryKey val id: Int = 1,
+    @PrimaryKey val id: Int,
     val message: String,
     val at: Long,
-)
+) {
+    companion object {
+        const val ONLY_ROW = 1
+    }
+}
 
 @Dao
 interface ProblemDao {
@@ -24,6 +33,6 @@ interface ProblemDao {
     @Query("DELETE FROM problem")
     suspend fun clear()
 
-    @Query("SELECT message FROM problem WHERE id = 1")
+    @Query("SELECT message FROM problem WHERE id = ${ProblemEntity.ONLY_ROW}")
     fun message(): Flow<String?>
 }

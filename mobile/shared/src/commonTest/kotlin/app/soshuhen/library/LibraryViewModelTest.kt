@@ -3,6 +3,7 @@ package app.soshuhen.library
 import app.soshuhen.api.Fixtures
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.soshuhenHttpClient
+import app.soshuhen.core.FailingStore
 import app.soshuhen.core.LocalStore
 import app.soshuhen.core.testDatabase
 import app.soshuhen.db.SoshuhenDatabase
@@ -128,5 +129,12 @@ class LibraryViewModelTest {
         LibraryViewModel(MutableStateFlow(api(true)), store)
         advanceUntilIdle()
         assertEquals(2, store.seriesSnapshot()!!.size)
+    }
+    @Test fun aFailedSaveDoesNotChangeWhatIsShown() = runTest(dispatcher) {
+        val vm = LibraryViewModel(MutableStateFlow(api(true)), FailingStore(db))
+        advanceUntilIdle()
+        val state = assertIs<LoadState.Loaded<List<app.soshuhen.api.Series>>>(vm.state.value)
+        assertEquals(listOf(243L), state.data.map { it.id })
+        assertNull(state.refreshFailed)
     }
 }

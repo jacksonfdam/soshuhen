@@ -11,6 +11,7 @@ import app.soshuhen.core.LocalStore
 import app.soshuhen.ui.FAILED_FIRST
 import app.soshuhen.ui.LoadState
 import app.soshuhen.ui.OFFLINE
+import app.soshuhen.ui.keep
 import app.soshuhen.ui.UNREACHABLE
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -56,7 +57,7 @@ class SeriesDetailViewModel(
                 val json = client.seriesDetailJson(seriesId)
                 val detail = SoshuhenJson.decodeFromString<SeriesDetail>(json)
                 val resume = client.resume(seriesId)
-                local.saveDetail(seriesId, json)
+                keep { local.saveDetail(seriesId, json) }
                 LoadState.Loaded(ui(detail, resume))
             } catch (e: CancellationException) {
                 throw e

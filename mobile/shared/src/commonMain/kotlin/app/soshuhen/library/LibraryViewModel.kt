@@ -9,6 +9,7 @@ import app.soshuhen.core.LocalStore
 import app.soshuhen.ui.FAILED_FIRST
 import app.soshuhen.ui.LoadState
 import app.soshuhen.ui.OFFLINE
+import app.soshuhen.ui.keep
 import app.soshuhen.ui.UNREACHABLE
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -51,7 +52,7 @@ class LibraryViewModel(
             _state.value = try {
                 val json = client.seriesJson()
                 val rows = SoshuhenJson.decodeFromString<List<Series>>(json)
-                local.saveSeries(json)
+                keep { local.saveSeries(json) }
                 LoadState.Loaded(comics(rows))
             } catch (e: CancellationException) {
                 throw e

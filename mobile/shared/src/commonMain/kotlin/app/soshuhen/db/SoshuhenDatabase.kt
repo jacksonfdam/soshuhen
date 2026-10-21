@@ -21,6 +21,8 @@ abstract class SoshuhenDatabase : RoomDatabase() {
     abstract fun snapshots(): SnapshotDao
     abstract fun marked(): MarkedDao
     abstract fun deviceChapters(): DeviceChapterDao
+    abstract fun outbox(): OutboxDao
+    abstract fun importLog(): ImportLogDao
     abstract fun problems(): ProblemDao
 }
 

@@ -4,7 +4,9 @@ import app.soshuhen.api.Series
 import app.soshuhen.api.SeriesDetail
 import app.soshuhen.api.SoshuhenJson
 import app.soshuhen.db.DeviceChapterEntity
+import app.soshuhen.db.ImportLogEntity
 import app.soshuhen.db.MarkedEntity
+import app.soshuhen.db.OutboxEntity
 import app.soshuhen.db.ProblemEntity
 import app.soshuhen.db.SnapshotEntity
 import app.soshuhen.db.SoshuhenDatabase
@@ -28,15 +30,17 @@ private const val SERIES_KEY = "series"
 private fun detailKey(id: Long) = "series/$id"
 
 /** Everything the app keeps on the device, behind the types the screens already use. */
-class LocalStore(
+// Open so a test can hand a view model a store whose writes fail: a closed Room
+// database hangs instead of throwing, which proves nothing about the fallback.
+open class LocalStore(
     private val db: SoshuhenDatabase,
     private val clock: () -> Instant = { Clock.System.now() },
 ) {
-    suspend fun saveSeries(json: String) = save(SERIES_KEY, json)
+    open suspend fun saveSeries(json: String) = save(SERIES_KEY, json)
 
     suspend fun seriesSnapshot(): List<Series>? = read(SERIES_KEY)
 
-    suspend fun saveDetail(id: Long, json: String) = save(detailKey(id), json)
+    open suspend fun saveDetail(id: Long, json: String) = save(detailKey(id), json)
 
     suspend fun detailSnapshot(id: Long): SeriesDetail? = read(detailKey(id))
 
@@ -69,8 +73,20 @@ class LocalStore(
 
     suspend fun setProblem(message: String?) {
         if (message == null) db.problems().clear()
-        else db.problems().put(ProblemEntity(message = message, at = clock().toEpochMilliseconds()))
+        else db.problems().put(ProblemEntity(ProblemEntity.ONLY_ROW, message, at = clock().toEpochMilliseconds()))
     }
+
+    suspend fun enqueue(entry: OutboxEntity) = db.outbox().put(entry)
+
+    suspend fun outbox(): List<OutboxEntity> = db.outbox().all()
+
+    suspend fun dequeue(id: Long) = db.outbox().delete(id)
+
+    suspend fun dropQueued(seriesId: Long, kind: String) = db.outbox().deleteKind(seriesId, kind)
+
+    suspend fun logImport(entry: ImportLogEntity) = db.importLog().put(entry)
+
+    fun importLog(): Flow<List<ImportLogEntity>> = db.importLog().newestFirst()
 
     private suspend fun save(key: String, json: String) =
         db.snapshots().put(SnapshotEntity(key, json, clock().toEpochMilliseconds()))

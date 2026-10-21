@@ -11,9 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -46,7 +44,10 @@ class Session(
         // instead of the shell repeating it on every composition.
         scope.launch {
             store.saved.map { it != null }.distinctUntilChanged().collectLatest { hasServer ->
-                if (hasServer) merge(flowOf(Unit), network.changes).collect { refreshLocation() }
+                // Latest wins: a scan started on a network the phone has already
+                // left must not hold up the check on the one it is on now. Nothing
+                // is written until a scan finishes, so cancelling it is safe.
+                if (hasServer) network.changes.collectLatest { refreshLocation() }
                 else _atHome.value = false
             }
         }

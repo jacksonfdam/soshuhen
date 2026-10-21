@@ -3,6 +3,7 @@ package app.soshuhen.detail
 import app.soshuhen.api.Fixtures
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.soshuhenHttpClient
+import app.soshuhen.core.FailingStore
 import app.soshuhen.core.LocalStore
 import app.soshuhen.core.testDatabase
 import app.soshuhen.db.SoshuhenDatabase
@@ -29,6 +30,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SeriesDetailViewModelTest {
@@ -102,5 +104,12 @@ class SeriesDetailViewModelTest {
         val state = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value)
         assertEquals(3, state.data.rows.size)
         assertEquals(OFFLINE, state.refreshFailed)
+    }
+    @Test fun aFailedSaveDoesNotChangeWhatIsShown() = runTest(dispatcher) {
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), FailingStore(db))
+        advanceUntilIdle()
+        val state = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value)
+        assertEquals(3, state.data.rows.size)
+        assertNull(state.refreshFailed)
     }
 }
