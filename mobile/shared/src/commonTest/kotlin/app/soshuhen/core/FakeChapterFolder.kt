@@ -13,11 +13,18 @@ class FakeChapterFolder : ChapterFolder {
     // what it managed to write behind.
     var failNextWriteWith: Exception? = null
 
+    // A card pulled mid-run: SAF then fails with whatever the provider throws,
+    // not with FolderUnavailable.
+    var goneWith: Exception? = null
+
     fun uri(slug: String, name: String) = "mem://Soshuhen/$slug/$name"
 
-    override fun isAvailable() = available
+    override fun isAvailable() = available && goneWith == null
+
+    private fun gone() = goneWith?.let { throw it }
 
     override suspend fun write(slug: String, fileName: String, append: Boolean, block: suspend (Sink) -> Unit) {
+        gone()
         if (!available) throw FolderUnavailable()
         val buffer = Buffer()
         block(buffer)
@@ -30,16 +37,19 @@ class FakeChapterFolder : ChapterFolder {
     }
 
     override suspend fun size(slug: String, fileName: String): Long? {
+        gone()
         if (!available) throw FolderUnavailable()
         return files[uri(slug, fileName)]?.size?.toLong()
     }
 
     override suspend fun find(slug: String, fileName: String): String? {
+        gone()
         if (!available) throw FolderUnavailable()
         return uri(slug, fileName).takeIf { it in files }
     }
 
     override suspend fun rename(slug: String, from: String, to: String): String {
+        gone()
         val bytes = files.remove(uri(slug, from)) ?: throw ChapterFileMissing()
         files[uri(slug, to)] = bytes
         return uri(slug, to)

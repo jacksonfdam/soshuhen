@@ -61,6 +61,8 @@ class ImportRunnerTest {
     private val archives = mutableMapOf<Long, Pair<ByteArray, String>>()
     private var copyTime: Duration = Duration.ZERO
     private var archiveStatus: HttpStatusCode? = null
+    private var declaredLength: Long? = null
+    private var onArchive: (Long) -> Unit = {}
     private var home = true
 
     // Bytes whose text starts with BAD are what a truncated archive looks like to the check.
@@ -98,7 +100,8 @@ class ImportRunnerTest {
                 addHandler { request ->
                     val path = request.url.encodedPath
                     val range = request.headers[HttpHeaders.Range]
-                    log += "${request.method.value} $path" + (range?.let { " $it" } ?: "")
+                    val ifRange = request.headers[HttpHeaders.IfRange]
+                    log += "${request.method.value} $path" + (range?.let { " $it" } ?: "") + (ifRange?.let { " if-range $it" } ?: "")
                     val json = headersOf(HttpHeaders.ContentType, "application/json")
                     when {
                         request.method == HttpMethod.Put -> respond("{}", HttpStatusCode.OK, json)
@@ -111,14 +114,20 @@ class ImportRunnerTest {
                         path.startsWith("/api/chapters/") -> {
                             archiveStatus?.let { return@addHandler respond("", it) }
                             val id = path.removePrefix("/api/chapters/").removeSuffix("/archive").toLong()
+                            onArchive(id)
                             val (bytes, etag) = archives[id] ?: return@addHandler respond("", HttpStatusCode.NotFound)
+                            // As Starlette: an If-Range that no longer matches gets the whole file.
                             val start = range?.removePrefix("bytes=")?.removeSuffix("-")?.toLong()
+                                ?.takeIf { ifRange == null || ifRange == etag }
                             when {
                                 start == null -> {
                                     now += copyTime
                                     respond(
                                         bytes, HttpStatusCode.OK,
-                                        headersOf(HttpHeaders.ETag to listOf(etag), HttpHeaders.ContentLength to listOf("${bytes.size}")),
+                                        headersOf(
+                                            HttpHeaders.ETag to listOf(etag),
+                                            HttpHeaders.ContentLength to listOf("${declaredLength ?: bytes.size}"),
+                                        ),
                                     )
                                 }
                                 start >= bytes.size -> respond(
@@ -232,8 +241,9 @@ class ImportRunnerTest {
         store.mark(1, "one")
         val original = archives.getValue(10).first
         folder.files[file("one", 1.0) + ".part"] = original.copyOfRange(0, 100)
+        store.savePartEtag(10, "\"e10\"")
         runner().run()
-        assertEquals(listOf("GET /api/chapters/10/archive bytes=100-"), archiveRequests())
+        assertEquals(listOf("GET /api/chapters/10/archive bytes=100- if-range \"e10\""), archiveRequests())
         assertContentEquals(original, folder.files[file("one", 1.0)])
         assertEquals(original.size.toLong(), indexed(10)!!.size)
     }
@@ -244,6 +254,7 @@ class ImportRunnerTest {
         store.mark(1, "one")
         val original = archives.getValue(10).first
         folder.files[file("one", 1.0) + ".part"] = original
+        store.savePartEtag(10, "\"e10\"")
         val report = runner().run()
         assertNull(report.problem)
         assertContentEquals(original, folder.files[file("one", 1.0)])
@@ -312,6 +323,7 @@ class ImportRunnerTest {
         store.mark(1, "one")
         val part = file("one", 1.0) + ".part"
         folder.files[part] = archives.getValue(10).first.copyOfRange(0, 100)
+        store.savePartEtag(10, "\"e10\"")
         archiveStatus = HttpStatusCode.BadGateway
         val report = runner().run()
         val message = "Lost the server while copying; will continue next time"
@@ -399,5 +411,73 @@ class ImportRunnerTest {
         )
         assertEquals(listOf(1.0, 2.5, 3.0), report.imported[1L])
         assertEquals(listOf(0 to 3, 1 to 3, 2 to 3, 3 to 3), progress)
+    }
+
+    @Test fun aPartFromAnOlderArchiveStartsOver() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0))
+        serve(10, text = "PK version A ".repeat(30), etag = "\"A\"")
+        store.mark(1, "one")
+        folder.files[file("one", 1.0) + ".part"] = archives.getValue(10).first.copyOfRange(0, 100)
+        store.savePartEtag(10, "\"A\"")
+        serve(10, text = "PK version B, rebuilt ".repeat(30), etag = "\"B\"")
+        val report = runner().run()
+        assertNull(report.problem)
+        assertEquals(listOf("GET /api/chapters/10/archive bytes=100- if-range \"A\""), archiveRequests())
+        assertContentEquals(archives.getValue(10).first, folder.files[file("one", 1.0)])
+        assertEquals("\"B\"", indexed(10)!!.etag)
+        assertNull(store.partEtag(10))
+    }
+
+    @Test fun aPartWithNoRecordedEtagStartsOver() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0))
+        serve(10)
+        store.mark(1, "one")
+        folder.files[file("one", 1.0) + ".part"] = "PK from who knows where".encodeToByteArray()
+        runner().run()
+        assertEquals(listOf("GET /api/chapters/10/archive"), archiveRequests())
+        assertContentEquals(archives.getValue(10).first, folder.files[file("one", 1.0)])
+    }
+
+    @Test fun aChapterMissingOnTheServerIsSkipped() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0), downloaded(11, 2.0))
+        serve(11)
+        store.mark(1, "one")
+        val report = runner().run()
+        assertNull(report.problem)
+        assertNull(store.problem().first())
+        assertNull(indexed(10))
+        assertTrue(indexed(11) != null)
+        assertEquals(1, report.pending)
+    }
+
+    @Test fun aBodyShorterThanDeclaredIsNeverIndexed() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0))
+        serve(10)
+        store.mark(1, "one")
+        val delivered = archives.getValue(10).first.size
+        declaredLength = delivered + 1_000L
+        val report = runner().run()
+        assertEquals("Lost the server while copying; will continue next time", report.problem)
+        assertNull(indexed(10))
+        assertFalse(file("one", 1.0) in folder.files)
+        assertEquals(delivered, folder.files[file("one", 1.0) + ".part"]?.size)
+    }
+
+    @Test fun aFolderGoneMidRunStopsWithTheBanner() = runTest {
+        for (failure in listOf<Exception>(ChapterFileMissing(), okio.IOException("No such device"))) {
+            tearDown(); setUp(); log.clear(); series.clear(); chapters.clear(); archives.clear()
+            addSeries(1, "one", downloaded(10, 1.0), downloaded(11, 2.0), downloaded(12, 3.0))
+            (10L..12L).forEach { serve(it) }
+            store.mark(1, "one")
+            onArchive = { id -> if (id == 11L) folder.goneWith = failure }
+            val report = runner().run()
+            val message = "SD card or folder not available: pick the folder again in Settings"
+            assertEquals(message, report.problem, "after $failure")
+            assertEquals(message, store.problem().first())
+            assertTrue(indexed(10) != null)
+            assertNull(indexed(11))
+            assertNull(indexed(12))
+            assertEquals(setOf(file("one", 1.0)), folder.files.keys)
+        }
     }
 }

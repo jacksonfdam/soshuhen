@@ -84,7 +84,7 @@ class ImportRunner(
         val titles = linkedMapOf<Long, String>()
         var unreadable = 0
 
-        suspend fun copyOne(w: Work): Outcome {
+        suspend fun copy(w: Work): Outcome {
             val namedAsIndexed = w.indexed != null && w.indexed.fileName == w.fileName
             if (w.indexed != null) {
                 val current = probe(api, w.chapter.id, w.indexed.size)
@@ -113,6 +113,7 @@ class ImportRunner(
             }
             val size = folder.size(w.slug, w.part) ?: return Outcome.Missing
             val uri = folder.rename(w.slug, w.part, w.fileName)
+            store.forgetPart(w.chapter.id)
             val now = clock()
             store.indexChapter(
                 DeviceChapter(w.chapter.id, w.detail.series.id, w.chapter.number, w.fileName, uri, got.etag, size, now),
@@ -123,6 +124,20 @@ class ImportRunner(
             imported.getOrPut(w.detail.series.id) { mutableListOf() } += w.chapter.number
             titles[w.detail.series.id] = w.detail.series.title
             return Outcome.Copied
+        }
+
+        suspend fun copyOne(w: Work): Outcome = try {
+            copy(w)
+        } catch (e: ApiException) {
+            // The library lost this one archive although the chapter says
+            // downloaded; stopping here would stop every run at the same place.
+            if (e.status != 404) throw e
+            if (w.indexed != null) Outcome.UpToDate else Outcome.Missing
+        } catch (_: ChapterFileMissing) {
+            // A file removed by hand mid-run is that chapter's loss alone; a
+            // folder that went with it is everyone's.
+            if (!folder.isAvailable()) throw FolderUnavailable()
+            Outcome.Missing
         }
 
         val problem = try {
@@ -153,24 +168,26 @@ class ImportRunner(
             null
         } catch (e: CancellationException) {
             throw e
-        } catch (_: FolderUnavailable) {
-            FOLDER_GONE
-        } catch (_: DeviceFull) {
-            DEVICE_FULL
-        } catch (e: Stop) {
-            e.problem
-        } catch (_: ApiException) {
-            LOST_SERVER
-        } catch (_: Interrupted) {
-            LOST_SERVER
-        } catch (_: kotlinx.io.IOException) {
-            LOST_SERVER
+        } catch (e: Exception) {
+            problemFor(e) ?: throw e
         }
         store.setProblem(problem)
 
         // A chapter already on the device that was never reached is not known to be stale.
         val pending = work.count { it.outcome == Outcome.Missing || (it.outcome == null && it.indexed == null) }
         return ImportReport(imported, titles, pending, problem)
+    }
+
+    private fun problemFor(e: Exception): String? = when {
+        e is FolderUnavailable -> FOLDER_GONE
+        e is DeviceFull -> DEVICE_FULL
+        e is Stop -> e.problem
+        e is ApiException || e is Interrupted -> LOST_SERVER
+        // A pulled card fails as a missing file or a bare IOException, never
+        // as FolderUnavailable; once the folder is gone, only picking it again helps.
+        !folder.isAvailable() -> FOLDER_GONE
+        e is kotlinx.io.IOException || e is okio.IOException -> LOST_SERVER
+        else -> null
     }
 
     /**
@@ -198,24 +215,33 @@ class ImportRunner(
     }
 
     private suspend fun download(api: SoshuhenApi, w: Work): Probe {
-        val from = folder.size(w.slug, w.part) ?: 0L
+        val held = folder.size(w.slug, w.part) ?: 0L
+        val startedFrom = if (held > 0) store.partEtag(w.chapter.id) else null
+        // A .part with no recorded ETag cannot be vouched for as the head of
+        // the current archive, so it is written over from the start.
+        val from = if (startedFrom == null) 0L else held
         return try {
-            fetch(api, w, from)
+            fetch(api, w, from, startedFrom)
         } catch (e: ApiException) {
             if (e.status != 416 || from == 0L) throw e
             // Asking past the end of a .part that is already whole is refused;
-            // its length decides whether it is the archive or a leftover of an
-            // older, longer one.
+            // its length and ETag decide whether it is the archive or a
+            // leftover of an older, longer one.
             val current = probe(api, w.chapter.id, from)
-            if (current != null && current.total == from) return current
+            if (current != null && current.total == from && current.etag == startedFrom) return current
             removePart(w)
-            fetch(api, w, 0L)
+            fetch(api, w, 0L, null)
         }
     }
 
-    private suspend fun fetch(api: SoshuhenApi, w: Work, from: Long): Probe {
-        val got = api.archive(w.chapter.id, from) { d ->
-            folder.write(w.slug, w.part, append = from > 0 && !d.restarted) { sink -> pump(d.body, sink) }
+    private suspend fun fetch(api: SoshuhenApi, w: Work, from: Long, ifRange: String?): Probe {
+        val got = api.archive(w.chapter.id, from, ifRange) { d ->
+            val append = from > 0 && !d.restarted
+            if (!append) {
+                // Recorded before the first byte, so a copy cut off at any point resumes only onto its own archive.
+                d.etag?.let { store.savePartEtag(w.chapter.id, it) } ?: store.forgetPart(w.chapter.id)
+            }
+            folder.write(w.slug, w.part, append) { sink -> pump(d.body, sink) }
             Probe(d.etag, d.total)
         }
         // A connection that closes cleanly mid-body looks like the end of the file.
@@ -256,6 +282,7 @@ class ImportRunner(
     }
 
     private suspend fun removePart(w: Work) {
+        store.forgetPart(w.chapter.id)
         try {
             folder.find(w.slug, w.part)?.let { folder.delete(it) }
         } catch (e: CancellationException) {
