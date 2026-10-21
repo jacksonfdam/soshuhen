@@ -6,6 +6,8 @@ import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.SoshuhenJson
 import app.soshuhen.db.OutboxEntity
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.time.Instant
 
 data class DrainResult(val sent: Int, val dropped: Int, val remaining: Int)
@@ -15,6 +17,9 @@ data class DrainResult(val sent: Int, val dropped: Int, val remaining: Int)
  * phone is back on the home network.
  */
 class Outbox(private val store: LocalStore, private val clock: () -> Instant) {
+    // The import run and an open reader both drain; two at once would each
+    // read the same rows and send every event twice.
+    private val draining = Mutex()
 
     // Only the latest position matters, so an earlier one is replaced instead
     // of replayed page by page.
@@ -48,7 +53,9 @@ class Outbox(private val store: LocalStore, private val clock: () -> Instant) {
         )
     }
 
-    suspend fun drain(api: SoshuhenApi): DrainResult {
+    suspend fun drain(api: SoshuhenApi): DrainResult = draining.withLock { drainLocked(api) }
+
+    private suspend fun drainLocked(api: SoshuhenApi): DrainResult {
         var sent = 0
         var dropped = 0
         val queued = store.outbox()

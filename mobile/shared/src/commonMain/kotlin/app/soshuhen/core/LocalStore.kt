@@ -1,5 +1,6 @@
 package app.soshuhen.core
 
+import app.soshuhen.api.ReaderPrefs
 import app.soshuhen.api.Series
 import app.soshuhen.api.SeriesDetail
 import app.soshuhen.api.SoshuhenJson
@@ -13,6 +14,12 @@ import app.soshuhen.db.SnapshotEntity
 import app.soshuhen.db.SoshuhenDatabase
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -29,6 +36,7 @@ data class DeviceChapter(
 
 private const val SERIES_KEY = "series"
 private fun detailKey(id: Long) = "series/$id"
+private fun prefsKey(id: Long) = "prefs/$id"
 
 /** Everything the app keeps on the device, behind the types the screens already use. */
 // Open so a test can hand a view model a store whose writes fail: a closed Room
@@ -44,6 +52,49 @@ open class LocalStore(
     open suspend fun saveDetail(id: Long, json: String) = save(detailKey(id), json)
 
     suspend fun detailSnapshot(id: Long): SeriesDetail? = read(detailKey(id))
+
+    suspend fun savePrefs(seriesId: Long, prefs: ReaderPrefs) =
+        save(prefsKey(seriesId), SoshuhenJson.encodeToString(ReaderPrefs.serializer(), prefs))
+
+    suspend fun prefsSnapshot(seriesId: Long): ReaderPrefs? = read(prefsKey(seriesId))
+
+    /**
+     * A chapter finished away from home shows as read in the library and on the
+     * series at once, rather than after the next sync. Never lowers: the server
+     * only ever moves progress forward, and so does this.
+     */
+    suspend fun raiseProgress(seriesId: Long, progress: Int) {
+        rewrite(SERIES_KEY) { root ->
+            if (root !is JsonArray) return@rewrite root
+            JsonArray(root.map { if (isSeries(it, seriesId)) raised(it as JsonObject, progress) else it })
+        }
+        rewrite(detailKey(seriesId)) { root ->
+            val series = (root as? JsonObject)?.get("series") as? JsonObject ?: return@rewrite root
+            JsonObject(root + ("series" to raised(series, progress)))
+        }
+    }
+
+    // Edited as JSON rather than through the models, which would drop every
+    // field the app does not read and leave a snapshot that is no longer what
+    // the server said.
+    private suspend fun rewrite(key: String, change: (JsonElement) -> JsonElement) {
+        val json = db.snapshots().get(key)?.json ?: return
+        val root = try {
+            SoshuhenJson.parseToJsonElement(json)
+        } catch (_: kotlinx.serialization.SerializationException) {
+            return
+        }
+        val changed = change(root)
+        if (changed != root) save(key, SoshuhenJson.encodeToString(JsonElement.serializer(), changed))
+    }
+
+    private fun isSeries(element: JsonElement, id: Long) =
+        ((element as? JsonObject)?.get("id") as? JsonPrimitive)?.longOrNull == id
+
+    private fun raised(series: JsonObject, progress: Int): JsonObject {
+        val current = (series["progress"] as? JsonPrimitive)?.intOrNull ?: 0
+        return if (progress > current) JsonObject(series + ("progress" to JsonPrimitive(progress))) else series
+    }
 
     fun isMarked(seriesId: Long): Flow<Boolean> = db.marked().isMarked(seriesId)
 

@@ -21,11 +21,11 @@ import java.util.zip.ZipInputStream
 class ZipPages(
     private val cacheDir: Path,
     private val fileSystem: FileSystem = FileSystem.SYSTEM,
-) : ArchiveCheck {
+) : ArchiveCheck, PageExtractor {
     private val root = cacheDir / "reader"
     private val lock = Mutex()
 
-    suspend fun extract(chapterId: Long, source: Source): List<Path> = lock.withLock {
+    override suspend fun extract(chapterId: Long, source: Source): List<Path> = lock.withLock {
         withContext(Dispatchers.IO) {
             val dir = root / chapterId.toString()
             val done = dir / DONE
