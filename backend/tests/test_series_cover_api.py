@@ -130,3 +130,19 @@ async def test_a_changed_cover_url_fetches_the_new_one(client, cdn, tmp_path):
     await client.get(f"/api/series/{series_id}/cover")
     assert cdn["calls"] == 2
     assert len(list((tmp_path / "cache" / "covers").iterdir())) == 2
+
+
+async def test_no_database_connection_is_held_while_the_cdn_answers(client, monkeypatch):
+    """A slow CDN must not pin one of the pool's connections for its whole timeout."""
+    from app.db import get_engine
+
+    seen: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(get_engine().pool.checkedout())
+        return httpx.Response(200, content=JPEG)
+
+    monkeypatch.setattr(covers, "TRANSPORT", httpx.MockTransport(handler))
+    series_id = await _series(FIRST)
+    assert (await client.get(f"/api/series/{series_id}/cover")).status_code == 200
+    assert seen == [0]

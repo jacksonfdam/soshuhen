@@ -113,3 +113,24 @@ async def test_a_prose_chapter_is_409(client, tmp_path):
     path.write_bytes(b"PK")
     chapter_id = await _chapter(str(path), kind="prose")
     assert (await client.get(f"/api/chapters/{chapter_id}/archive")).status_code == 409
+
+
+async def test_no_database_connection_is_held_while_the_file_streams(client, tmp_path, monkeypatch):
+    """A copy over weak Wi-Fi can take minutes; the pool must not lose a connection to it."""
+    from fastapi.responses import FileResponse
+
+    from app.api import routes_chapters
+    from app.db import get_engine
+
+    seen: list[int] = []
+
+    class Watched(FileResponse):
+        async def __call__(self, scope, receive, send):
+            seen.append(get_engine().pool.checkedout())
+            await super().__call__(scope, receive, send)
+
+    monkeypatch.setattr(routes_chapters, "FileResponse", Watched)
+    path = _cbz(tmp_path / "manga" / "teto" / "c1.cbz", [JPEG])
+    chapter_id = await _chapter(str(path))
+    assert (await client.get(f"/api/chapters/{chapter_id}/archive")).status_code == 200
+    assert seen == [0]

@@ -402,6 +402,9 @@ async def cover(series_id: int, request: Request, session: Session) -> Response:
             text("select meta->>'cover_url' from series where id = :id"), {"id": series_id}
         )
     ).scalar_one_or_none()
+    # Released before the CDN is asked: its timeout is fifteen seconds, and a
+    # first library load asks for every cover at once.
+    await session.close()
     if not url:
         raise HTTPException(status_code=404, detail="no cover for this series")
     root = get_settings().reader_cache_path / "covers"

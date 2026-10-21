@@ -24,6 +24,10 @@ async def archive(chapter_id: int, session: Session) -> FileResponse:
     with service_errors():
         row = await service.chapter(session, chapter_id)
     path = service.archive_of(row)
+    # The request's session would otherwise keep its connection, idle in a
+    # transaction, until the last byte is sent. A copy over weak Wi-Fi takes
+    # minutes, and a few of them in parallel empty the pool for everyone.
+    await session.close()
     if path is None:
         raise HTTPException(status_code=404, detail="chapter is not in the library")
     # FileResponse answers Range, so a copy cut off by weak Wi-Fi resumes, and
