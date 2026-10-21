@@ -7,14 +7,14 @@ user picked and kept current in the background at home, and they are read offlin
 the web's four modes and volume keys, while progress made away from home reaches the server on
 return.
 
-**Architecture:** A SQLDelight database in `shared` holds the offline snapshot, the marked series,
+**Architecture:** A Room (Kotlin Multiplatform) database in `shared` holds the offline snapshot, the marked series,
 the index of chapters on the device, the outgoing progress queue and the import log. All rules
 (what to import, what to send, how pages are ordered and grouped) live in `commonMain` behind small
 interfaces and are tested on the JVM. Android supplies the folder (Storage Access Framework), zip
 reading, WorkManager, notifications, the setup steps and the volume keys.
 
-**Tech Stack:** As part 2, plus SQLDelight 2.4.1 (`android-driver`, `sqlite-driver` for JVM tests,
-`coroutines-extensions`), WorkManager 2.12.0, `androidx.documentfile` 1.1.0.
+**Tech Stack:** As part 2, plus Room 2.8.5 (`androidx.room`, KMP) with `androidx.sqlite:sqlite-bundled`
+2.7.1 and KSP 2.3.12, WorkManager 2.12.0, `androidx.documentfile` 1.1.0.
 
 **Spec:** `docs/superpowers/specs/2026-10-20-android-client-design.md`. Parts 1 and 2:
 `docs/superpowers/plans/2026-10-21-android-client-server.md`,
@@ -25,7 +25,8 @@ reading, WorkManager, notifications, the setup steps and the volume keys.
 - Everything from part 2's Global Constraints still holds: JDK 21, `./gradlew :shared:jvmTest :androidApp:assembleDebug` before every commit, `Tokens.kt` the only home of colours and sizes, feature packages never import each other, only comics, only the Soshuhen server is ever contacted.
 - **The app never deletes anything the user did not ask to delete.** Unmarking keeps the files by default; nothing prunes, expires or cleans the folder.
 - **Only chapters whose server `state == "downloaded"` and `file_path != null` are importable or readable from the server.** A chapter that is not would make the server stream it from its source, which the app must never cause.
-- Database: SQLDelight 2.4.1 (**builder's call recorded in the spec's "Left to the builder"; chosen over Room because it needs no KSP and its JVM driver runs the same schema in host tests**). Database file `soshuhen.db` in the app's private storage, never in the picked folder.
+- Database: Room 2.8.5 for Kotlin Multiplatform with the bundled SQLite driver (**decided by the user: Room, because it is multiplatform too**). KSP runs for both targets (`kspAndroid`, `kspJvm`); the database class is `@ConstructedBy(SoshuhenDatabaseConstructor::class)` with the `expect object` Room requires outside Android. Schemas exported to `mobile/shared/schemas` by the `androidx.room` Gradle plugin and committed. Database file `soshuhen.db` in the app's private storage, never in the picked folder.
+- **The layout is as close to the web as the platform allows (decided by the user).** Every screen mirrors its web counterpart in structure, order, labels, wording, colours and what each element shows: Library ← `frontend/src/features/library/` (`LibraryPage`, `CoverCard`, `ContinueReading`, `StatusTabs`); Series ← `features/series/SeriesDetailPage.tsx`, `ChapterTable.tsx`, `ProgressManager.tsx`; Reader ← `features/reader/` (`ReaderPage`, `PagedView`, `StripView`, `TabletChrome`, `ReaderSheet`, `SettingsPanel`, `PageSlider`, `EndOfChapter`, `ResumePage`); Settings ← `features/settings/SettingsPage.tsx` for the sections the app has. Before writing a screen, read its web files; where the phone needs something the web does not have (the folder, "On device", volume keys), it uses the same components and tokens as its neighbours. Deviations go in the ledger as rulings with the reason.
 - Folder layout, exactly as the spec: `<picked folder>/Soshuhen/<series slug>/<the server's file name>.cbz`, the file name being the last segment of `chapter.file_path`.
 - Page order and filtering are the server's (`backend/app/reader/archive.py`): skip directory entries, anything under `__MACOSX/`, any name whose last segment starts with `.`; keep names ending (case-insensitively) in `.jpg .jpeg .png .gif .webp .avif`; sort by natural order (digit runs compared as integers, the rest lower-cased).
 - Double-page grouping is the web's (`frontend/src/features/reader/lib/spreads.ts`): page 0 alone, then pairs `[1,2] [3,4] …`, a trailing single page alone.
@@ -46,22 +47,22 @@ reading, WorkManager, notifications, the setup steps and the volume keys.
 ### Task 1: Local database and the offline library
 
 **Files:**
-- Create: `mobile/shared/src/commonMain/sqldelight/app/soshuhen/db/Soshuhen.sq`
-- Create: `mobile/shared/src/commonMain/kotlin/app/soshuhen/core/LocalStore.kt`, `.../core/DriverFactory.kt` (expect), `mobile/shared/src/androidMain/kotlin/app/soshuhen/core/DriverFactory.android.kt`, `mobile/shared/src/jvmMain/kotlin/app/soshuhen/core/DriverFactory.jvm.kt`
+- Create: `mobile/shared/src/commonMain/kotlin/app/soshuhen/db/` (`SoshuhenDatabase.kt`, one `@Entity` and one `@Dao` file per table below, `SoshuhenDatabaseConstructor` expect object)
+- Create: `mobile/shared/src/commonMain/kotlin/app/soshuhen/core/LocalStore.kt`, `mobile/shared/src/androidMain/kotlin/app/soshuhen/db/DatabaseBuilder.android.kt`, `mobile/shared/src/jvmMain/kotlin/app/soshuhen/db/DatabaseBuilder.jvm.kt`
 - Modify: `mobile/gradle/libs.versions.toml`, `mobile/shared/build.gradle.kts`, `.../core/AppGraph.kt`, `.../core/Session.kt`, `.../library/LibraryViewModel.kt`, `.../detail/SeriesDetailViewModel.kt`, `.../ui/LoadState.kt`
 - Test: `mobile/shared/src/commonTest/kotlin/app/soshuhen/core/LocalStoreTest.kt`, extend `LibraryViewModelTest.kt`, `SeriesDetailViewModelTest.kt`, `SessionTest.kt`
 
 **Interfaces:**
 - Produces:
-  - Tables in `Soshuhen.sq`:
+  - Room entities (table names as below, column names snake_case via `@ColumnInfo`):
     - `snapshot(key TEXT PRIMARY KEY, json TEXT NOT NULL, fetched_at INTEGER NOT NULL)`: `"series"` holds the `GET /api/series` body; `"series/<id>"` holds a `GET /api/series/{id}` body; `"prefs/<id>"` holds a series' reader prefs.
     - `marked(series_id INTEGER PRIMARY KEY, slug TEXT NOT NULL, marked_at INTEGER NOT NULL)`
     - `device_chapter(chapter_id INTEGER PRIMARY KEY, series_id INTEGER NOT NULL, number REAL NOT NULL, file_name TEXT NOT NULL, uri TEXT NOT NULL, etag TEXT, size INTEGER NOT NULL, imported_at INTEGER NOT NULL)`
     - `outbox(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, series_id INTEGER NOT NULL, chapter_id INTEGER, page INTEGER, read_at TEXT, body TEXT)`: kind is `position`, `complete` or `prefs`.
     - `import_log(chapter_id INTEGER PRIMARY KEY, series_id INTEGER NOT NULL, series_title TEXT NOT NULL, number REAL NOT NULL, imported_at INTEGER NOT NULL)`: what the Updates tab lists.
     - `problem(id INTEGER PRIMARY KEY CHECK (id = 1), message TEXT NOT NULL, at INTEGER NOT NULL)`: the one current import problem, shown as a banner.
-  - `expect class DriverFactory { fun create(): SqlDriver }`; Android uses `AndroidSqliteDriver(Soshuhen.Schema, context, "soshuhen.db")`, JVM uses `JdbcSqliteDriver(IN_MEMORY)` with the schema created.
-  - `class LocalStore(db: Soshuhen, clock: () -> Instant = { Clock.System.now() })` with:
+  - `fun databaseBuilder(context): RoomDatabase.Builder<SoshuhenDatabase>` on Android (`Room.databaseBuilder(context, "soshuhen.db")`); tests use `Room.inMemoryDatabaseBuilder<SoshuhenDatabase>()` on the JVM. Both `.setDriver(BundledSQLiteDriver()).setQueryCoroutineContext(Dispatchers.IO)`.
+  - `class LocalStore(db: SoshuhenDatabase, clock: () -> Instant = { Clock.System.now() })` with:
     - `suspend fun saveSeries(json: String)`, `fun seriesSnapshot(): List<Series>?`
     - `suspend fun saveDetail(id: Long, json: String)`, `fun detailSnapshot(id: Long): SeriesDetail?`
     - `fun isMarked(seriesId: Long): Flow<Boolean>`, `fun markedIds(): Flow<Set<Long>>`, `suspend fun mark(seriesId: Long, slug: String)`, `suspend fun unmark(seriesId: Long)`
@@ -74,12 +75,12 @@ reading, WorkManager, notifications, the setup steps and the volume keys.
   - Covers must render offline. In `App.kt`, Coil's `ImageLoader` gets an explicit disk cache (`diskCache { DiskCache.Builder().directory(<platform cache dir>/covers).maxSizeBytes(256 MB).build() }`), and the Ktor fetcher ignores cache headers: the server sends `max-age=86400`, and without this Coil would revalidate the cover after a day, fail offline and show initials. The cost is that a changed cover only appears after the app's cache is cleared. **(Builder's call.)** The platform cache dir reaches common code through `AppGraph`.
   - Library and detail view models take a `LocalStore`: a successful load saves the snapshot; a failure with a snapshot present gives `Loaded(snapshot, refreshFailed = OFFLINE)` instead of `Failed`.
 
-- [ ] **Step 1: Add SQLDelight to the build.** Catalogue: `sqldelight = "2.4.1"`, libraries `sqldelight-android-driver`, `sqldelight-sqlite-driver`, `sqldelight-coroutines`, plugin `app.cash.sqldelight`. In `shared`: `sqldelight { databases { create("Soshuhen") { packageName.set("app.soshuhen.db") } } }`.
+- [ ] **Step 1: Add Room to the build.** Catalogue: `room = "2.8.5"`, `sqlite = "2.7.1"`, `ksp = "2.3.12"`; libraries `room-runtime`, `room-compiler`, `sqlite-bundled`; plugins `com.google.devtools.ksp`, `androidx.room`. In `shared`: apply both plugins, `room { schemaDirectory("$projectDir/schemas") }`, `commonMain` depends on `room-runtime` and `sqlite-bundled`, and `dependencies { add("kspAndroid", libs.room.compiler); add("kspJvm", libs.room.compiler) }`. If KSP with the AGP 9 KMP library plugin needs a different configuration name, use the one Gradle lists and ledger it.
 
 - [ ] **Step 2: Write the failing tests**
 
 ```kotlin
-// LocalStoreTest (JVM in-memory driver)
+// LocalStoreTest (Room in-memory database on the JVM, bundled driver)
 @Test fun aSavedLibraryReadsBack() = runTest { store.saveSeries(Fixtures.SERIES); assertEquals(2, store.seriesSnapshot()!!.size) }
 @Test fun noSnapshotIsNull() = assertNull(store.seriesSnapshot())
 @Test fun markingIsRemembered() = runTest { store.mark(7, "s"); assertTrue(store.isMarked(7).first()); store.unmark(7); assertFalse(store.isMarked(7).first()) }
@@ -104,7 +105,7 @@ reading, WorkManager, notifications, the setup steps and the volume keys.
 Run: `./gradlew :shared:jvmTest`
 Expected: FAIL, unresolved `LocalStore`, `atHome`, `OFFLINE`.
 
-- [ ] **Step 4: Implement the schema, `LocalStore`, the drivers, the API raw-body methods, `Session.atHome` and network-change relocation, and the view-model fallback.** `App.kt` drops its `LaunchedEffect { refreshLocation() }`; `Session` starts relocation itself in its scope.
+- [ ] **Step 4: Implement the entities, DAOs, database, `LocalStore`, the builders, the API raw-body methods, `Session.atHome` and network-change relocation, and the view-model fallback.** `App.kt` drops its `LaunchedEffect { refreshLocation() }`; `Session` starts relocation itself in its scope.
 
 - [ ] **Step 5: Run the tests and the build**
 
@@ -534,4 +535,48 @@ Expected: PASS and two `BUILD SUCCESSFUL`; on the emulator: server → folder pi
 ```bash
 git add mobile docs/features.md
 git commit -m "feat(mobile): set up the folder, notifications and battery on first run"
+```
+
+### Task 10: Web parity pass
+
+**Files:**
+- Modify: `mobile/shared/src/commonMain/kotlin/app/soshuhen/library/LibraryScreen.kt`, `.../detail/SeriesDetailScreen.kt`, `.../updates/UpdatesScreen.kt`, `.../settings/SettingsScreen.kt`, `.../ui/theme/Tokens.kt` (typography and any token the web uses that the app lacks)
+- Test: `mobile/shared/src/commonTest/kotlin/app/soshuhen/ui/theme/TypographyTest.kt`
+
+**Interfaces:**
+- Consumes: every screen built so far, and the web files named in Global Constraints.
+- Produces:
+  - `Tokens` gains the web's type scale (`display-lg` … `label-sm` from `frontend/tailwind.config.ts`, same sizes, line heights, letter spacing and weights) as a Material 3 `Typography` in `soshuhenTypography()`, and the web's fonts: Plus Jakarta Sans and JetBrains Mono, bundled as Compose resources from Google Fonts (OFL). `SoshuhenTheme` uses both.
+  - The library card shows what `CoverCard.tsx` shows and nothing it does not: cover, title, the progress bar `progress / total` with its percentage, format and first genre, the unread count, and the same state badges for the series states the app can see. The Continue reading row matches `ContinueReading.tsx` (count, layout, chapter label, bar). The status chips match `StatusTabs.tsx` (order, labels, counts, "All" last).
+  - The series screen follows `SeriesDetailPage.tsx`'s order for the parts the app has: header (cover, title, the same metadata line), the progress block as `ProgressManager.tsx` words it, then the chapter table as `ChapterTable.tsx` lays it out (columns, read marks, state wording), with the app's "on device" state and delete actions in the same row style.
+  - Updates and Settings use the web's card and section styles from `SettingsPage.tsx`.
+
+- [ ] **Step 1: Write the failing test**
+
+```kotlin
+@Test fun typeScaleMatchesTheWeb() {
+    val t = soshuhenTypography()
+    assertEquals(48.sp, t.displayLarge.fontSize); assertEquals(56.sp, t.displayLarge.lineHeight); assertEquals(FontWeight.ExtraBold, t.displayLarge.fontWeight)
+    assertEquals(13.sp, t.labelMedium.fontSize); assertEquals(FontWeight.Medium, t.labelMedium.fontWeight)
+    assertEquals(11.sp, t.labelSmall.fontSize); assertEquals(FontWeight.SemiBold, t.labelSmall.fontWeight)
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `./gradlew :shared:jvmTest --tests '*TypographyTest*'`
+Expected: FAIL, unresolved `soshuhenTypography`.
+
+- [ ] **Step 3: Implement the typography and fonts, then bring each screen into line with its web file.** Work screen by screen: open the web page in the browser pane at 400 px and at 1280 px (`https://soshuhen.test`), screenshot the app on the emulator at the same widths, and change the app until the two read as the same screen. Record each remaining difference that is forced by the platform as a ruling.
+
+- [ ] **Step 4: Run the tests and the build, and put the side-by-side screenshots in the workspace**
+
+Run: `./gradlew :shared:jvmTest :androidApp:installDebug`
+Expected: PASS, `Installed on 1 device`; one web/app screenshot pair per screen at each width.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add mobile
+git commit -m "feat(mobile): match the web's layout, type and wording screen by screen"
 ```
