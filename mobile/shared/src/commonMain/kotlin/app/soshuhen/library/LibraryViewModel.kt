@@ -1,0 +1,49 @@
+package app.soshuhen.library
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import app.soshuhen.api.Series
+import app.soshuhen.api.SoshuhenApi
+import app.soshuhen.ui.FAILED_FIRST
+import app.soshuhen.ui.LoadState
+import app.soshuhen.ui.UNREACHABLE
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+
+class LibraryViewModel(private val api: StateFlow<SoshuhenApi?>) : ViewModel() {
+    private val _state = MutableStateFlow<LoadState<List<Series>>>(LoadState.Loading)
+    val state: StateFlow<LoadState<List<Series>>> = _state
+    private val _status = MutableStateFlow<String?>("reading")
+    val status: StateFlow<String?> = _status
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query
+
+    init {
+        refresh()
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            val client = api.filterNotNull().first()
+            val previous = _state.value
+            _state.value = try {
+                LoadState.Loaded(comics(client.series()))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Over loaded data a failure is a banner, not a blank screen:
+                // the laptop went to sleep, the library did not vanish.
+                if (previous is LoadState.Loaded) previous.copy(refreshFailed = UNREACHABLE)
+                else LoadState.Failed(FAILED_FIRST)
+            }
+        }
+    }
+
+    fun setStatus(status: String?) { _status.value = status }
+
+    fun setQuery(query: String) { _query.value = query }
+}

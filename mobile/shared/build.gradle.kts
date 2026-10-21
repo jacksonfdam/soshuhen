@@ -30,6 +30,12 @@ kotlin {
             implementation(libs.lifecycle.viewmodel.compose)
             implementation(libs.datastore.preferences.core)
             implementation(libs.okio)
+            implementation(libs.material3.navigation.suite)
+            implementation(libs.material3.adaptive.layout)
+            implementation(libs.material3.adaptive.navigation)
+            implementation(libs.navigation.compose)
+            implementation(libs.coil.compose)
+            implementation(libs.coil.network.ktor)
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
