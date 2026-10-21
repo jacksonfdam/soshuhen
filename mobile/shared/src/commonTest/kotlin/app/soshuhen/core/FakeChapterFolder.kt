@@ -9,7 +9,11 @@ class FakeChapterFolder : ChapterFolder {
     var available = true
     var failDeleteWith: Exception? = null
 
-    private fun uri(slug: String, name: String) = "mem://Soshuhen/$slug/$name"
+    // Thrown after the bytes are stored, as a disk that fills mid-copy leaves
+    // what it managed to write behind.
+    var failNextWriteWith: Exception? = null
+
+    fun uri(slug: String, name: String) = "mem://Soshuhen/$slug/$name"
 
     override fun isAvailable() = available
 
@@ -19,9 +23,21 @@ class FakeChapterFolder : ChapterFolder {
         block(buffer)
         val key = uri(slug, fileName)
         files[key] = (if (append) files[key] ?: ByteArray(0) else ByteArray(0)) + buffer.readByteArray()
+        failNextWriteWith?.let {
+            failNextWriteWith = null
+            throw it
+        }
     }
 
-    override suspend fun size(slug: String, fileName: String): Long? = files[uri(slug, fileName)]?.size?.toLong()
+    override suspend fun size(slug: String, fileName: String): Long? {
+        if (!available) throw FolderUnavailable()
+        return files[uri(slug, fileName)]?.size?.toLong()
+    }
+
+    override suspend fun find(slug: String, fileName: String): String? {
+        if (!available) throw FolderUnavailable()
+        return uri(slug, fileName).takeIf { it in files }
+    }
 
     override suspend fun rename(slug: String, from: String, to: String): String {
         val bytes = files.remove(uri(slug, from)) ?: throw ChapterFileMissing()

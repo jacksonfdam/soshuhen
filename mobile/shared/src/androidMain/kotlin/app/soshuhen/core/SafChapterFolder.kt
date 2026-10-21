@@ -89,6 +89,10 @@ class SafChapterFolder(
         seriesDir(slug, create = false)?.findFile(fileName)?.length()
     }
 
+    override suspend fun find(slug: String, fileName: String): String? = withContext(Dispatchers.IO) {
+        seriesDir(slug, create = false)?.findFile(fileName)?.uri?.toString()
+    }
+
     override suspend fun rename(slug: String, from: String, to: String): String = withContext(Dispatchers.IO) {
         val dir = seriesDir(slug, create = false) ?: throw ChapterFileMissing()
         val file = dir.findFile(from) ?: throw ChapterFileMissing()

@@ -12,6 +12,9 @@ interface ChapterFolder {
 
     suspend fun size(slug: String, fileName: String): Long?
 
+    /** The file's URI, or null when there is no such file; a `.part` can only be read or deleted by URI. */
+    suspend fun find(slug: String, fileName: String): String?
+
     /** Returns the renamed file's URI, which is what the index keeps. */
     suspend fun rename(slug: String, from: String, to: String): String
 
