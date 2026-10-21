@@ -37,6 +37,10 @@ JNC_TOKEN_EXPIRES_AT = "jnc_token_expires_at"
 READER_DEFAULT_MODE = "reader_default_mode"
 READER_DEFAULT_SCALE = "reader_default_scale"
 READER_DEFAULT_BACKGROUND = "reader_default_background"
+# Who this installation is, for a client that finds it on the LAN and must
+# recognise it again after DHCP moves it. An identity, not a knob, so it is
+# absent from all_settings().
+INSTANCE_ID = "instance_id"
 
 
 @dataclass(frozen=True)
