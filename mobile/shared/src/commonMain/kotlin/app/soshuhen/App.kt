@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.soshuhen.core.AppGraph
+import kotlinx.coroutines.flow.StateFlow
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.disk.DiskCache
@@ -24,7 +25,13 @@ import app.soshuhen.onboarding.OnboardingViewModel
 import app.soshuhen.ui.theme.SoshuhenTheme
 
 @Composable
-fun App(graph: AppGraph, appVersion: String) {
+fun App(
+    graph: AppGraph,
+    appVersion: String,
+    importNow: () -> Unit,
+    requestedSeries: StateFlow<Long?>,
+    onRequestHandled: () -> Unit,
+) {
     // Covers through the app's own client: same timeouts, and no second HTTP
     // stack that could be pointed anywhere but the server.
     setSingletonImageLoaderFactory { context ->
@@ -55,7 +62,7 @@ fun App(graph: AppGraph, appVersion: String) {
                         OnboardingScreen(model)
                     }
                     else -> {
-                        MainShell(graph, appVersion)
+                        MainShell(graph, appVersion, importNow, requestedSeries, onRequestHandled)
                     }
                 }
             }

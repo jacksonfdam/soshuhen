@@ -69,6 +69,9 @@ class ImportRunner(
 ) {
     suspend fun run(
         budget: Duration = 45.minutes,
+        // Told once the plan is known and before the first copy: the worker decides
+        // from it whether the run is long enough to deserve a foreground notification.
+        onPlan: (missing: Int) -> Unit = {},
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): ImportReport {
         session.refreshLocation()
@@ -158,6 +161,7 @@ class ImportRunner(
                     .sortedBy { it.number }
                     .forEach { work += Work(detail, it, store.deviceChapter(it.id)) }
             }
+            onPlan(work.count { it.indexed == null })
             onProgress(0, work.size)
             for ((done, w) in work.withIndex()) {
                 // The next periodic run continues; one run must not eat the day's dataSync time.

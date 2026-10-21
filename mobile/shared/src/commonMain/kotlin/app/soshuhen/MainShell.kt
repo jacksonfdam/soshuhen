@@ -11,7 +11,11 @@ import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffold
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -33,10 +37,14 @@ import app.soshuhen.settings.SettingsScreen
 import app.soshuhen.settings.SettingsViewModel
 import app.soshuhen.ui.Glyph
 import app.soshuhen.ui.theme.Tokens
+import app.soshuhen.updates.UpdatesScreen
+import app.soshuhen.updates.UpdatesViewModel
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 @Serializable object LibraryRoute
+@Serializable object UpdatesRoute
 @Serializable object SettingsRoute
 
 /**
@@ -46,17 +54,51 @@ import kotlinx.serialization.Serializable
  * decides, not device type.
  */
 @Composable
-fun MainShell(graph: AppGraph, appVersion: String) {
+fun MainShell(
+    graph: AppGraph,
+    appVersion: String,
+    importNow: () -> Unit,
+    // A series asked for from outside the app, by tapping its notification.
+    requestedSeries: StateFlow<Long?>,
+    onRequestHandled: () -> Unit,
+) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val onSettings = entry?.destination?.hasRoute(SettingsRoute::class) == true
+    val onUpdates = entry?.destination?.hasRoute(UpdatesRoute::class) == true
+    var opening by remember { mutableStateOf<Long?>(null) }
+    val goToLibrary = { nav.navigate(LibraryRoute) { popUpTo(LibraryRoute) { inclusive = true } } }
+    // Marking is what makes a series worth copying, so a new mark starts a run
+    // instead of waiting up to an hour. The first emission is only what was
+    // already marked.
+    LaunchedEffect(Unit) {
+        var known: Set<Long>? = null
+        graph.local.markedIds().collect { ids ->
+            if (known != null && (ids - known!!).isNotEmpty()) importNow()
+            known = ids
+        }
+    }
+    val requested by requestedSeries.collectAsStateWithLifecycle()
+    LaunchedEffect(requested) {
+        requested?.let { id ->
+            opening = id
+            goToLibrary()
+            onRequestHandled()
+        }
+    }
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             item(
-                selected = !onSettings,
-                onClick = { nav.navigate(LibraryRoute) { popUpTo(LibraryRoute) { inclusive = true } } },
+                selected = !onSettings && !onUpdates,
+                onClick = { goToLibrary() },
                 icon = { Glyph("▦") },
                 label = { Text("Library") },
+            )
+            item(
+                selected = onUpdates,
+                onClick = { nav.navigate(UpdatesRoute) { launchSingleTop = true } },
+                icon = { Glyph("↻") },
+                label = { Text("Updates") },
             )
             item(
                 selected = onSettings,
@@ -67,7 +109,16 @@ fun MainShell(graph: AppGraph, appVersion: String) {
         },
     ) {
         NavHost(nav, startDestination = LibraryRoute) {
-            composable<LibraryRoute> { LibraryPanes(graph) }
+            composable<LibraryRoute> { LibraryPanes(graph, opening, { opening = null }, importNow) }
+            composable<UpdatesRoute> {
+                val api by graph.session.api.collectAsStateWithLifecycle()
+                UpdatesScreen(
+                    viewModel { UpdatesViewModel(graph.local) },
+                    graph.local,
+                    coverUrl = { id -> api?.coverUrl(id).orEmpty() },
+                    onOpen = { id -> opening = id; goToLibrary() },
+                )
+            }
             composable<SettingsRoute> {
                 SettingsScreen(viewModel { SettingsViewModel(graph.session.api, graph.store) }, appVersion)
             }
@@ -77,11 +128,17 @@ fun MainShell(graph: AppGraph, appVersion: String) {
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class, ExperimentalComposeUiApi::class)
 @Composable
-private fun LibraryPanes(graph: AppGraph) {
+private fun LibraryPanes(graph: AppGraph, opening: Long?, onOpened: () -> Unit, importNow: () -> Unit) {
     val navigator = rememberListDetailPaneScaffoldNavigator<Long>()
     val scope = rememberCoroutineScope()
     val api by graph.session.api.collectAsStateWithLifecycle()
     val coverUrl = { id: Long -> api?.coverUrl(id).orEmpty() }
+    LaunchedEffect(opening) {
+        opening?.let { id ->
+            navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, id)
+            onOpened()
+        }
+    }
     // On a phone the detail replaces the grid, so back has to bring it back
     // rather than leave the app.
     BackHandler(enabled = navigator.canNavigateBack()) { scope.launch { navigator.navigateBack() } }
@@ -92,8 +149,10 @@ private fun LibraryPanes(graph: AppGraph) {
             AnimatedPane {
                 LibraryScreen(
                     model = viewModel { LibraryViewModel(graph.session.api, graph.local, graph.session.atHome) },
+                    store = graph.local,
                     coverUrl = coverUrl,
                     onOpen = { id -> scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, id) } },
+                    onRefreshed = importNow,
                 )
             }
         },

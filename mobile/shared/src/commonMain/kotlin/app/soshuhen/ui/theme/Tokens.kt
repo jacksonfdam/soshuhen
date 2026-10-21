@@ -70,6 +70,8 @@ object Tokens {
     const val dimmed = 0.4f
     const val coverAspect = 2f / 3f
     val coverMinWidth = 112.dp
+    // The cover beside a row in a list, as the web's notification panel draws it.
+    val thumbWidth = 36.dp
     // Forms and lists stop growing here on a tablet, so a line stays readable.
     val contentMaxWidth = 560.dp
 }

@@ -36,7 +36,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.soshuhen.api.Series
+import app.soshuhen.core.LocalStore
 import app.soshuhen.ui.CoverImage
+import app.soshuhen.ui.ProblemBanner
 import app.soshuhen.ui.LoadState
 import app.soshuhen.ui.theme.Tokens
 
@@ -46,8 +48,12 @@ const val NOT_ON_DEVICE = "Not on this device. Mark it at home to read it here."
 @Composable
 fun LibraryScreen(
     model: LibraryViewModel,
+    store: LocalStore,
     coverUrl: (Long) -> String,
     onOpen: (Long) -> Unit,
+    // Pull-to-refresh also asks the background copy to run, so a chapter the
+    // server just finished arrives without waiting for the hour.
+    onRefreshed: () -> Unit,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
@@ -66,53 +72,58 @@ fun LibraryScreen(
         }
     }
 
-    when (val s = state) {
-        LoadState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-            LinearProgressIndicator(Modifier.width(Tokens.coverMinWidth))
-        }
-        is LoadState.Failed -> Column(
-            Modifier.fillMaxSize().padding(Tokens.space.xl),
-            verticalArrangement = Arrangement.spacedBy(Tokens.space.md, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(s.message)
-            Button(onClick = model::refresh) { Text("Retry") }
-        }
-        is LoadState.Loaded -> PullToRefreshBox(isRefreshing = false, onRefresh = model::refresh) {
-            val all = s.data
-            val shown = visible(all, status, query, marked)
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(Tokens.coverMinWidth),
-                contentPadding = PaddingValues(Tokens.space.lg),
-                horizontalArrangement = Arrangement.spacedBy(Tokens.space.md),
-                verticalArrangement = Arrangement.spacedBy(Tokens.space.md),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                s.refreshFailed?.let { message ->
-                    item(span = { GridItemSpan(maxLineSpan) }) { Banner(message) }
+    Column(Modifier.fillMaxSize()) {
+        ProblemBanner(store, Modifier.padding(Tokens.space.lg))
+        Box(Modifier.weight(1f)) {
+            when (val s = state) {
+                LoadState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    LinearProgressIndicator(Modifier.width(Tokens.coverMinWidth))
                 }
-                notice?.let { message ->
-                    item(span = { GridItemSpan(maxLineSpan) }) { Banner(message) }
+                is LoadState.Failed -> Column(
+                    Modifier.fillMaxSize().padding(Tokens.space.xl),
+                    verticalArrangement = Arrangement.spacedBy(Tokens.space.md, Alignment.CenterVertically),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(s.message)
+                    Button(onClick = model::refresh) { Text("Retry") }
                 }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = model::setQuery,
-                        placeholder = { Text("Search the library") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                val continuing = continueReading(comics(all))
-                if (continuing.isNotEmpty() && query.isBlank()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) { ContinueRow(continuing, coverUrl, { reachable(it, atHome, marked) }, open) }
-                }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    StatusChips(comics(all), marked, status, model::setStatus)
-                }
-                items(shown, key = { it.id }) { series ->
-                    val reachable = reachable(series, atHome, marked)
-                    CoverCard(series, coverUrl(series.id), dimmed = !reachable) { open(series) }
+                is LoadState.Loaded -> PullToRefreshBox(isRefreshing = false, onRefresh = { model.refresh(); onRefreshed() }) {
+                    val all = s.data
+                    val shown = visible(all, status, query, marked)
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(Tokens.coverMinWidth),
+                        contentPadding = PaddingValues(Tokens.space.lg),
+                        horizontalArrangement = Arrangement.spacedBy(Tokens.space.md),
+                        verticalArrangement = Arrangement.spacedBy(Tokens.space.md),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        s.refreshFailed?.let { message ->
+                            item(span = { GridItemSpan(maxLineSpan) }) { Banner(message) }
+                        }
+                        notice?.let { message ->
+                            item(span = { GridItemSpan(maxLineSpan) }) { Banner(message) }
+                        }
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            OutlinedTextField(
+                                value = query,
+                                onValueChange = model::setQuery,
+                                placeholder = { Text("Search the library") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        val continuing = continueReading(comics(all))
+                        if (continuing.isNotEmpty() && query.isBlank()) {
+                            item(span = { GridItemSpan(maxLineSpan) }) { ContinueRow(continuing, coverUrl, { reachable(it, atHome, marked) }, open) }
+                        }
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            StatusChips(comics(all), marked, status, model::setStatus)
+                        }
+                        items(shown, key = { it.id }) { series ->
+                            val reachable = reachable(series, atHome, marked)
+                            CoverCard(series, coverUrl(series.id), dimmed = !reachable) { open(series) }
+                        }
+                    }
                 }
             }
         }

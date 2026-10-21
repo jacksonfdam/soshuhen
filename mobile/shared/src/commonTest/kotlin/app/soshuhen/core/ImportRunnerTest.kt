@@ -205,6 +205,21 @@ class ImportRunnerTest {
         assertNull(store.detailSnapshot(2))
     }
 
+    @Test fun theRunSaysHowManyChaptersAreMissingBeforeCopyingAny() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0), downloaded(11, 2.0), downloaded(12, 3.0))
+        serve(10); serve(11); serve(12)
+        store.mark(1, "one")
+        runner().run()
+        // A chapter the device already holds is checked, not copied: it does not count.
+        addSeries(1, "one", downloaded(10, 1.0), downloaded(11, 2.0), downloaded(12, 3.0), downloaded(13, 4.0), downloaded(14, 5.0))
+        serve(13); serve(14)
+        val planned = mutableListOf<Int>()
+        val copiedAtPlanTime = mutableListOf<Int>()
+        runner().run(onPlan = { planned += it; copiedAtPlanTime += archiveRequests().count { r -> r.contains("/13/") || r.contains("/14/") } })
+        assertEquals(listOf(2), planned)
+        assertEquals(listOf(0), copiedAtPlanTime)
+    }
+
     @Test fun anIndexedChapterWithTheSameEtagIsSkipped() = runTest {
         addSeries(1, "one", downloaded(10, 1.0))
         serve(10)

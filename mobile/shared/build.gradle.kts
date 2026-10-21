@@ -33,6 +33,7 @@ kotlin {
             implementation(libs.lifecycle.viewmodel.compose)
             implementation(libs.datastore.preferences.core)
             implementation(libs.okio)
+            implementation(libs.kotlinx.datetime)
             implementation(libs.room.runtime)
             implementation(libs.sqlite.bundled)
             implementation(libs.material3.navigation.suite)
@@ -45,6 +46,7 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.documentfile)
+            implementation(libs.work.runtime)
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.cio)
