@@ -20,6 +20,7 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -218,6 +219,20 @@ class ImportRunnerTest {
         runner().run(onPlan = { planned += it; copiedAtPlanTime += archiveRequests().count { r -> r.contains("/13/") || r.contains("/14/") } })
         assertEquals(listOf(2), planned)
         assertEquals(listOf(0), copiedAtPlanTime)
+    }
+
+    @Test fun twoRunsAtOnceCopyEachChapterOnce() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0), downloaded(11, 2.0))
+        serve(10); serve(11)
+        store.mark(1, "one")
+        val runner = runner()
+        val first = async { runner.run() }
+        val second = async { runner.run() }
+        first.await(); second.await()
+        // The second waited for the first and found both chapters indexed: it only probed them.
+        assertEquals(2, archiveRequests().count { !it.contains("bytes=") })
+        assertEquals(2, db.deviceChapters().ids().first().size)
+        assertEquals(2, store.importLog().first().size)
     }
 
     @Test fun anIndexedChapterWithTheSameEtagIsSkipped() = runTest {

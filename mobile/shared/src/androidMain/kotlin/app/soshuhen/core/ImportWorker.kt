@@ -49,10 +49,12 @@ class ImportWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            // run() answers folder and network trouble with a problem of its
-            // own; what escapes is unexpected, and retrying must not wipe the
-            // banner an earlier run left.
-            Result.retry()
+            // failure(), never retry(): a one-time request waiting out backoff
+            // stays ENQUEUED for hours, and ExistingWorkPolicy.KEEP would then
+            // ignore every later runNow. A periodic one keeps its schedule.
+            // run() already records folder and network trouble as the problem
+            // banner, which this must not touch.
+            Result.failure()
         }
     }
 

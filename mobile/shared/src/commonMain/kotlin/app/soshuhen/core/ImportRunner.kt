@@ -10,6 +10,8 @@ import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okio.Buffer
 import okio.Sink
 import kotlin.time.Duration
@@ -67,12 +69,23 @@ class ImportRunner(
     private val check: ArchiveCheck,
     private val clock: () -> Instant,
 ) {
+    // The hourly worker and a run-now request are separate unique works, so
+    // nothing in WorkManager stops them overlapping; two runs planning the same
+    // chapters would write the same file at once.
+    private val running = Mutex()
+
     suspend fun run(
         budget: Duration = 45.minutes,
         // Told once the plan is known and before the first copy: the worker decides
         // from it whether the run is long enough to deserve a foreground notification.
         onPlan: (missing: Int) -> Unit = {},
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): ImportReport = running.withLock { runLocked(budget, onPlan, onProgress) }
+
+    private suspend fun runLocked(
+        budget: Duration,
+        onPlan: (missing: Int) -> Unit,
+        onProgress: (done: Int, total: Int) -> Unit,
     ): ImportReport {
         session.refreshLocation()
         val api = session.api.value
