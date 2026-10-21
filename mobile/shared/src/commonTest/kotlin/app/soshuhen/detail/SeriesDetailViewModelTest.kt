@@ -69,4 +69,14 @@ class SeriesDetailViewModelTest {
         assertEquals(3, state.data.rows.size)
         assertNotNull(state.refreshFailed)
     }
+
+    @Test fun aServerFoundAtANewAddressReloadsByItself() = runTest(dispatcher) {
+        val api = MutableStateFlow<SoshuhenApi?>(api { false })
+        val vm = SeriesDetailViewModel(1, api)
+        advanceUntilIdle()
+        assertIs<LoadState.Failed>(vm.state.value)
+        api.value = api { true }
+        advanceUntilIdle()
+        assertIs<LoadState.Loaded<DetailUi>>(vm.state.value)
+    }
 }

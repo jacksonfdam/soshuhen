@@ -9,7 +9,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 data class ServerCard(val baseUrl: String, val identity: Identity?)
@@ -23,17 +24,20 @@ class SettingsViewModel(
 
     init {
         viewModelScope.launch {
-            val client = api.filterNotNull().first()
-            _server.value = ServerCard(client.baseUrl, null)
-            val identity = try {
-                client.identity()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                null
-            }
-            _server.value = ServerCard(client.baseUrl, identity)
+            api.filterNotNull().distinctUntilChanged().collectLatest { client -> show(client) }
         }
+    }
+
+    private suspend fun show(client: SoshuhenApi) {
+        _server.value = ServerCard(client.baseUrl, null)
+        val identity = try {
+            client.identity()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        _server.value = ServerCard(client.baseUrl, identity)
     }
 
     /** Back to onboarding: the app follows the saved server, and there is none. */

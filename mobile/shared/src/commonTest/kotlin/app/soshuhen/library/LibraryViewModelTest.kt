@@ -83,4 +83,14 @@ class LibraryViewModelTest {
         advanceUntilIdle()
         assertIs<LoadState.Loading>(vm.state.value)
     }
+
+    @Test fun aServerFoundAtANewAddressReloadsByItself() = runTest(dispatcher) {
+        val api = MutableStateFlow<SoshuhenApi?>(api(false))
+        val vm = LibraryViewModel(api)
+        advanceUntilIdle()
+        assertIs<LoadState.Failed>(vm.state.value)
+        api.value = api(true)
+        advanceUntilIdle()
+        assertIs<LoadState.Loaded<List<app.soshuhen.api.Series>>>(vm.state.value)
+    }
 }
