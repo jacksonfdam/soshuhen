@@ -63,3 +63,17 @@ class SoshuhenApiTest {
         assertEquals("http://10.0.0.5:8080/api/series/7/cover", api("").coverUrl(7))
     }
 }
+
+class RedirectTest {
+    @Test
+    fun aRedirectIsNotFollowedOffTheNetwork() = runTest {
+        val hosts = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            hosts += request.url.host
+            respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "http://portal.example.com/login"))
+        }
+        val api = SoshuhenApi("http://10.0.0.5:8080", soshuhenHttpClient(engine))
+        assertEquals(302, assertFailsWith<ApiException> { api.identity() }.status)
+        assertEquals(listOf("10.0.0.5"), hosts)
+    }
+}

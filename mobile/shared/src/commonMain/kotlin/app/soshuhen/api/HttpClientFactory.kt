@@ -25,6 +25,10 @@ fun soshuhenHttpClient(engine: HttpClientEngine? = null): HttpClient {
             requestTimeoutMillis = 15_000
         }
         expectSuccess = false
+        // The API never redirects. Something else on the LAN answering a scan
+        // probe (a router, a captive portal) would, and following it would
+        // send the phone to a host off the home network.
+        followRedirects = false
     }
     return if (engine != null) HttpClient(engine, configure) else HttpClient(configure)
 }
