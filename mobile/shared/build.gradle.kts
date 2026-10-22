@@ -13,6 +13,9 @@ kotlin {
         namespace = "app.soshuhen.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
+        // The bundled fonts are Compose resources, which an Android library
+        // only packages when its resources are switched on.
+        androidResources { enable = true }
     }
     // Not shipped. It exists so commonTest runs as plain JVM tests on the
     // developer's machine and in CI, without an emulator.
@@ -27,6 +30,7 @@ kotlin {
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)
+            implementation(libs.compose.components.resources)
             implementation(libs.compose.backhandler)
             implementation(libs.material3)
             implementation(libs.coroutines.core)
@@ -61,6 +65,10 @@ kotlin {
             implementation(libs.ktor.client.mock)
         }
     }
+}
+
+compose.resources {
+    packageOfResClass = "app.soshuhen.resources"
 }
 
 room {

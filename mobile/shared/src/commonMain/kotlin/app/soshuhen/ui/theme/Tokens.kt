@@ -1,7 +1,14 @@
 package app.soshuhen.ui.theme
 
+import androidx.compose.material3.Typography
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 
 /**
  * The only place a colour, size, radius or spacing value lives in the app.
@@ -45,6 +52,11 @@ object Tokens {
     val onErrorContainer = Color(0xFFFFDAD6)
     val warning = Color(0xFFFFB877)
     val onWarning = Color(0xFF4A2600)
+    val warningContainer = Color(0xFFC2691A)
+    val onWarningContainer = Color(0xFF3A1D00)
+    // The cover's hairline (border-white/[0.08]) and the panel dividers (border-white/5).
+    val coverEdge = Color(0x14FFFFFF)
+    val divider = Color(0x0DFFFFFF)
 
     // A page is a scanned image: pure black or white around it is what reading
     // apps use, so the page edge does not read as a frame.
@@ -52,21 +64,85 @@ object Tokens {
     val readerGray = Color(0xFF2B2B2B)
     val readerWhite = Color(0xFFFFFFFF)
 
+    // Tailwind's numeric steps (1, 2, 3, 4, 6), which is what most web classes
+    // use; the web's own named steps are below them under their web names.
     object space {
+        val xxs = 2.dp
         val xs = 4.dp
+        val xsPlus = 6.dp
         val sm = 8.dp
+        val smPlus = 10.dp
         val md = 12.dp
+        val mdPlus = 14.dp
         val lg = 16.dp
+        val gutter = 20.dp
         val xl = 24.dp
+        val margin = 32.dp
+        val xxl = 40.dp
     }
 
+    // tailwind.config.ts overrides the scale, so rounded-lg is 16 and rounded-xl
+    // 24 there, not Tailwind's defaults; rounded-2xl is Tailwind's own 16.
     object radius {
-        val sm = 6.dp
+        val sm = 4.dp
+        val base = 8.dp
         val md = 12.dp
         val lg = 16.dp
         val xl = 24.dp
         val full = 999.dp
     }
+
+    // Icon sizes the web draws at (h-3, h-3.5, h-4, h-5, h-6).
+    object icon {
+        val xs = 12.dp
+        val sm = 14.dp
+        val md = 16.dp
+        val lg = 20.dp
+        val xl = 24.dp
+    }
+
+    // Fixed boxes from frontend/src/features/ and frontend/src/ui/.
+    object box {
+        // The cover's progress strip (h-1) and every ProgressBar.
+        val bar = 4.dp
+        // A status pill's dot (h-1.5) and an unread dot (h-2).
+        val dot = 6.dp
+        val dotLg = 8.dp
+        // SettingsPage's section tile (h-7) and ProviderCard's tile (h-12).
+        val sectionTile = 28.dp
+        val providerTile = 48.dp
+        // EmptyState's icon disc (h-12).
+        val emptyIcon = 48.dp
+        // ContinueReading's cover (h-28 w-20).
+        val continueCoverWidth = 80.dp
+        val continueCoverHeight = 112.dp
+        // The notification panel's cover (h-12 w-9).
+        val thumbHeight = 48.dp
+        // SeriesDetailPage's cover (w-56, sm:w-64).
+        val heroCover = 224.dp
+        val heroCoverWide = 256.dp
+        // SeriesGrid: two columns on a phone, then auto-fill minmax(160px, 220px) from sm.
+        val gridMin = 160.dp
+        val gridMax = 220.dp
+        val sm = 640.dp
+        // Toggle's track (h-6 w-11) and thumb (h-4).
+        val toggleWidth = 44.dp
+        val toggleHeight = 24.dp
+        val toggleThumb = 16.dp
+        // ChapterTable shows this many rows before "Show all".
+        const val previewRows = 20
+    }
+
+    // Alphas the web writes as a slash: /85 behind a badge on a cover, /80 on the
+    // needs-review badge, /20 behind an error notice, /[0.12] behind a pill.
+    const val overlayAlpha = 0.85f
+    const val reviewAlpha = 0.8f
+    const val noticeAlpha = 0.2f
+    const val tintAlpha = 0.12f
+    const val unreadAlpha = 0.1f
+    const val countAlpha = 0.2f
+    const val readTitleAlpha = 0.7f
+    const val filterPanelAlpha = 0.6f
 
     // A series that cannot be opened from here: drawn, but visibly out of reach.
     const val dimmed = 0.4f
@@ -106,4 +182,49 @@ object Tokens {
         const val endMinHeight = 0.6f
         const val pageMinHeight = 0.5f
     }
+}
+
+// The web's type scale from frontend/tailwind.config.ts, size / line height /
+// tracking / weight as written there. Material's roles map onto it by size;
+// where Material has a step the web does not, the nearest web step stands in
+// rather than an invented one.
+private fun step(size: Int, line: Int, weight: FontWeight, tracking: TextUnit, family: FontFamily) = TextStyle(
+    fontFamily = family,
+    fontSize = size.sp,
+    lineHeight = line.sp,
+    fontWeight = weight,
+    letterSpacing = tracking,
+)
+
+fun soshuhenTypography(sans: FontFamily = FontFamily.Default): Typography {
+    val displayLg = step(48, 56, FontWeight.ExtraBold, (-0.03).em, sans)
+    val displaySm = step(36, 44, FontWeight.Bold, (-0.02).em, sans)
+    val headlineLg = step(28, 36, FontWeight.Bold, (-0.02).em, sans)
+    val headlineMd = step(22, 30, FontWeight.SemiBold, (-0.01).em, sans)
+    val headlineSm = step(18, 24, FontWeight.SemiBold, 0.em, sans)
+    val titleMd = step(16, 22, FontWeight.SemiBold, 0.em, sans)
+    val bodyLg = step(16, 26, FontWeight.Normal, 0.em, sans)
+    val bodyMd = step(14, 22, FontWeight.Normal, 0.em, sans)
+    val bodySm = step(12, 18, FontWeight.Normal, 0.em, sans)
+    val labelMd = step(13, 18, FontWeight.Medium, 0.02.em, sans)
+    val labelSm = step(11, 15, FontWeight.SemiBold, 0.04.em, sans)
+    return Typography(
+        displayLarge = displayLg,
+        displayMedium = displaySm,
+        displaySmall = displaySm,
+        headlineLarge = headlineLg,
+        headlineMedium = headlineMd,
+        headlineSmall = headlineSm,
+        titleLarge = headlineSm,
+        titleMedium = titleMd,
+        // The Chip's text-body-sm font-semibold.
+        titleSmall = bodySm.copy(fontWeight = FontWeight.SemiBold),
+        bodyLarge = bodyLg,
+        bodyMedium = bodyMd,
+        bodySmall = bodySm,
+        // Every web Button is text-label-md.
+        labelLarge = labelMd,
+        labelMedium = labelMd,
+        labelSmall = labelSm,
+    )
 }
