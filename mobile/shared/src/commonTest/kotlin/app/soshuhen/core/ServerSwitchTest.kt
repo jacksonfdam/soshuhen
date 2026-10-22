@@ -86,4 +86,21 @@ class ServerSwitchTest {
         assertTrue(store.isMarked(1).first())
         assertNotNull(store.deviceChapter(11))
     }
+
+    @Test fun aSwitchKilledHalfWayKeepsTheOldInstallationWhole() = runTest {
+        val servers = InstanceGuard(FakeServerStore(), store)
+        servers.save(server("first"))
+        fillForTheFirstServer()
+        store.beforeRecordingInstance = { error("process killed") }
+        runCatching { store.belongTo("second") }
+        store.beforeRecordingInstance = {}
+
+        // Rolled back: the next save still sees "first" and clears properly,
+        // instead of finding no key and adopting the old marks as the new server's.
+        assertTrue(store.isMarked(1).first())
+        assertNotNull(store.deviceChapter(11))
+        store.belongTo("second")
+        assertFalse(store.isMarked(1).first())
+        assertNull(store.deviceChapter(11))
+    }
 }

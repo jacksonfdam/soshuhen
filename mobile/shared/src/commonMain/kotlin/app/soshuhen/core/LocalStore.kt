@@ -1,5 +1,7 @@
 package app.soshuhen.core
 
+import androidx.room.immediateTransaction
+import androidx.room.useWriterConnection
 import app.soshuhen.api.ReaderPrefs
 import app.soshuhen.api.Resume
 import app.soshuhen.api.Series
@@ -189,22 +191,33 @@ open class LocalStore(
      * index and the snapshots would name its series by the old one's ids, and
      * replaying them would move unrelated list progress. The files in the folder
      * stay: they are the user's, and the new server's copies adopt them by name.
-     * Recorded last, so a clear cut short is done again on the next save.
+     * One transaction, so a process killed half-way leaves either the old
+     * installation's data whole or none of it. Cleared piecemeal, the snapshots
+     * (which hold the instance key) went before the marks, and a death between
+     * them made the next save adopt the old server's marks as the new one's.
      */
+    // A seam for the test that kills the switch half-way; nothing else sets it.
+    internal var beforeRecordingInstance: suspend () -> Unit = {}
+
     suspend fun belongTo(instanceId: String) {
-        val current = read<String>(INSTANCE_KEY)
-        if (current == instanceId) return
-        // Nothing recorded is a device set up before this was kept: its data
-        // was the saved server's, which is the one being saved again.
-        if (current != null) {
-            db.outbox().clear()
-            db.importParts().clear()
-            db.snapshots().clear()
-            db.problems().clear()
-            db.marked().clear()
-            db.deviceChapters().clear()
+        db.useWriterConnection { connection ->
+            connection.immediateTransaction {
+                val current = read<String>(INSTANCE_KEY)
+                if (current == instanceId) return@immediateTransaction
+                // Nothing recorded is a device set up before this was kept: its
+                // data was the saved server's, which is the one being saved again.
+                if (current != null) {
+                    db.outbox().clear()
+                    db.importParts().clear()
+                    db.problems().clear()
+                    db.marked().clear()
+                    db.deviceChapters().clear()
+                    db.snapshots().clear()
+                }
+                beforeRecordingInstance()
+                save(INSTANCE_KEY, SoshuhenJson.encodeToString(String.serializer(), instanceId))
+            }
         }
-        save(INSTANCE_KEY, SoshuhenJson.encodeToString(String.serializer(), instanceId))
     }
 
     private suspend fun save(key: String, json: String) =
