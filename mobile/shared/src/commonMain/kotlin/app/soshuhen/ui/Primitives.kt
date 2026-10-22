@@ -50,12 +50,15 @@ enum class Tone(val color: Color, val container: Color, val onContainer: Color) 
     Error(Tokens.error, Tokens.errorContainer, Tokens.onErrorContainer),
 }
 
-/** The web's Icon.tsx paths, drawn on the same 24-unit box. */
+/** The web's Icon.tsx paths, drawn on the same 24-unit box; Book is the one recorded exception. */
 enum class WebIcon(val path: String) {
     Sync("M12 4V1L8 5l4 4V6a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"),
     Check("M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"),
     Search("M15.5 14h-.8l-.3-.3a6.5 6.5 0 1 0-.7.7l.3.3v.8l5 5 1.5-1.5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"),
-    Book("M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm0 18H6V4h12z"),
+    // Deviation: the web's book is a bare outlined rectangle, which on a phone
+    // reads as a missing-glyph box ("tofu") and was reported as broken on a
+    // tablet. Material's book, filled with its ribbon, says book at 14 dp.
+    Book("M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"),
     Download("M12 16 7 11l1.4-1.4L11 12.2V4h2v8.2l2.6-2.6L17 11zM5 18h14v2H5z"),
     Settings("M12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5zm7.4-2.3.1-1.2-.1-1.2 2-1.5-2-3.4-2.3 1a7.6 7.6 0 0 0-2-1.2l-.4-2.4h-4l-.4 2.4a7.6 7.6 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5-.1 1.2.1 1.2-2 1.5 2 3.4 2.3-1a7.6 7.6 0 0 0 2 1.2l.4 2.4h4l.4-2.4a7.6 7.6 0 0 0 2-1.2l2.3 1 2-3.4z"),
     Sparkle("M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z"),
