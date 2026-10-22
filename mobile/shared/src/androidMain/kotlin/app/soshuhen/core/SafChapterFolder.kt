@@ -44,7 +44,7 @@ class SafChapterFolder(
 
     private fun child(parent: DocumentFile, name: String, create: Boolean): DocumentFile? =
         parent.findFile(name)?.takeIf { it.isDirectory }
-            ?: if (create) parent.createDirectory(name) ?: throw FolderUnavailable("Cannot create $name") else null
+            ?: if (create) parent.createDirectory(name) ?: throw refusedToCreate(isAvailable(), name) else null
 
     private fun seriesDir(slug: String, create: Boolean): DocumentFile? {
         val root = child(tree(), ROOT, create) ?: return null
@@ -69,7 +69,7 @@ class SafChapterFolder(
             dir.findFile(fileName) ?: createNamed(dir, fileName)
         }
         val out = withContext(Dispatchers.IO) {
-            mapIo { resolver.openOutputStream(file.uri, if (append) "wa" else "w") } ?: throw FolderUnavailable("Cannot open $fileName")
+            mapIo { resolver.openOutputStream(file.uri, writeMode(append)) } ?: throw FolderUnavailable("Cannot open $fileName")
         }
         withContext(Dispatchers.IO) { mapIo { out.sink().buffer().use { block(it) } } }
     }
@@ -78,7 +78,7 @@ class SafChapterFolder(
     // alter the display name. Later steps address the file by the exact server
     // name, and the .part to final rename depends on it, so name it again.
     private fun createNamed(dir: DocumentFile, fileName: String): DocumentFile {
-        val created = dir.createFile(BINARY, fileName) ?: throw FolderUnavailable("Cannot create $fileName")
+        val created = dir.createFile(BINARY, fileName) ?: throw refusedToCreate(isAvailable(), fileName)
         if (created.name == fileName) return created
         val renamed = DocumentsContract.renameDocument(resolver, created.uri, fileName)
             ?: throw FolderUnavailable("Cannot name $fileName")
