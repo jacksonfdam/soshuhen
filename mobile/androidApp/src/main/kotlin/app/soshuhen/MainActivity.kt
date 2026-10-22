@@ -1,6 +1,7 @@
 package app.soshuhen
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -57,6 +58,9 @@ class MainActivity : ComponentActivity() {
     // system would see a lone ACTION_UP and still show the volume panel.
     private val consumed = mutableSetOf<Int>()
 
+    // Activity.dispatchKeyEvent is public; lint objects only because androidx.core's
+    // ComponentActivity overrides it under @RestrictTo, which an override cannot avoid.
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
         if (code != KeyEvent.KEYCODE_VOLUME_DOWN && code != KeyEvent.KEYCODE_VOLUME_UP) return super.dispatchKeyEvent(event)

@@ -30,4 +30,7 @@ dependencies {
     implementation(libs.ktor.client.core)
     implementation(libs.okio)
     implementation(libs.room.runtime)
+    // The manifest names WorkManager's foreground service; shared depends on
+    // WorkManager only privately, and lint cannot see the class otherwise.
+    implementation(libs.work.runtime)
 }
