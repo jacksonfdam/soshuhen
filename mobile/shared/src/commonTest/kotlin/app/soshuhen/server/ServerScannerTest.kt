@@ -13,6 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 fun identity(app: String = "soshuhen", id: String = "id-1") = Identity(app, "Soshuhen", "0.1.0", id)
 
@@ -54,5 +55,32 @@ class ServerScannerTest {
     @Test fun unrelatedJsonIsNotAServer() = runTest {
         val client = soshuhenHttpClient(MockEngine { respond("""{"status":"ok"}""", HttpStatusCode.OK) })
         assertNull(identityProbe(client)(ServerAddress("http", "10.0.0.1", 8080)))
+    }
+
+    @Test fun aHostTooSlowForTheFirstPassIsAskedAgainWithLonger() = runTest {
+        var asked = 0
+        val found = scanner(
+            mapOf(
+                // The first request of a process waits on a client still starting up.
+                "10.0.0.3" to { asked++; if (asked == 1) delay(1_500); identity() },
+            ),
+        ).scan(listOf("10.0.0.2", "10.0.0.3"), retryTimeout = 2.seconds).toList()
+        assertEquals(listOf("10.0.0.3"), found.map { it.address.host })
+        assertEquals(2, asked)
+    }
+
+    @Test fun aHostThatRefusedIsNotAskedAgain() = runTest {
+        var asked = 0
+        scanner(mapOf("10.0.0.2" to { asked++; error("connection refused") }))
+            .scan(listOf("10.0.0.2"), retryTimeout = 2.seconds).toList()
+        assertEquals(1, asked)
+    }
+
+    @Test fun theWarmUpGoesAheadOfTheScanAndIsNotListed() = runTest {
+        val order = mutableListOf<String>()
+        val found = ServerScanner { address -> order += address.host; identity() }
+            .scan(listOf("10.0.0.2", "10.0.0.3"), warmUp = "10.0.0.9").toList()
+        assertEquals("10.0.0.9", order.first())
+        assertEquals(setOf("10.0.0.2", "10.0.0.3"), found.map { it.address.host }.toSet())
     }
 }
