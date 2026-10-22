@@ -357,7 +357,8 @@ home network, and never to a source site or a list provider: covers come from th
   chapter is there and from the server otherwise. The volume buttons turn pages; that and inverting
   them are switches in Settings.
 - **Offline.** Away from home the library shows what it last saw, covers included, with "Offline.
-  Showing the last sync." Every chapter on the device opens as usual.
+  Showing the last sync." Every chapter on the device opens as usual, at the page where you
+  stopped, and a series' **Continue** leads there too.
 - **Progress goes home.** Chapters you finish, and where you stopped, are kept on the phone and sent
   to the server the next time it is reachable, so your lists move forward as if you had read at
   home. Re-reading an earlier chapter never moves a list backwards.

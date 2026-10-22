@@ -89,7 +89,7 @@ class Outbox(private val store: LocalStore, private val clock: () -> Instant) {
         }
     }
 
-    private companion object {
+    internal companion object {
         const val POSITION = "position"
         const val COMPLETE = "complete"
         const val PREFS = "prefs"

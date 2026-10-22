@@ -155,20 +155,29 @@ class SeriesDetailViewModel(
             remote.value = try {
                 val json = client.seriesDetailJson(seriesId)
                 val detail = SoshuhenJson.decodeFromString<SeriesDetail>(json)
-                val resume = client.resume(seriesId)
                 keep { local.saveDetail(seriesId, json) }
                 lastDetail = detail
-                LoadState.Loaded(Remote(detail, resume))
+                LoadState.Loaded(Remote(detail, local.queuedPosition(seriesId) ?: serverResume(client)))
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 if (previous is LoadState.Loaded) previous.copy(refreshFailed = UNREACHABLE)
                 else local.detailSnapshot(seriesId)?.let {
                     lastDetail = it
-                    LoadState.Loaded(Remote(it, null), refreshFailed = OFFLINE)
+                    LoadState.Loaded(Remote(it, local.resume(seriesId)), refreshFailed = OFFLINE)
                 }
                     ?: LoadState.Failed(FAILED_FIRST)
             }
         }
+    }
+
+    // Only where to continue: a resume the server failed to give must not throw
+    // away a detail that loaded, so the device's last known place stands in.
+    private suspend fun serverResume(client: SoshuhenApi): Resume? = try {
+        client.resume(seriesId).also { keep { local.saveResume(seriesId, it) } }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        local.resume(seriesId)
     }
 }

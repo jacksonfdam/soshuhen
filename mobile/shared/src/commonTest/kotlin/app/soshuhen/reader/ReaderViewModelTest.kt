@@ -134,6 +134,29 @@ class ReaderViewModelTest {
         assertEquals(listOf(11L), extracted)
     }
 
+    @Test fun aHalfReadDeviceChapterReopensWhereReadingStopped() = runTest(dispatcher) {
+        store.saveDetail(1, Fixtures.DETAIL)
+        onDevice(11, 1.0)
+        outbox.position(1, 11, 3)
+        val vm = reader(11)
+        advanceUntilIdle()
+        assertEquals(3, vm.ui().page)
+    }
+
+    @Test fun aDeviceChapterReopensAtTheServersLastKnownPlace() = runTest(dispatcher) {
+        store.saveDetail(1, Fixtures.DETAIL)
+        store.saveResume(1, app.soshuhen.api.Resume(11, 2))
+        onDevice(11, 1.0)
+        onDevice(13, 2.5)
+        val vm = reader(11)
+        advanceUntilIdle()
+        assertEquals(2, vm.ui().page)
+        // Another chapter's place is not this one's.
+        val other = reader(13)
+        advanceUntilIdle()
+        assertEquals(0, other.ui().page)
+    }
+
     @Test fun awayFromHomeAChapterNotOnTheDeviceIsUnavailable() = runTest(dispatcher) {
         store.saveDetail(1, Fixtures.DETAIL)
         val vm = reader(13)

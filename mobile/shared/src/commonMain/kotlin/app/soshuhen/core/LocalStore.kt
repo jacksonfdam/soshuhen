@@ -1,6 +1,7 @@
 package app.soshuhen.core
 
 import app.soshuhen.api.ReaderPrefs
+import app.soshuhen.api.Resume
 import app.soshuhen.api.Series
 import app.soshuhen.api.SeriesDetail
 import app.soshuhen.api.SoshuhenJson
@@ -14,6 +15,7 @@ import app.soshuhen.db.SnapshotEntity
 import app.soshuhen.db.SoshuhenDatabase
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -37,6 +39,7 @@ data class DeviceChapter(
 private const val SERIES_KEY = "series"
 private fun detailKey(id: Long) = "series/$id"
 private fun prefsKey(id: Long) = "prefs/$id"
+private fun resumeKey(id: Long) = "resume/$id"
 
 /** Everything the app keeps on the device, behind the types the screens already use. */
 // Open so a test can hand a view model a store whose writes fail: a closed Room
@@ -57,6 +60,22 @@ open class LocalStore(
         save(prefsKey(seriesId), SoshuhenJson.encodeToString(ReaderPrefs.serializer(), prefs))
 
     suspend fun prefsSnapshot(seriesId: Long): ReaderPrefs? = read(prefsKey(seriesId))
+
+    // Saved when the server has no place too: an older place must not outlive
+    // the server saying there is none.
+    suspend fun saveResume(seriesId: Long, resume: Resume?) =
+        save(resumeKey(seriesId), SoshuhenJson.encodeToString(Resume.serializer().nullable, resume))
+
+    /**
+     * A page turned away from home and not yet told to the server: newer than
+     * anything the server said, so it wins wherever the two disagree.
+     */
+    suspend fun queuedPosition(seriesId: Long): Resume? =
+        db.outbox().all().lastOrNull { it.seriesId == seriesId && it.kind == Outbox.POSITION }
+            ?.let { queued -> Resume(queued.chapterId ?: return null, queued.page ?: return null) }
+
+    /** Where reading of a series stopped, as far as the device knows without the server. */
+    suspend fun resume(seriesId: Long): Resume? = queuedPosition(seriesId) ?: read<Resume?>(resumeKey(seriesId))
 
     /**
      * A chapter finished away from home shows as read in the library and on the

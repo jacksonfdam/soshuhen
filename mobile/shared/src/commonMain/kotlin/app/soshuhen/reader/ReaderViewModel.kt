@@ -3,6 +3,7 @@ package app.soshuhen.reader
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.soshuhen.api.ReaderPrefs
+import app.soshuhen.api.Resume
 import app.soshuhen.api.SeriesDetail
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.SoshuhenJson
@@ -175,7 +176,10 @@ class ReaderViewModel(
             row.availability == Availability.OnDevice -> {
                 val chapter = device.first { it.chapterId == chapterId }
                 when (val found = fromDevice(chapter)) {
-                    is DeviceOpen.Pages -> PageSource.Device(found.files) to null
+                    // The server is not asked for a device chapter, so the place
+                    // reading stopped is the one the device kept.
+                    is DeviceOpen.Pages ->
+                        PageSource.Device(found.files) to local.resume(seriesId)?.takeIf { it.chapterId == chapterId }?.page
                     is DeviceOpen.Lost -> return ReaderState.Unavailable(found.message)
                 }
             }
@@ -290,6 +294,9 @@ class ReaderViewModel(
         // A failed write loses this one position; the next turn writes another.
         val save: suspend () -> Unit = {
             keep { outbox.position(seriesId, chapterId, page) }
+            // Sent at home and gone from the outbox at once; without this the
+            // next open of a device chapter would go back to an older place.
+            keep { local.saveResume(seriesId, Resume(chapterId, page)) }
             sendIfHome()
         }
         savePosition = save
