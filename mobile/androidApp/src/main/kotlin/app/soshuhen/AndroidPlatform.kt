@@ -14,6 +14,7 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -113,6 +114,18 @@ class AndroidPlatform(private val app: Application) : Platform {
             // Some builds remove the direct request; the list of apps is always there.
             context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(newTask))
         }
+    }
+
+    override fun areNotificationsEnabled(): Boolean = NotificationManagerCompat.from(app).areNotificationsEnabled()
+
+    override fun openNotificationSettings() {
+        val context: Context = activity ?: app
+        val newTask = if (context === app) Intent.FLAG_ACTIVITY_NEW_TASK else 0
+        context.startActivity(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, app.packageName)
+                .addFlags(newTask),
+        )
     }
 }
 

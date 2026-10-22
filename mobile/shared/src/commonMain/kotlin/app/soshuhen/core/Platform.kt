@@ -14,4 +14,10 @@ interface Platform {
     fun isBatteryUnrestricted(): Boolean
 
     fun openBatterySettings()
+
+    /** Whether Android lets this app post at all, whatever was answered at setup. */
+    fun areNotificationsEnabled(): Boolean
+
+    /** This app's page in Android's notification settings, the one place they are turned back on. */
+    fun openNotificationSettings()
 }

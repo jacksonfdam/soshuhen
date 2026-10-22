@@ -364,7 +364,8 @@ home network, and never to a source site or a list provider: covers come from th
   home. Re-reading an earlier chapter never moves a list backwards.
 - **Settings.** The server, the folder with **Change folder** (chapters already copied stay where
   they are; new ones go to the new folder), whether background copies are unrestricted with a way
-  to the battery settings, and the volume buttons. **Change server** to a different Soshuhen
+  to the battery settings, whether notifications are on with a way to Android's notification
+  settings, and the volume buttons. **Change server** to a different Soshuhen
   installation starts the device over: which series are kept, which chapters were copied and any
   reading not yet sent are forgotten, since they name the old server's series. The files stay in
   the folder; a chapter the new server holds byte for byte is taken up again without a copy.

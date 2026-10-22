@@ -49,13 +49,20 @@ class SettingsViewModel(
     private val _batteryUnrestricted = MutableStateFlow(platform.isBatteryUnrestricted())
     val batteryUnrestricted: StateFlow<Boolean> = _batteryUnrestricted
 
-    // The answer changes in the system's own screen, so it is read again each
-    // time Settings comes back into view.
-    fun refreshBattery() {
+    private val _notificationsOn = MutableStateFlow(platform.areNotificationsEnabled())
+    val notificationsOn: StateFlow<Boolean> = _notificationsOn
+
+    // Both answers change in the system's own screens, so they are read again
+    // each time Settings comes back into view.
+    fun refreshSystemState() {
         _batteryUnrestricted.value = platform.isBatteryUnrestricted()
+        _notificationsOn.value = platform.areNotificationsEnabled()
     }
 
     fun openBatterySettings() = platform.openBatterySettings()
+
+    // "Not now" at setup is never asked again; this is where it is undone.
+    fun openNotificationSettings() = platform.openNotificationSettings()
 
     fun setVolumeKeys(on: Boolean) {
         viewModelScope.launch { store.setVolumeKeys(on) }

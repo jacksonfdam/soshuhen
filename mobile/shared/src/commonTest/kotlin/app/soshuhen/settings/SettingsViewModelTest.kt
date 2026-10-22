@@ -88,8 +88,20 @@ class SettingsViewModelTest {
         assertEquals(false, vm.batteryUnrestricted.value)
         vm.openBatterySettings()
         platform.unrestricted = true
-        vm.refreshBattery()
+        vm.refreshSystemState()
         assertEquals(1, platform.batterySettingsOpened)
         assertEquals(true, vm.batteryUnrestricted.value)
+    }
+
+    @Test fun notificationsShowWhatAndroidSaysAndOpenItsSettings() = runTest(dispatcher) {
+        val platform = FakePlatform(notificationsOn = false)
+        val vm = SettingsViewModel(MutableStateFlow(null), FakeServerStore(), platform)
+        assertEquals(false, vm.notificationsOn.value)
+        vm.openNotificationSettings()
+        assertEquals(1, platform.notificationSettingsOpened)
+        // Turned on in Android's own screen; read again when Settings is back.
+        platform.notificationsOn = true
+        vm.refreshSystemState()
+        assertEquals(true, vm.notificationsOn.value)
     }
 }

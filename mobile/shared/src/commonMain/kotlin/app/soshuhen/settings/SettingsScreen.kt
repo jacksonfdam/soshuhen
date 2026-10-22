@@ -46,8 +46,9 @@ fun SettingsScreen(model: SettingsViewModel, appVersion: String) {
     val volumeInvert by model.volumeInvert.collectAsStateWithLifecycle()
     val folder by model.folder.collectAsStateWithLifecycle()
     val unrestricted by model.batteryUnrestricted.collectAsStateWithLifecycle()
+    val notificationsOn by model.notificationsOn.collectAsStateWithLifecycle()
     LifecycleResumeEffect(model) {
-        model.refreshBattery()
+        model.refreshSystemState()
         onPauseOrDispose { }
     }
     BoxWithConstraints(Modifier.fillMaxSize().background(Tokens.background).statusBarsPadding()) {
@@ -146,6 +147,21 @@ fun SettingsScreen(model: SettingsViewModel, appVersion: String) {
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             WebButton("Open battery settings", model::openBatterySettings, small = true, icon = WebIcon.Bolt)
+                        }
+                    }
+                    // The same inset as the battery's: a system permission the copies rely on to be heard.
+                    Inset {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            StatusDot(if (notificationsOn) Tokens.secondary else Tokens.warning)
+                            Text(
+                                if (notificationsOn) "Notifications: on" else "Notifications: off, new chapters arrive silently",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (notificationsOn) Tokens.onSurfaceVariant else Tokens.warning,
+                                modifier = Modifier.weight(1f).padding(start = Tokens.space.xsPlus),
+                            )
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            WebButton("Open notification settings", model::openNotificationSettings, small = true, icon = WebIcon.Bell)
                         }
                     }
                 }
