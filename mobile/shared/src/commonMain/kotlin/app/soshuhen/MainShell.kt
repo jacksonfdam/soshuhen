@@ -8,6 +8,8 @@ import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.layout.AnimatedPane
 import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
 import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffold
+import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldDefaults
+import androidx.compose.material3.adaptive.layout.calculateThreePaneScaffoldValue
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
@@ -39,7 +41,14 @@ import app.soshuhen.reader.ReaderScreen
 import app.soshuhen.reader.ReaderViewModel
 import app.soshuhen.settings.SettingsScreen
 import app.soshuhen.settings.SettingsViewModel
-import app.soshuhen.ui.Glyph
+import app.soshuhen.ui.WebGlyph
+import app.soshuhen.ui.WebIcon
+import app.soshuhen.ui.theme.mono
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteDefaults
+import androidx.compose.ui.graphics.Color
 import app.soshuhen.ui.theme.Tokens
 import app.soshuhen.updates.UpdatesScreen
 import app.soshuhen.updates.UpdatesViewModel
@@ -139,25 +148,44 @@ private fun Shell(
     LaunchedEffect(opening) {
         if (opening != null) goToLibrary()
     }
+    // AppShell.tsx's bottom bar: surface-container-lowest, no pill behind the
+    // current item, which is told apart by its primary tint alone.
+    val barItem = NavigationBarItemDefaults.colors(
+        selectedIconColor = Tokens.primary, selectedTextColor = Tokens.primary, indicatorColor = Color.Transparent,
+        unselectedIconColor = Tokens.onSurfaceVariant, unselectedTextColor = Tokens.onSurfaceVariant,
+    )
+    val railItem = NavigationRailItemDefaults.colors(
+        selectedIconColor = Tokens.primary, selectedTextColor = Tokens.primary, indicatorColor = Color.Transparent,
+        unselectedIconColor = Tokens.onSurfaceVariant, unselectedTextColor = Tokens.onSurfaceVariant,
+    )
+    val itemColors = NavigationSuiteDefaults.itemColors(navigationBarItemColors = barItem, navigationRailItemColors = railItem)
+    val label: @Composable (String) -> Unit = { Text(it, style = MaterialTheme.typography.labelSmall.mono()) }
     NavigationSuiteScaffold(
+        navigationSuiteColors = NavigationSuiteDefaults.colors(
+            navigationBarContainerColor = Tokens.surfaceContainerLowest,
+            navigationRailContainerColor = Tokens.surfaceContainerLowest,
+        ),
         navigationSuiteItems = {
             item(
                 selected = !onSettings && !onUpdates,
                 onClick = { goToLibrary() },
-                icon = { Glyph("▦") },
-                label = { Text("Library") },
+                icon = { WebGlyph(WebIcon.Book, LocalContentColor.current) },
+                label = { label("Library") },
+                colors = itemColors,
             )
             item(
                 selected = onUpdates,
                 onClick = { nav.navigate(UpdatesRoute) { launchSingleTop = true } },
-                icon = { Glyph("↻") },
-                label = { Text("Updates") },
+                icon = { WebGlyph(WebIcon.Bell, LocalContentColor.current) },
+                label = { label("Updates") },
+                colors = itemColors,
             )
             item(
                 selected = onSettings,
                 onClick = { nav.navigate(SettingsRoute) { launchSingleTop = true } },
-                icon = { Glyph("⚙") },
-                label = { Text("Settings") },
+                icon = { WebGlyph(WebIcon.Settings, LocalContentColor.current) },
+                label = { label("Settings") },
+                colors = itemColors,
             )
         },
     ) {
@@ -202,9 +230,17 @@ private fun LibraryPanes(
     // On a phone the detail replaces the grid, so back has to bring it back
     // rather than leave the app.
     BackHandler(enabled = navigator.canNavigateBack()) { scope.launch { navigator.navigateBack() } }
+    // With nothing picked the library takes the whole width, as the web's does;
+    // the split only appears once there is a series to put beside it.
+    val picked = navigator.currentDestination?.contentKey != null
+    val directive = if (picked) navigator.scaffoldDirective else navigator.scaffoldDirective.copy(maxHorizontalPartitions = 1)
     ListDetailPaneScaffold(
-        directive = navigator.scaffoldDirective,
-        value = navigator.scaffoldValue,
+        directive = directive,
+        value = if (picked) {
+            navigator.scaffoldValue
+        } else {
+            calculateThreePaneScaffoldValue(1, ListDetailPaneScaffoldDefaults.adaptStrategies(), navigator.currentDestination)
+        },
         listPane = {
             AnimatedPane {
                 LibraryScreen(

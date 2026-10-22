@@ -15,6 +15,8 @@ data class ChapterRow(
     val title: String?,
     val read: Boolean,
     val availability: Availability,
+    // The server's own word for the chapter (downloaded, known, queued...), as the web's table shows it.
+    val state: String? = null,
 )
 
 fun chapterRows(detail: SeriesDetail, onDevice: Set<Long> = emptySet()): List<ChapterRow> = detail.chapters
@@ -35,6 +37,7 @@ fun chapterRows(detail: SeriesDetail, onDevice: Set<Long> = emptySet()): List<Ch
             } else {
                 Availability.NotDownloaded
             },
+            state = it.state,
         )
     }
 

@@ -122,23 +122,39 @@ object Tokens {
         val heroCover = 224.dp
         val heroCoverWide = 256.dp
         // SeriesGrid: two columns on a phone, then auto-fill minmax(160px, 220px) from sm.
-        val gridMin = 160.dp
+        // CSS sizes those tracks by the 220, so the 160 never enters the arithmetic.
         val gridMax = 220.dp
         val sm = 640.dp
+        val md = 768.dp
+        val lg = 1024.dp
         // Toggle's track (h-6 w-11) and thumb (h-4).
         val toggleWidth = 44.dp
         val toggleHeight = 24.dp
         val toggleThumb = 16.dp
+        // EmptyState's detail line (max-w-sm).
+        val emptyDetailMax = 384.dp
         // ChapterTable shows this many rows before "Show all".
         const val previewRows = 20
     }
+
+    // shadow-card (0 8px 24px -4px) and shadow-xs, as Material elevations.
+    val cardElevation = 8.dp
+    val smallElevation = 1.dp
+    val hairline = 1.dp
 
     // Alphas the web writes as a slash: /85 behind a badge on a cover, /80 on the
     // needs-review badge, /20 behind an error notice, /[0.12] behind a pill.
     const val overlayAlpha = 0.85f
     const val reviewAlpha = 0.8f
+    // A needs-review cover's edge (border-error/40) and the card's rule (border-surface-container-highest/40).
+    const val reviewBorderAlpha = 0.4f
+    const val ruleAlpha = 0.4f
+    // A chapter row's own rule (border-surface-container-highest/20).
+    const val rowRuleAlpha = 0.2f
     const val noticeAlpha = 0.2f
     const val tintAlpha = 0.12f
+    // A disabled control (disabled:opacity-50).
+    const val disabledAlpha = 0.5f
     const val unreadAlpha = 0.1f
     const val countAlpha = 0.2f
     const val readTitleAlpha = 0.7f

@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import app.soshuhen.ui.theme.Tokens
 import coil3.compose.AsyncImage
@@ -24,13 +25,20 @@ import coil3.compose.AsyncImage
  * the server could not fetch, shows its initials instead of an empty box.
  */
 @Composable
-fun CoverImage(url: String, title: String, modifier: Modifier = Modifier) {
+fun CoverImage(
+    url: String,
+    title: String,
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(Tokens.radius.base),
+    // A box the caller has already sized, rather than a 2:3 cover.
+    fill: Boolean = false,
+) {
     var failed by remember(url) { mutableStateOf(false) }
     Box(
         modifier
-            .aspectRatio(Tokens.coverAspect)
-            .clip(RoundedCornerShape(Tokens.radius.sm))
-            .background(Tokens.surfaceContainerHigh),
+            .then(if (fill) Modifier else Modifier.aspectRatio(Tokens.coverAspect))
+            .clip(shape)
+            .background(Tokens.surfaceContainerHighest),
         contentAlignment = Alignment.Center,
     ) {
         if (failed) {

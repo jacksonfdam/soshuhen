@@ -1,28 +1,33 @@
 package app.soshuhen.library
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -33,17 +38,47 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Density
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.soshuhen.api.Series
 import app.soshuhen.core.LocalStore
 import app.soshuhen.ui.CoverImage
-import app.soshuhen.ui.ProblemBanner
+import app.soshuhen.ui.EmptyState
 import app.soshuhen.ui.LoadState
+import app.soshuhen.ui.MonoLabel
+import app.soshuhen.ui.NoticeBar
+import app.soshuhen.ui.NoticeTone
+import app.soshuhen.ui.ProblemBanner
+import app.soshuhen.ui.Tone
+import app.soshuhen.ui.WebButton
+import app.soshuhen.ui.WebChip
+import app.soshuhen.ui.WebGlyph
+import app.soshuhen.ui.WebIcon
+import app.soshuhen.ui.chapterNumber
+import app.soshuhen.ui.providers
+import app.soshuhen.ui.relativeTime
+import app.soshuhen.ui.seriesFormat
 import app.soshuhen.ui.theme.Tokens
+import app.soshuhen.ui.theme.mono
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 const val NOT_ON_DEVICE = "Not on this device. Mark it at home to read it here."
 
+/**
+ * The library as frontend/src/features/library/LibraryPage.tsx lays it out:
+ * the status tabs on their panel, the filter panel, Continue reading, then the
+ * cover grid under a heading that counts what is shown.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
@@ -72,56 +107,64 @@ fun LibraryScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        ProblemBanner(store, Modifier.padding(Tokens.space.lg))
-        Box(Modifier.weight(1f)) {
-            when (val s = state) {
-                LoadState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    LinearProgressIndicator(Modifier.width(Tokens.coverMinWidth))
-                }
-                is LoadState.Failed -> Column(
-                    Modifier.fillMaxSize().padding(Tokens.space.xl),
-                    verticalArrangement = Arrangement.spacedBy(Tokens.space.md, Alignment.CenterVertically),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(s.message)
-                    Button(onClick = model::refresh) { Text("Retry") }
-                }
-                is LoadState.Loaded -> PullToRefreshBox(isRefreshing = false, onRefresh = { model.refresh(); onRefreshed() }) {
-                    val all = s.data
-                    val shown = visible(all, status, query, marked)
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(Tokens.coverMinWidth),
-                        contentPadding = PaddingValues(Tokens.space.lg),
-                        horizontalArrangement = Arrangement.spacedBy(Tokens.space.md),
-                        verticalArrangement = Arrangement.spacedBy(Tokens.space.md),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        s.refreshFailed?.let { message ->
-                            item(span = { GridItemSpan(maxLineSpan) }) { Banner(message) }
+    BoxWithConstraints(Modifier.fillMaxSize().background(Tokens.background).statusBarsPadding()) {
+        // The web pads by space-md on a phone and by margin from sm up.
+        val phone = maxWidth < Tokens.box.sm
+        val side = if (phone) Tokens.space.lg else Tokens.space.margin
+        Column(Modifier.fillMaxSize()) {
+            ProblemBanner(store, Modifier.padding(horizontal = side, vertical = Tokens.space.sm))
+            Box(Modifier.weight(1f)) {
+                when (val s = state) {
+                    LoadState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        LinearProgressIndicator(Modifier.width(Tokens.coverMinWidth), color = Tokens.primary)
+                    }
+                    is LoadState.Failed -> Box(Modifier.fillMaxSize().padding(side), Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Tokens.space.lg)) {
+                            EmptyState(WebIcon.Warning, "Couldn't load the library", s.message)
+                            WebButton("Retry", model::refresh, icon = WebIcon.Sync)
                         }
-                        notice?.let { message ->
-                            item(span = { GridItemSpan(maxLineSpan) }) { Banner(message) }
-                        }
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            OutlinedTextField(
-                                value = query,
-                                onValueChange = model::setQuery,
-                                placeholder = { Text("Search the library") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                        val continuing = continueReading(comics(all))
-                        if (continuing.isNotEmpty() && query.isBlank()) {
-                            item(span = { GridItemSpan(maxLineSpan) }) { ContinueRow(continuing, coverUrl, { reachable(it, atHome, marked) }, open) }
-                        }
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            StatusChips(comics(all), marked, status, model::setStatus)
-                        }
-                        items(shown, key = { it.id }) { series ->
-                            val reachable = reachable(series, atHome, marked)
-                            CoverCard(series, coverUrl(series.id), dimmed = !reachable) { open(series) }
+                    }
+                    is LoadState.Loaded -> PullToRefreshBox(isRefreshing = false, onRefresh = { model.refresh(); onRefreshed() }) {
+                        val all = s.data
+                        val shown = visible(all, status, query, marked)
+                        val comics = comics(all)
+                        val full: (androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope) -> GridItemSpan = { GridItemSpan(it.maxLineSpan) }
+                        LazyVerticalGrid(
+                            columns = WebGrid(phone),
+                            contentPadding = PaddingValues(start = side, end = side, top = Tokens.space.xl, bottom = Tokens.space.xxl),
+                            horizontalArrangement = Arrangement.spacedBy(Tokens.space.gutter),
+                            verticalArrangement = Arrangement.spacedBy(Tokens.space.gutter),
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            s.refreshFailed?.let { message ->
+                                item(span = full) {
+                                    NoticeBar(message, NoticeTone.Error) { WebButton("Retry", model::refresh, small = true, icon = WebIcon.Sync) }
+                                }
+                            }
+                            notice?.let { message -> item(span = full) { NoticeBar(message) } }
+                            item(span = full) { StatusPanel(comics, marked, status, model::setStatus) }
+                            item(span = full) { FilterPanel(query, model::setQuery) }
+                            val continuing = continueReading(comics)
+                            if (continuing.isNotEmpty()) {
+                                item(span = full) {
+                                    ContinueReading(continuing, coverUrl, { reachable(it, atHome, marked) }, open, Modifier.padding(top = Tokens.space.gutter))
+                                }
+                            }
+                            item(span = full) {
+                                Heading(status, shown.size, comics.size, Modifier.padding(top = Tokens.space.gutter))
+                            }
+                            if (shown.isEmpty()) {
+                                item(span = full) {
+                                    EmptyState(
+                                        WebIcon.Search,
+                                        "No matches",
+                                        "Nothing in this status matches the current filter. Try another tab or clear the search.",
+                                    )
+                                }
+                            }
+                            items(shown, key = { it.id }) { series ->
+                                CoverCard(series, coverUrl(series.id), dimmed = !reachable(series, atHome, marked)) { open(series) }
+                            }
                         }
                     }
                 }
@@ -130,44 +173,115 @@ fun LibraryScreen(
     }
 }
 
-@Composable
-private fun Banner(message: String) {
-    Text(
-        message,
-        color = Tokens.onWarning,
-        modifier = Modifier.fillMaxWidth()
-            .background(Tokens.warning, RoundedCornerShape(Tokens.radius.sm))
-            .padding(Tokens.space.md),
-    )
+/**
+ * SeriesGrid.tsx: two columns on a phone, then auto-fill minmax(160px, 220px)
+ * from sm, so the columns stop at 220 and leave the rest of the row empty
+ * instead of stretching the covers. The 160 floor never binds: a pane too
+ * narrow for one 220 column is a phone, which takes the two-column branch.
+ */
+private class WebGrid(private val phone: Boolean) : GridCells {
+    override fun Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): List<Int> {
+        if (phone) {
+            val width = (availableSize - spacing) / 2
+            return listOf(width, width)
+        }
+        // CSS counts auto-fill repetitions by the track's max when it has one,
+        // then lets each track grow no further than that max.
+        val most = Tokens.box.gridMax.roundToPx()
+        val count = max(1, (availableSize + spacing) / (most + spacing))
+        val width = min(most, (availableSize - spacing * (count - 1)) / count)
+        return List(count) { width }
+    }
+
+    override fun equals(other: Any?) = other is WebGrid && other.phone == phone
+    override fun hashCode() = phone.hashCode()
 }
 
+/** StatusTabs.tsx on LibraryPage's rounded-2xl panel: every status, then the device, then All last. */
 @Composable
-private fun ContinueRow(
+private fun StatusPanel(all: List<Series>, marked: Set<Long>, status: String?, onChange: (String?) -> Unit) {
+    val shape = RoundedCornerShape(Tokens.radius.lg)
+    Row(
+        Modifier.fillMaxWidth()
+            .shadow(Tokens.cardElevation, shape, clip = false)
+            .background(Tokens.surfaceContainerLow, shape)
+            .padding(Tokens.space.sm)
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(Tokens.space.xs),
+    ) {
+        STATUS_ORDER.forEach { key ->
+            WebChip(STATUS_LABEL.getValue(key), all.count { it.status == key }, status == key) { onChange(key) }
+        }
+        WebChip("On device", all.count { it.id in marked }, status == ON_DEVICE) { onChange(ON_DEVICE) }
+        WebChip("All", all.size, status == null) { onChange(null) }
+    }
+}
+
+/** The filter panel's SearchField (ListControls.tsx). */
+@Composable
+private fun FilterPanel(query: String, onQuery: (String) -> Unit) {
+    Box(
+        Modifier.fillMaxWidth()
+            .background(Tokens.surfaceContainer.copy(alpha = Tokens.filterPanelAlpha), RoundedCornerShape(Tokens.radius.xl))
+            .padding(Tokens.space.mdPlus),
+    ) {
+        BasicTextField(
+            value = query,
+            onValueChange = onQuery,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodySmall.copy(color = Tokens.onSurface),
+            cursorBrush = SolidColor(Tokens.primary),
+            modifier = Modifier.fillMaxWidth(),
+            decorationBox = { field ->
+                Row(
+                    Modifier.fillMaxWidth()
+                        .background(Tokens.surfaceContainerLow, RoundedCornerShape(Tokens.radius.lg))
+                        .padding(horizontal = Tokens.space.md, vertical = Tokens.space.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Tokens.space.sm),
+                ) {
+                    WebGlyph(WebIcon.Search, Tokens.outline)
+                    Box(Modifier.weight(1f)) {
+                        if (query.isEmpty()) Text("Filter by title...", style = MaterialTheme.typography.bodySmall, color = Tokens.outline)
+                        field()
+                    }
+                }
+            },
+        )
+    }
+}
+
+/** ContinueReading.tsx: one column on a phone, three from md. */
+@Composable
+private fun ContinueReading(
     series: List<Series>,
     coverUrl: (Long) -> String,
     isReachable: (Series) -> Boolean,
     onOpen: (Series) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(Tokens.space.sm)) {
-        Text("Continue reading", style = MaterialTheme.typography.titleMedium)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.space.md)) {
-            items(series, key = { it.id }) { s ->
-                Column(
-                    Modifier.width(Tokens.coverMinWidth)
-                        .alpha(if (isReachable(s)) 1f else Tokens.dimmed)
-                        .clickable { onOpen(s) },
-                ) {
-                    CoverImage(coverUrl(s.id), s.title)
-                    Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-                    Text("Chapter ${s.progress + 1}", style = MaterialTheme.typography.bodySmall, color = Tokens.onSurfaceVariant)
-                    val total = totalChapters(s)
-                    if (total != null) {
-                        LinearProgressIndicator(
-                            progress = { (s.progress.toFloat() / total).coerceIn(0f, 1f) },
-                            color = Tokens.secondary,
-                            modifier = Modifier.fillMaxWidth().padding(top = Tokens.space.xs),
-                        )
-                    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Tokens.space.lg)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.space.smPlus)) {
+            WebGlyph(WebIcon.Sparkle, Tokens.primary, Tokens.icon.lg)
+            Text("Continue reading", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), color = Tokens.onSurface)
+            Text(
+                "Instant access",
+                style = MaterialTheme.typography.labelSmall.mono(),
+                color = Tokens.outline,
+                modifier = Modifier.background(Tokens.surfaceContainerHigh, RoundedCornerShape(Tokens.radius.base))
+                    .padding(horizontal = Tokens.space.sm, vertical = Tokens.space.xxs),
+            )
+        }
+        BoxWithConstraints {
+            if (maxWidth < Tokens.box.md) {
+                Column(verticalArrangement = Arrangement.spacedBy(Tokens.space.lg)) {
+                    series.forEach { ContinueCard(it, coverUrl(it.id), isReachable(it), onOpen, Modifier.fillMaxWidth()) }
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.space.lg)) {
+                    series.forEach { ContinueCard(it, coverUrl(it.id), isReachable(it), onOpen, Modifier.weight(1f)) }
+                    // Three slots whatever the count, as the web's grid-cols-3 keeps them.
+                    repeat(3 - series.size) { Box(Modifier.weight(1f)) }
                 }
             }
         }
@@ -175,45 +289,180 @@ private fun ContinueRow(
 }
 
 @Composable
-private fun StatusChips(all: List<Series>, marked: Set<Long>, status: String?, onChange: (String?) -> Unit) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.space.sm)) {
-        items(STATUS_ORDER) { key ->
-            FilterChip(
-                selected = status == key,
-                onClick = { onChange(key) },
-                label = { Text("${STATUS_LABEL.getValue(key)} ${all.count { it.status == key }}") },
-            )
+private fun ContinueCard(row: Series, coverUrl: String, reachable: Boolean, onOpen: (Series) -> Unit, modifier: Modifier) {
+    val total = totalChapters(row)
+    val extra = unread(row)
+    val shape = RoundedCornerShape(Tokens.radius.xl)
+    Row(
+        modifier
+            .alpha(if (reachable) 1f else Tokens.dimmed)
+            .shadow(Tokens.cardElevation, shape, clip = false)
+            .clip(shape)
+            .background(Tokens.surfaceContainerLow)
+            .clickable { onOpen(row) }
+            .padding(Tokens.space.lg),
+        horizontalArrangement = Arrangement.spacedBy(Tokens.space.lg),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(Tokens.box.continueCoverWidth, Tokens.box.continueCoverHeight)) {
+            CoverImage(coverUrl, row.title, Modifier.fillMaxSize(), shape = RoundedCornerShape(Tokens.radius.lg), fill = true)
+            seriesFormat(row.format)?.let { OverlayBadge(it, Tokens.onSurfaceVariant, Modifier.padding(Tokens.space.xs)) }
         }
-        item {
-            FilterChip(
-                selected = status == ON_DEVICE,
-                onClick = { onChange(ON_DEVICE) },
-                label = { Text("On device ${all.count { it.id in marked }}") },
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.space.xxs)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Tokens.space.xs)) {
+                MonoLabel(
+                    when {
+                        total == null -> "Reading"
+                        extra > 0 -> "$extra new chapter${if (extra == 1) "" else "s"}"
+                        else -> "Up to date"
+                    },
+                    if (extra > 0) Tokens.secondary else Tokens.outline,
+                    Modifier.weight(1f),
+                )
+                row.updatedAt?.let { MonoLabel(relativeTime(it)) }
+            }
+            Text(
+                row.title,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = Tokens.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-        }
-        item {
-            FilterChip(selected = status == null, onClick = { onChange(null) }, label = { Text("All ${all.size}") })
+            Text(chapterOf(row.progress, total), style = MaterialTheme.typography.labelMedium.mono(), color = Tokens.onSurfaceVariant)
         }
     }
 }
 
 @Composable
+private fun chapterOf(progress: Int, total: Int?) = buildAnnotatedString {
+    append("Ch $progress")
+    if (total != null) withStyle(SpanStyle(color = Tokens.outline)) { append(" / $total") }
+}
+
+@Composable
+private fun Heading(status: String?, shown: Int, total: Int, modifier: Modifier = Modifier) {
+    val title = when (status) {
+        null -> "All series"
+        "reading" -> "Active reading"
+        ON_DEVICE -> "On this device"
+        else -> "${STATUS_LABEL.getValue(status)} series"
+    }
+    Row(modifier, verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Tokens.space.sm)) {
+        Text(title, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold), color = Tokens.onSurface)
+        // The app has no pages, so what is shown is what matched.
+        Text(
+            "Showing $shown of $shown matching · $total in the library",
+            style = MaterialTheme.typography.labelMedium.mono(),
+            color = Tokens.outline,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+    }
+}
+
+/** The rounded badge the web lays over a cover (bg-surface-container-lowest/85). */
+@Composable
+private fun OverlayBadge(text: String, color: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier, background: androidx.compose.ui.graphics.Color = Tokens.surfaceContainerLowest.copy(alpha = Tokens.overlayAlpha), bold: Boolean = true) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall.mono().let { if (bold) it.copy(fontWeight = FontWeight.Bold) else it },
+        color = color,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.background(background, RoundedCornerShape(Tokens.radius.base))
+            .padding(horizontal = Tokens.space.xsPlus, vertical = Tokens.space.xxs),
+    )
+}
+
+private class Note(val text: String, val icon: WebIcon, val tone: androidx.compose.ui.graphics.Color)
+
+// CoverCard.tsx's pipelineNote, for the signals the app reads: a real one or none.
+private fun pipelineNote(series: Series): Note? = when {
+    series.state == "needs_review" -> Note("Needs a source mapping", WebIcon.Warning, Tokens.error)
+    series.autoDownload -> Note("Auto-download active", WebIcon.Download, Tokens.secondary)
+    series.downloaded > 0 -> Note("${series.downloaded} chapters downloaded", WebIcon.Check, Tokens.outline)
+    series.sourceSite != null -> Note("Mapped to ${series.sourceSite}", WebIcon.Sync, Tokens.primary)
+    else -> null
+}
+
+/** CoverCard.tsx: the art with its badges and progress strip, then the lines under it. */
+@Composable
 private fun CoverCard(series: Series, coverUrl: String, dimmed: Boolean, onClick: () -> Unit) {
+    val total = totalChapters(series)
+    val pct = total?.let { min(100, (series.progress * 100f / it).roundToInt()) }
+    val format = seriesFormat(series.format)
+    val genre = series.genres.firstOrNull()
+    val needsReview = series.state == "needs_review"
+    val extra = unread(series)
+    val shape = RoundedCornerShape(Tokens.radius.lg)
     Column(Modifier.alpha(if (dimmed) Tokens.dimmed else 1f).clickable(onClick = onClick)) {
-        Box {
-            CoverImage(coverUrl, series.title)
-            val count = unread(series)
-            if (count > 0) {
-                Text(
-                    count.toString(),
-                    color = Tokens.onPrimaryContainer,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(Tokens.space.xs)
-                        .background(Tokens.primaryContainer, RoundedCornerShape(Tokens.radius.sm))
-                        .padding(horizontal = Tokens.space.xs),
-                )
+        Box(
+            Modifier.fillMaxWidth().clip(shape)
+                .border(Tokens.hairline, if (needsReview) Tokens.error.copy(alpha = Tokens.reviewBorderAlpha) else Tokens.coverEdge, shape),
+        ) {
+            CoverImage(coverUrl, series.title, Modifier.fillMaxWidth(), shape = shape)
+            Column(Modifier.fillMaxWidth().padding(Tokens.space.sm), verticalArrangement = Arrangement.spacedBy(Tokens.space.xs)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    when {
+                        needsReview -> OverlayBadge("Needs review", Tokens.error, background = Tokens.errorContainer.copy(alpha = Tokens.reviewAlpha))
+                        format != null -> OverlayBadge(format, Tokens.onSurfaceVariant)
+                        else -> Box(Modifier)
+                    }
+                    series.score?.let { OverlayBadge("★ ${(kotlin.math.round(it * 10) / 10)}", Tokens.tertiary) }
+                }
+                if (series.providers.isNotEmpty()) {
+                    OverlayBadge("${providers(series.providers)} sync", Tokens.primary, bold = false)
+                }
+            }
+            // 4px, flush with the image's bottom edge, as DESIGN.md's cover card has it.
+            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(Tokens.box.bar).background(Tokens.surfaceContainerLowest)) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth((pct ?: 0) / 100f).background(Tokens.secondary))
             }
         }
-        Text(series.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+        Column(
+            Modifier.padding(top = Tokens.space.smPlus, bottom = Tokens.space.sm),
+            verticalArrangement = Arrangement.spacedBy(Tokens.space.xs),
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    listOfNotNull(format, genre).joinToString(" • ").ifEmpty { " " },
+                    style = MaterialTheme.typography.bodySmall.mono(),
+                    color = Tokens.outline,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                pct?.let {
+                    Text("$it%", style = MaterialTheme.typography.bodySmall.mono(), color = if (it >= 80) Tokens.secondary else Tokens.primary)
+                }
+            }
+            Text(
+                series.title,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = Tokens.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            pipelineNote(series)?.let { note ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.space.xsPlus)) {
+                    WebGlyph(note.icon, note.tone, Tokens.icon.xs)
+                    MonoLabel(note.text, note.tone)
+                }
+            }
+            Column {
+                Box(Modifier.fillMaxWidth().height(Tokens.hairline).background(Tokens.surfaceContainerHighest.copy(alpha = Tokens.ruleAlpha)))
+                Row(
+                    Modifier.fillMaxWidth().padding(top = Tokens.space.xsPlus),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(chapterOf(series.progress, total), style = MaterialTheme.typography.bodySmall.mono(), color = Tokens.onSurface)
+                    if (extra > 0) {
+                        Text("+$extra new", style = MaterialTheme.typography.bodySmall.mono(), color = Tokens.secondary)
+                    } else if (total != null) {
+                        WebGlyph(WebIcon.Check, Tokens.secondary)
+                    }
+                }
+            }
+        }
     }
 }

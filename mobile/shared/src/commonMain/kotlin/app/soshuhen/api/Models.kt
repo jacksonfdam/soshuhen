@@ -29,6 +29,14 @@ data class Series(
     val progress: Int = 0,
     @SerialName("last_read_at") val lastReadAt: Instant? = null,
     @SerialName("updated_at") val updatedAt: Instant? = null,
+    // What the web's cover card and series header show beside the cover.
+    val format: String? = null,
+    val genres: List<String> = emptyList(),
+    val state: String? = null,
+    val score: Double? = null,
+    val providers: List<String> = emptyList(),
+    @SerialName("auto_download") val autoDownload: Boolean = false,
+    @SerialName("source_site") val sourceSite: String? = null,
 )
 
 @Serializable
@@ -41,9 +49,34 @@ data class SeriesChapter(
 )
 
 @Serializable
+data class Credit(val role: String, val name: String)
+
+/** The provider metadata the web's series header and progress card read. */
+@Serializable
+data class SeriesMetadata(
+    @SerialName("native_title") val nativeTitle: String? = null,
+    @SerialName("publication_status") val publicationStatus: String? = null,
+    @SerialName("start_year") val startYear: Int? = null,
+    @SerialName("end_year") val endYear: Int? = null,
+    val country: String? = null,
+    val demographic: String? = null,
+    val publisher: String? = null,
+    val credits: List<Credit> = emptyList(),
+    @SerialName("volumes_total") val volumesTotal: Int? = null,
+    @SerialName("volumes_read") val volumesRead: Int? = null,
+    @SerialName("reread_count") val rereadCount: Int? = null,
+    // Dates as the provider wrote them: a day, not an instant.
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("completed_at") val completedAt: String? = null,
+    @SerialName("list_updated_at") val listUpdatedAt: Instant? = null,
+)
+
+@Serializable
 data class SeriesDetail(
     val series: Series,
     val chapters: List<SeriesChapter>,
+    val metadata: SeriesMetadata = SeriesMetadata(),
+    @SerialName("reading_minutes_per_chapter") val readingMinutesPerChapter: Int? = null,
 )
 
 @Serializable

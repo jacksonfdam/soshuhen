@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import app.soshuhen.api.Resume
 import app.soshuhen.api.Series
 import app.soshuhen.api.SeriesDetail
+import app.soshuhen.api.SeriesMetadata
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.SoshuhenJson
 import app.soshuhen.core.DeviceChapter
@@ -40,6 +41,9 @@ data class DetailUi(
     val marked: Boolean,
     val deviceChapters: Int,
     val readOnDevice: Int,
+    // Read straight through from the server for the header and progress card.
+    val metadata: SeriesMetadata = SeriesMetadata(),
+    val minutesPerChapter: Int? = null,
 )
 
 /** What the server said, before the device's own state is laid over it. */
@@ -86,6 +90,7 @@ class SeriesDetailViewModel(
             series, chapterRows(remote.detail, ids), next,
             remote.resume?.takeIf { it.chapterId == next?.id }?.page,
             marked, onDevice.size, onDevice.count { floor(it.number) <= series.progress },
+            remote.detail.metadata, remote.detail.readingMinutesPerChapter,
         )
     }
 
