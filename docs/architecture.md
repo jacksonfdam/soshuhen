@@ -50,6 +50,25 @@ The reader has one slot of its own per site, in `api`'s process. A download batc
 every chapter in it, and a reader queueing behind that would wait minutes for a page; a site sees
 at most `per_source_concurrency + 1`.
 
+## Endpoints the Android client uses
+
+The Android client reads on the home network and offline, and talks to nothing but this server.
+Four routes exist for it (design: `docs/superpowers/specs/2026-10-20-android-client-design.md`):
+
+- `GET /api/identity` names the app and a stable `instance_id`. `/api/health` answers `ok` like any
+  service, so a LAN scan matches on `app`, and the id is how the client finds the same server again
+  after DHCP moves it.
+- `GET /api/chapters/{id}/archive` serves a chapter's whole CBZ, with `Range` and an `ETag`, so a
+  copy cut off by weak Wi-Fi resumes and a rebuilt archive is copied again.
+- `GET /api/series/{id}/cover` serves the cover from `reader-cache/covers/`, fetched from the list
+  provider once, so nothing on the phone reaches the internet. A failed fetch stores nothing and the
+  next request tries again.
+- `PUT /api/reader/series/{id}/position` and `POST /api/reader/chapters/{id}/complete` accept an
+  optional `read_at`. Reading done offline is replayed later, and without it a morning's position
+  would overwrite an evening's and a week of reading would be dated by one replay. A position with
+  `read_at` applies only if it is newer than the stored one; the time is clamped to the server's
+  `now()` so a fast phone clock cannot win every replay. Requests without it behave as before.
+
 ## Module boundaries
 
 ```

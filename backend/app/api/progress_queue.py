@@ -1,6 +1,7 @@
 """Queueing a progress write, shared by the progress button and the reader."""
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,12 +73,23 @@ async def progress_bounds(session: AsyncSession, series_id: int) -> Bounds:
 
 
 async def queue_progress_write(
-    session: AsyncSession, series_id: int, chapter: int, *, source: ProgressSource
+    session: AsyncSession,
+    series_id: int,
+    chapter: int,
+    *,
+    source: ProgressSource,
+    read_at: datetime | None = None,
 ) -> None:
+    payload: dict[str, object] = {"series_id": series_id, "chapter": chapter, "source": str(source)}
+    if read_at is not None:
+        # When the chapter was really read, for a client replaying offline
+        # reading. Without it the event would be dated by the replay.
+        payload["read_at"] = read_at.isoformat()
+    stamp = payload.get("read_at")
     queued = await repo.enqueue(
         session,
         JobType.PROGRESS_WRITE,
-        {"series_id": series_id, "chapter": chapter, "source": str(source)},
+        payload,
         priority=0,
         series_id=series_id,
         dedupe_key=f"progress_write:{series_id}",
@@ -95,8 +107,17 @@ async def queue_progress_write(
             text(
                 """
                 update job
-                   set payload = jsonb_set(payload, '{chapter}',
-                                           to_jsonb(cast(:chapter as integer)))
+                   -- The time moves with the chapter it belongs to, or an
+                   -- offline chapter 5 would be dated by when 4 was read.
+                   set payload = case
+                         when cast(:read_at as text) is null
+                         then jsonb_set(payload, '{chapter}',
+                                        to_jsonb(cast(:chapter as integer))) - 'read_at'
+                         else jsonb_set(
+                                jsonb_set(payload, '{chapter}',
+                                          to_jsonb(cast(:chapter as integer))),
+                                '{read_at}', to_jsonb(cast(:read_at as text)))
+                       end
                  where type = :type and series_id = :series_id
                    and state in ('pending', 'leased')
                    and (payload->>'chapter')::int < cast(:chapter as integer)
@@ -106,5 +127,6 @@ async def queue_progress_write(
                 "type": str(JobType.PROGRESS_WRITE),
                 "series_id": series_id,
                 "chapter": chapter,
+                "read_at": stamp,
             },
         )

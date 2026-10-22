@@ -167,6 +167,33 @@ jobs:
         # Runs tsc first, so this type-checks as well as bundles.
         run: npm run build
 
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # ubuntu-latest ships the Android SDK with its licences accepted, and AGP
+      # downloads the missing platform itself. setup-android@v3 died asking
+      # sdkmanager for the long-removed "tools" package.
+      - name: Point Gradle at the runner's SDK
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Test and build
+        # The jvm target exists so the shared code's tests run here without an
+        # emulator. Nothing is signed or uploaded: the app is built and
+        # installed on the user's own machine.
+        run: ./gradlew :shared:jvmTest :androidApp:assembleDebug
+
   attribution:
     # The commit-msg hook only runs for a clone that enabled it, and it never
     # sees a pull request description at all. Twelve descriptions carried tool

@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,8 @@ from app.api.list_raw import display_fields, metadata_of
 from app.api.progress_queue import progress_bounds, queue_progress_write
 from app.api.reading_frequency import reading_frequency
 from app.api.reading_recency import LAST_READ_AT
+from app.api.routes_reader import MEDIA_TYPES
+from app.config import get_settings
 from app.enums import JobType, ListStatus, ProgressSource, Provider
 from app.handlers.batching import queue_batches
 from app.handlers.match_search import series_kind
@@ -22,6 +24,7 @@ from app.handlers.media_enrich import is_stale
 from app.handlers.progress_write import forward_only
 from app.providers import get_source
 from app.queue import repo
+from app.reader import covers
 from app.series_removal import remove_series
 from app.sources import kind_of, source_for_url
 
@@ -390,6 +393,38 @@ async def _set_review_ignored(
         raise HTTPException(status_code=404, detail="series not found")
     await session.commit()
     return {"ok": True, "ignored": ignored}
+
+
+@router.get("/{series_id}/cover")
+async def cover(series_id: int, request: Request, session: Session) -> Response:
+    url = (
+        await session.execute(
+            text("select meta->>'cover_url' from series where id = :id"), {"id": series_id}
+        )
+    ).scalar_one_or_none()
+    # Released before the CDN is asked: its timeout is fifteen seconds, and a
+    # first library load asks for every cover at once.
+    await session.close()
+    if not url:
+        raise HTTPException(status_code=404, detail="no cover for this series")
+    root = get_settings().reader_cache_path / "covers"
+    path = covers.cached(root, url)
+    if path is None:
+        data = await covers.fetch(url, transport=covers.TRANSPORT)
+        if data is None:
+            # Nothing is stored, so the next request tries the CDN again.
+            raise HTTPException(status_code=404, detail="the cover could not be fetched")
+        path = covers.store(root, url, data)
+    etag = f'"{covers.key(url)}"'
+    headers = {"ETag": etag, "Cache-Control": "public, max-age=86400"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    extension = path.suffix.lstrip(".")
+    return Response(
+        content=path.read_bytes(),
+        media_type=MEDIA_TYPES.get(extension, "application/octet-stream"),
+        headers=headers,
+    )
 
 
 @router.get("/{series_id}")

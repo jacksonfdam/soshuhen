@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import reader_service as service
@@ -62,6 +62,13 @@ def _chapter_ref(row: service.ChapterRow) -> dict[str, Any]:
 class PositionIn(BaseModel):
     chapter_id: int
     page: int = Field(ge=0)
+    # Sent by a client replaying reading done offline; the web reader sends none.
+    read_at: AwareDatetime | None = None
+
+
+class CompleteIn(BaseModel):
+    # When the chapter was finished, from a client replaying offline reading.
+    read_at: AwareDatetime | None = None
 
 
 class PrefsIn(BaseModel):
@@ -106,9 +113,11 @@ async def page(chapter_id: int, index: int, session: Session) -> Response:
 @router.put("/series/{series_id}/position")
 async def save_position(series_id: int, body: PositionIn, session: Session) -> dict[str, bool]:
     with service_errors():
-        await service.save_position(session, series_id, body.chapter_id, body.page)
+        applied = await service.save_position(
+            session, series_id, body.chapter_id, body.page, body.read_at
+        )
     await session.commit()
-    return {"ok": True}
+    return {"ok": True, "applied": applied}
 
 
 @router.get("/series/{series_id}/prefs")
@@ -139,7 +148,9 @@ async def resume(series_id: int, session: Session) -> dict[str, int]:
 
 
 @router.post("/chapters/{chapter_id}/complete")
-async def complete(chapter_id: int, session: Session) -> dict[str, bool]:
+async def complete(
+    chapter_id: int, session: Session, body: CompleteIn | None = None
+) -> dict[str, bool]:
     """Finishing a chapter here says the same thing finishing it in Komga does.
 
     A refusal is not an error. Rereading an old chapter, or reading a series on
@@ -160,7 +171,13 @@ async def complete(chapter_id: int, session: Session) -> dict[str, bool]:
         and forward_only(bounds.current, chapter) is not None
     )
     if progress_queued:
-        await queue_progress_write(session, row.series_id, chapter, source=ProgressSource.READER)
+        await queue_progress_write(
+            session,
+            row.series_id,
+            chapter,
+            source=ProgressSource.READER,
+            read_at=body.read_at if body else None,
+        )
 
     komga_queued = False
     if row.komga_book_id is not None:

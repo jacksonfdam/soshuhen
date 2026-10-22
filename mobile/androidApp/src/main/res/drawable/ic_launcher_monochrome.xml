@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon layer: the launcher tints it, so only its alpha counts. The
+     arrow is cut out of the bottom panel instead of drawn on it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M27,24h28.7a3,3 0 0,1 3,3v22.4a3,3 0 0,1 -3,3h-28.7a3,3 0 0,1 -3,-3v-22.4a3,3 0 0,1 3,-3z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M64.9,24h16.1a3,3 0 0,1 3,3v22.4a3,3 0 0,1 -3,3h-16.1a3,3 0 0,1 -3,-3v-22.4a3,3 0 0,1 3,-3z" />
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M27,55.6h54a3,3 0 0,1 3,3v22.4a3,3 0 0,1 -3,3h-54a3,3 0 0,1 -3,-3v-22.4a3,3 0 0,1 3,-3z M51.6,59h4.8v8.5h5.6l-8,9l-8,-9h5.6z" />
+</vector>
