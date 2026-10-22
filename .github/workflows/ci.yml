@@ -180,7 +180,11 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - uses: android-actions/setup-android@v3
+      # ubuntu-latest ships the Android SDK with its licences accepted, and AGP
+      # downloads the missing platform itself. setup-android@v3 died asking
+      # sdkmanager for the long-removed "tools" package.
+      - name: Point Gradle at the runner's SDK
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - uses: gradle/actions/setup-gradle@v4
 
