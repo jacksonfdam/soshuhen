@@ -16,6 +16,7 @@ import app.soshuhen.core.FolderUnavailable
 import app.soshuhen.core.LocalStore
 import app.soshuhen.core.NOT_DOWNLOADED
 import app.soshuhen.core.NOT_ON_DEVICE
+import app.soshuhen.core.NoRoomForPages
 import app.soshuhen.core.Outbox
 import app.soshuhen.core.PageExtractor
 import app.soshuhen.core.chapterRows
@@ -55,6 +56,7 @@ sealed interface ReaderState {
 
 const val FILE_MISSING = "This chapter's file is missing from the folder. It will be copied again at home."
 const val FILE_UNREADABLE = "This chapter's file could not be read. It will be copied again at home."
+const val NO_ROOM = "Not enough space to open this chapter. Free some space and try again."
 
 // Duplicated from the series screen on purpose: feature packages do not import
 // from each other.
@@ -240,10 +242,12 @@ class ReaderViewModel(
             throw e
         } catch (e: FolderUnavailable) {
             throw e
+        } catch (_: NoRoomForPages) {
+            DeviceOpen.Lost(NO_ROOM)
         } catch (_: Exception) {
-            // A cut-off or corrupt archive: the copy is what is broken, and
-            // the next import replaces it once the index no longer holds it.
-            forget(chapter, FILE_UNREADABLE)
+            // A cut-off or corrupt archive: the copy is what is broken.
+            keep { local.markUnreadable(chapter.chapterId) }
+            DeviceOpen.Lost(FILE_UNREADABLE)
         }
     }
 

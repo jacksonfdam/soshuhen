@@ -39,6 +39,9 @@ data class DeviceChapter(
 
 private const val SERIES_KEY = "series"
 private const val INSTANCE_KEY = "instance"
+
+// Unquoted, so never equal to an ETag a server sends.
+private const val UNREADABLE_ETAG = "unreadable"
 private fun detailKey(id: Long) = "series/$id"
 private fun prefsKey(id: Long) = "prefs/$id"
 private fun resumeKey(id: Long) = "resume/$id"
@@ -143,6 +146,14 @@ open class LocalStore(
     )
 
     suspend fun forgetChapter(chapterId: Long) = db.deviceChapters().delete(chapterId)
+
+    /**
+     * A copy the reader could not open stays indexed, but as matching no ETag
+     * the server sends: the next import then copies the chapter over the app's
+     * own file. Forgotten instead, the file would be one the app no longer
+     * knows, which it never writes over, and the chapter would never come back.
+     */
+    suspend fun markUnreadable(chapterId: Long) = db.deviceChapters().setEtag(chapterId, UNREADABLE_ETAG)
 
     fun problem(): Flow<String?> = db.problems().message()
 

@@ -101,4 +101,15 @@ class ZipPagesTest {
         val again = pages.extract(7, "\"new\":52", source(zip("001.jpg" to "rebuilt")))
         assertEquals(listOf("rebuilt"), again.map { FileSystem.SYSTEM.read(it) { readUtf8() } })
     }
+
+    @Test fun aFullCacheIsToldApartFromABrokenArchive() = runTest {
+        val full = object : okio.ForwardingFileSystem(FileSystem.SYSTEM) {
+            override fun sink(file: Path, mustCreate: Boolean): okio.Sink =
+                throw java.io.IOException("No space left on device")
+        }
+        assertFailsWith<app.soshuhen.core.NoRoomForPages> { ZipPages(cache, full).extract(7, "v1", source(sample)) }
+        val broken = sample.copyOfRange(0, sample.size / 2)
+        val failure = runCatching { ZipPages(cache).extract(8, "v1", source(broken)) }.exceptionOrNull()
+        assertTrue(failure !is app.soshuhen.core.NoRoomForPages)
+    }
 }

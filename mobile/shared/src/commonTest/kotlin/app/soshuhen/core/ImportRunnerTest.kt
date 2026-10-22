@@ -525,4 +525,18 @@ class ImportRunnerTest {
         runner().run()
         assertContentEquals("PK something else".encodeToByteArray(), folder.files[file("renamed", 1.0)])
     }
+
+    @Test fun aChapterTheReaderCouldNotReadIsCopiedAgain() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0))
+        serve(10)
+        store.mark(1, "one")
+        runner().run()
+        // Damaged on the card after it was copied; the reader found it unreadable.
+        folder.files[file("one", 1.0)] = "BAD damaged".encodeToByteArray()
+        store.markUnreadable(10)
+        val report = runner().run()
+        assertEquals(mapOf(1L to listOf(1.0)), report.imported)
+        assertContentEquals(archives.getValue(10).first, folder.files[file("one", 1.0)])
+        assertEquals("\"e10\"", indexed(10)!!.etag)
+    }
 }

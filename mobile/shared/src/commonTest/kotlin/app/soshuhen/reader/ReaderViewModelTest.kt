@@ -412,7 +412,7 @@ class ReaderViewModelTest {
         assertTrue(folder.opened.all { it.closed })
     }
 
-    @Test fun anUnreadableArchiveIsUnavailableAndForgotten() = runTest(dispatcher) {
+    @Test fun anUnreadableArchiveIsUnavailableAndLeftForTheNextCopy() = runTest(dispatcher) {
         store.saveDetail(1, Fixtures.DETAIL)
         onDevice(11, 1.0)
         extractFails = okio.IOException("invalid zip")
@@ -422,8 +422,24 @@ class ReaderViewModelTest {
             "This chapter's file could not be read. It will be copied again at home.",
             assertIs<ReaderState.Unavailable>(vm.state.value).message,
         )
-        assertNull(store.deviceChapter(11))
+        // Still indexed, so the import replaces the app's own file rather than
+        // finding a file it does not know and leaving it alone.
+        val row = store.deviceChapter(11)
+        assertTrue(row != null && row.etag != "\"e\"")
         assertTrue(folder.opened.all { it.closed })
+    }
+
+    @Test fun aFullCacheKeepsAnIntactChapter() = runTest(dispatcher) {
+        store.saveDetail(1, Fixtures.DETAIL)
+        onDevice(11, 1.0)
+        extractFails = app.soshuhen.core.NoRoomForPages(okio.IOException("No space left on device"))
+        val vm = reader(11)
+        advanceUntilIdle()
+        assertEquals(
+            "Not enough space to open this chapter. Free some space and try again.",
+            assertIs<ReaderState.Unavailable>(vm.state.value).message,
+        )
+        assertEquals("\"e\"", store.deviceChapter(11)?.etag)
     }
 
     @Test fun aFailedOutboxWriteLosesThatEventOnly() = runTest(dispatcher) {

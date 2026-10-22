@@ -37,6 +37,9 @@ interface DeviceChapterDao {
     @Query("SELECT chapter_id FROM device_chapter")
     fun ids(): Flow<List<Long>>
 
+    @Query("UPDATE device_chapter SET etag = :etag WHERE chapter_id = :chapterId")
+    suspend fun setEtag(chapterId: Long, etag: String)
+
     @Query("DELETE FROM device_chapter")
     suspend fun clear()
 }

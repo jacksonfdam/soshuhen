@@ -1,6 +1,7 @@
 package app.soshuhen.reader
 
 import app.soshuhen.core.ArchiveCheck
+import app.soshuhen.core.NoRoomForPages
 import app.soshuhen.core.PageExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -39,9 +40,9 @@ class ZipPages(
             if (!current) {
                 fileSystem.deleteRecursively(dir)
                 write(dir, source)
-                fileSystem.write(from) { writeUtf8(version) }
+                cache { fileSystem.write(from) { writeUtf8(version) } }
             }
-            mark(dir)
+            cache { mark(dir) }
             prune(keep = dir)
             pagesIn(dir)
         }
@@ -67,7 +68,7 @@ class ZipPages(
     }
 
     private fun write(dir: Path, source: Source) {
-        fileSystem.createDirectories(dir)
+        cache { fileSystem.createDirectories(dir) }
         // The zip is streamed once in archive order, but the server numbers pages
         // in natural order, which is only known after the last entry.
         val written = mutableListOf<Pair<String, Path>>()
@@ -76,7 +77,17 @@ class ZipPages(
                 val entry = zip.nextEntry ?: break
                 if (!isPage(entry.name)) continue
                 val temp = dir / "part-${written.size}"
-                fileSystem.sink(temp).buffer().use { out -> out.writeAll(zip.source()) }
+                cache { fileSystem.sink(temp).buffer() }.use { out ->
+                    // Read and write apart, so a failing read blames the
+                    // archive and a failing write blames the cache.
+                    val chunk = ByteArray(DRAIN_BUFFER)
+                    while (true) {
+                        val n = zip.read(chunk)
+                        if (n == -1) break
+                        cache { out.write(chunk, 0, n) }
+                    }
+                    cache { out.flush() }
+                }
                 written += entry.name to temp
             }
         }
@@ -84,8 +95,16 @@ class ZipPages(
         val byName = written.toMap()
         order.forEachIndexed { index, name ->
             val extension = name.substringAfterLast('.').lowercase()
-            fileSystem.atomicMove(byName.getValue(name), dir / "$index.$extension")
+            cache { fileSystem.atomicMove(byName.getValue(name), dir / "$index.$extension") }
         }
+    }
+
+    // The app's cache failing to take the pages, which is no fault of the
+    // chapter's file: the reader keeps the chapter and says why it will not open.
+    private inline fun <T> cache(block: () -> T): T = try {
+        block()
+    } catch (e: java.io.IOException) {
+        throw NoRoomForPages(e)
     }
 
     private fun mark(dir: Path) {

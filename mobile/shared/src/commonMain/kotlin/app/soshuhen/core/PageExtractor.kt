@@ -14,3 +14,6 @@ fun interface PageExtractor {
      */
     suspend fun extract(chapterId: Long, version: String, source: Source): List<Path>
 }
+
+/** The app's cache could not take a chapter's pages; the chapter's own file is fine. */
+class NoRoomForPages(cause: Throwable? = null) : Exception(cause)
