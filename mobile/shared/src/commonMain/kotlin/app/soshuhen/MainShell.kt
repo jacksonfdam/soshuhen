@@ -30,6 +30,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import app.soshuhen.core.AppGraph
+import app.soshuhen.core.Platform
 import app.soshuhen.detail.SeriesDetailScreen
 import app.soshuhen.detail.SeriesDetailViewModel
 import app.soshuhen.library.LibraryScreen
@@ -65,6 +66,7 @@ private const val SAVED_PLACE = -1
 @Composable
 fun MainShell(
     graph: AppGraph,
+    platform: Platform,
     appVersion: String,
     importNow: () -> Unit,
     // A series asked for from outside the app, by tapping its notification.
@@ -84,7 +86,7 @@ fun MainShell(
     }
     NavHost(root, startDestination = ShellRoute) {
         composable<ShellRoute> {
-            Shell(graph, appVersion, importNow, opening, { opening = it }) { seriesId, chapterId, page, title ->
+            Shell(graph, platform, appVersion, importNow, opening, { opening = it }) { seriesId, chapterId, page, title ->
                 root.navigate(ReaderRoute(seriesId, chapterId, page ?: SAVED_PLACE, title))
             }
         }
@@ -112,6 +114,7 @@ fun MainShell(
 @Composable
 private fun Shell(
     graph: AppGraph,
+    platform: Platform,
     appVersion: String,
     importNow: () -> Unit,
     opening: Long?,
@@ -170,7 +173,7 @@ private fun Shell(
                 )
             }
             composable<SettingsRoute> {
-                SettingsScreen(viewModel { SettingsViewModel(graph.session.api, graph.store) }, appVersion)
+                SettingsScreen(viewModel { SettingsViewModel(graph.session.api, graph.store, platform) }, appVersion)
             }
         }
     }

@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.soshuhen.core.AppGraph
+import app.soshuhen.core.Platform
 import kotlinx.coroutines.flow.StateFlow
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
@@ -22,11 +23,14 @@ import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.Options
 import app.soshuhen.onboarding.OnboardingScreen
 import app.soshuhen.onboarding.OnboardingViewModel
+import app.soshuhen.onboarding.SetupScreen
+import app.soshuhen.onboarding.SetupViewModel
 import app.soshuhen.ui.theme.SoshuhenTheme
 
 @Composable
 fun App(
     graph: AppGraph,
+    platform: Platform,
     appVersion: String,
     importNow: () -> Unit,
     requestedSeries: StateFlow<Long?>,
@@ -62,7 +66,16 @@ fun App(
                         OnboardingScreen(model)
                     }
                     else -> {
-                        MainShell(graph, appVersion, importNow, requestedSeries, onRequestHandled)
+                        val setup = viewModel { SetupViewModel(graph.store, platform, graph.folder) }
+                        val ready by setup.ready.collectAsState()
+                        val step by setup.step.collectAsState()
+                        when {
+                            !ready -> Unit
+                            // The shell does not open without a folder: every screen
+                            // after this one assumes there is somewhere to copy to.
+                            step != null -> SetupScreen(setup)
+                            else -> MainShell(graph, platform, appVersion, importNow, requestedSeries, onRequestHandled)
+                        }
                     }
                 }
             }

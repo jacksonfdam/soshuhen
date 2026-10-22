@@ -1,8 +1,8 @@
 # Soshuhen for Android
 
 A reader for the library a Soshuhen server already holds. It finds the server on
-the home network, shows the library the way the web interface does, and (next)
-copies the series you mark to the device so they can be read offline. It never
+the home network, shows the library the way the web interface does, and copies
+the series you mark to a folder on the device so they can be read offline. It never
 fetches anything from a source site: downloading stays the server's job.
 
 Design: `docs/superpowers/specs/2026-10-20-android-client-design.md`.
@@ -36,5 +36,32 @@ The default JDK on a machine may be newer than 21; Gradle and AGP are run on 21.
 
 Keep one keystore for every build you install. Android refuses to install an
 update signed with a different key, and uninstalling to get past that loses the
-app's database and any progress not yet sent to the server. Release signing is
-set up with the offline work; until then the debug signature is used.
+app's database and any progress not yet sent to the server. **The keystore must
+never change, and must never be lost: back it up somewhere other than this
+machine.**
+
+Create it once, in `mobile/`:
+
+```bash
+keytool -genkeypair -v -keystore soshuhen.keystore -alias soshuhen -keyalg RSA -keysize 4096 -validity 36500
+```
+
+Then write `mobile/keystore.properties` next to it:
+
+```properties
+storeFile=soshuhen.keystore
+storePassword=<the store password you chose>
+keyAlias=soshuhen
+keyPassword=<the key password you chose>
+```
+
+Both files are gitignored. `storeFile` is relative to `mobile/`. With them in
+place:
+
+```bash
+./gradlew :androidApp:installRelease
+```
+
+Without `keystore.properties` a release build is signed with the debug key, so
+it still builds on a fresh clone and in CI; such an APK cannot later be updated
+by one signed with your own key. Release builds are not minified.

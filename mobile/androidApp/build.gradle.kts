@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     // AGP 9 compiles Kotlin itself; no Kotlin Android plugin is applied.
     alias(libs.plugins.android.application)
@@ -14,6 +16,33 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
+    }
+
+    // The key is the app's identity: Android refuses an update signed with
+    // another one, and uninstalling to get past that loses unsent progress.
+    // Without keystore.properties a release is signed with the debug key, so
+    // the build still works on a fresh clone and in CI.
+    val keystore = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { file ->
+        Properties().apply { file.inputStream().use(::load) }
+    }
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = rootProject.file(keystore.getProperty("storeFile"))
+                storePassword = keystore.getProperty("storePassword")
+                keyAlias = keystore.getProperty("keyAlias")
+                keyPassword = keystore.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Off until shrinking has been tried against kotlinx.serialization,
+            // Room and Ktor; a stripped class fails only at runtime.
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+        }
     }
 
     buildFeatures {

@@ -43,6 +43,8 @@ class SoshuhenApplication : Application(), ImportEnvironment {
         )
     }
 
+    val platform: AndroidPlatform by lazy { AndroidPlatform(this) }
+
     override val notifier: Notifier by lazy { Notifier(this, R.drawable.ic_notification) }
 
     override fun onCreate() {

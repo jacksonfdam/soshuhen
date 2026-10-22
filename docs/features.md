@@ -341,5 +341,33 @@ home network, and never to a source site or a list provider: covers come from th
 - **A series.** How far you have read, how many chapters the server holds, and every chapter with
   read or unread and whether it is downloaded. On a tablet the series opens beside the grid.
 
-Reading, and copying the series you choose to the device so they can be read offline, come next.
+- **Setting up the phone.** After the server, the app asks where chapters should be kept and opens
+  the system folder picker; the library does not open until a folder is picked. It then asks once
+  whether it may tell you about new chapters, and once whether it may run in the background without
+  battery limits (Samsung and others put apps you have not opened lately to sleep, and a sleeping
+  app copies nothing). "Not now" and "Skip" are not asked again; both stay in Settings.
+- **Keeping a series on the device.** Turn on **Keep on this device** on a series and the app copies
+  every chapter the server has downloaded into `<your folder>/Soshuhen/<series>/`, as the same CBZ
+  files the server holds, readable by any comic app. It copies about once an hour while the phone is
+  on your home Wi-Fi, and right away when you pull to refresh. A long copy shows its progress in a
+  notification; when it is done, one notification says which series got new chapters, and the
+  **Updates** tab lists them.
+- **Reading.** The reader has the web's four modes (paged left to right or right to left, vertical
+  strip, and double page on a wide screen) and its settings, and reads from the device when the
+  chapter is there and from the server otherwise. The volume buttons turn pages; that and inverting
+  them are switches in Settings.
+- **Offline.** Away from home the library shows what it last saw, covers included, with "Offline.
+  Showing the last sync." Every chapter on the device opens as usual.
+- **Progress goes home.** Chapters you finish, and where you stopped, are kept on the phone and sent
+  to the server the next time it is reachable, so your lists move forward as if you had read at
+  home. Re-reading an earlier chapter never moves a list backwards.
+- **Settings.** The server, the folder with **Change folder** (chapters already copied stay where
+  they are; new ones go to the new folder), whether background copies are unrestricted with a way
+  to the battery settings, and the volume buttons.
+
+Nothing is ever deleted unless you ask. Turning **Keep on this device** off asks whether to keep the
+files or delete them, and keeps them unless you choose **Delete**; **Delete read chapters** and a
+chapter's own **Delete** remove only what they say. The app never prunes the folder, never removes a
+file it did not copy, and never touches the server's library.
+
 Building and installing: `mobile/README.md`.

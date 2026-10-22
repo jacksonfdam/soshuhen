@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import app.soshuhen.server.SavedServer
 import app.soshuhen.server.ServerAddress
 import kotlinx.coroutines.flow.Flow
@@ -58,6 +59,12 @@ class DataStoreServerStore(context: Context) : ServerStore {
         store.edit { it[VOLUME_INVERT] = on }
     }
 
+    override val setupOffered: Flow<Set<String>> = store.data.map { it[SETUP_OFFERED] ?: emptySet() }
+
+    override suspend fun markSetupOffered(step: String) {
+        store.edit { it[SETUP_OFFERED] = (it[SETUP_OFFERED] ?: emptySet()) + step }
+    }
+
     private companion object {
         val SCHEME = stringPreferencesKey("server_scheme")
         val HOST = stringPreferencesKey("server_host")
@@ -66,6 +73,10 @@ class DataStoreServerStore(context: Context) : ServerStore {
         val INSTANCE_ID = stringPreferencesKey("instance_id")
         val VOLUME_KEYS = booleanPreferencesKey("volume_keys")
         val VOLUME_INVERT = booleanPreferencesKey("volume_invert")
-        val DEVICE: Set<Preferences.Key<*>> = setOf(FOLDER, VOLUME_KEYS, VOLUME_INVERT)
+        val SETUP_OFFERED = stringSetPreferencesKey("setup_offered")
+
+        // Permissions and battery settings are the phone's too: a new server
+        // does not make "Not now" worth asking again.
+        val DEVICE: Set<Preferences.Key<*>> = setOf(FOLDER, VOLUME_KEYS, VOLUME_INVERT, SETUP_OFFERED)
     }
 }

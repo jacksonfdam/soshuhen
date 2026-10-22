@@ -2,6 +2,7 @@ package app.soshuhen.settings
 
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.soshuhenHttpClient
+import app.soshuhen.core.FakePlatform
 import app.soshuhen.core.FakeServerStore
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockEngineConfig
@@ -41,7 +42,7 @@ class SettingsViewModelTest {
 
     @Test fun theCardFollowsTheServerToItsNewAddress() = runTest(dispatcher) {
         val api = MutableStateFlow<SoshuhenApi?>(api("http://10.0.0.20:8080"))
-        val vm = SettingsViewModel(api, FakeServerStore())
+        val vm = SettingsViewModel(api, FakeServerStore(), FakePlatform())
         advanceUntilIdle()
         api.value = api("http://10.0.0.31:8080")
         advanceUntilIdle()
@@ -50,7 +51,7 @@ class SettingsViewModelTest {
 
     @Test fun volumeKeysTurnPagesUntilSwitchedOff() = runTest(dispatcher) {
         val store = FakeServerStore()
-        val vm = SettingsViewModel(MutableStateFlow(null), store)
+        val vm = SettingsViewModel(MutableStateFlow(null), store, FakePlatform())
         advanceUntilIdle()
         assertEquals(true, vm.volumeKeys.value)
         assertEquals(false, vm.volumeInvert.value)
@@ -61,5 +62,34 @@ class SettingsViewModelTest {
         assertEquals(true, store.volumeInvert.value)
         assertEquals(false, vm.volumeKeys.value)
         assertEquals(true, vm.volumeInvert.value)
+    }
+
+    @Test fun changeFolderSavesThePickedOneAndBackingOutKeepsTheOld() = runTest(dispatcher) {
+        val store = FakeServerStore()
+        store.saveFolder("content://com.android.externalstorage.documents/tree/primary%3ADocuments%2FManga")
+        val platform = FakePlatform(picked = null)
+        val vm = SettingsViewModel(MutableStateFlow(null), store, platform)
+        advanceUntilIdle()
+        assertEquals("Documents/Manga", vm.folder.value)
+        vm.changeFolder()
+        advanceUntilIdle()
+        assertEquals("Documents/Manga", vm.folder.value)
+        platform.picked = "content://com.android.externalstorage.documents/tree/1A2B-3C4D%3AComics"
+        vm.changeFolder()
+        advanceUntilIdle()
+        assertEquals("content://com.android.externalstorage.documents/tree/1A2B-3C4D%3AComics", store.folder.value)
+        assertEquals("1A2B-3C4D: Comics", vm.folder.value)
+    }
+
+    @Test fun batteryStatusIsReadAgainWhenAsked() = runTest(dispatcher) {
+        val platform = FakePlatform(unrestricted = false)
+        val vm = SettingsViewModel(MutableStateFlow(null), FakeServerStore(), platform)
+        advanceUntilIdle()
+        assertEquals(false, vm.batteryUnrestricted.value)
+        vm.openBatterySettings()
+        platform.unrestricted = true
+        vm.refreshBattery()
+        assertEquals(1, platform.batterySettingsOpened)
+        assertEquals(true, vm.batteryUnrestricted.value)
     }
 }

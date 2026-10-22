@@ -1,17 +1,12 @@
 package app.soshuhen
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import app.soshuhen.core.EXTRA_SERIES_ID
 import app.soshuhen.core.ImportScheduler
@@ -24,9 +19,6 @@ class MainActivity : ComponentActivity() {
     // which may be after onboarding.
     private val requestedSeries = MutableStateFlow<Long?>(null)
 
-    private val askForNotifications =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         // Before super.onCreate: the splash theme has to be swapped for the
         // app's before the first frame, or Android 10 and 11 flash it.
@@ -36,16 +28,14 @@ class MainActivity : ComponentActivity() {
         // Not on a recreation: the intent still holds the extra after a rotation,
         // and opening the series again would undo wherever the user had gone.
         if (savedInstanceState == null) readSeries(intent)
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            askForNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
+        val app = application as SoshuhenApplication
+        app.platform.attach(this)
         ImportScheduler.runNow(this)
-        val graph = (application as SoshuhenApplication).graph
+        val graph = app.graph
         setContent {
             App(
                 graph,
+                app.platform,
                 BuildConfig.VERSION_NAME,
                 importNow = { ImportScheduler.runNow(this) },
                 requestedSeries = requestedSeries,

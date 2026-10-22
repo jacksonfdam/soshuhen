@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -15,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.soshuhen.ui.theme.Tokens
 
@@ -23,8 +26,15 @@ fun SettingsScreen(model: SettingsViewModel, appVersion: String) {
     val server by model.server.collectAsStateWithLifecycle()
     val volumeKeys by model.volumeKeys.collectAsStateWithLifecycle()
     val volumeInvert by model.volumeInvert.collectAsStateWithLifecycle()
+    val folder by model.folder.collectAsStateWithLifecycle()
+    val unrestricted by model.batteryUnrestricted.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(model) {
+        model.refreshBattery()
+        onPauseOrDispose { }
+    }
     Column(
-        Modifier.padding(Tokens.space.xl).widthIn(max = Tokens.contentMaxWidth),
+        // Scrolls: with the device card a short phone in landscape no longer fits it all.
+        Modifier.verticalScroll(rememberScrollState()).padding(Tokens.space.xl).widthIn(max = Tokens.contentMaxWidth),
         verticalArrangement = Arrangement.spacedBy(Tokens.space.lg),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
@@ -39,6 +49,24 @@ fun SettingsScreen(model: SettingsViewModel, appVersion: String) {
                         color = Tokens.onSurfaceVariant,
                     )
                 }
+            }
+        }
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(Tokens.space.lg), verticalArrangement = Arrangement.spacedBy(Tokens.space.xs)) {
+                Text("On this device", style = MaterialTheme.typography.titleMedium)
+                Text(folder ?: "No folder picked", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Chapters already copied stay where they are. New ones go to the folder picked here.",
+                    color = Tokens.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(onClick = model::changeFolder) { Text("Change folder") }
+                Text(
+                    if (unrestricted) "Background copies: unrestricted" else "Background copies: Android may put the app to sleep",
+                    color = if (unrestricted) Tokens.onSurface else Tokens.warning,
+                    modifier = Modifier.padding(top = Tokens.space.sm),
+                )
+                OutlinedButton(onClick = model::openBatterySettings) { Text("Open battery settings") }
             }
         }
         Card(Modifier.fillMaxWidth()) {
