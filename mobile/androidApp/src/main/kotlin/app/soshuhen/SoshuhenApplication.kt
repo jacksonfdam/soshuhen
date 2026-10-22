@@ -14,6 +14,8 @@ import app.soshuhen.db.databaseBuilder
 import app.soshuhen.reader.ZipPages
 import okio.Path.Companion.toPath
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 
@@ -24,13 +26,17 @@ class SoshuhenApplication : Application(), ImportEnvironment {
         val servers = DataStoreServerStore(this)
         val scope = MainScope()
         val zip = ZipPages(cacheDir.absolutePath.toPath())
+        // Read once before anything asks: started at null, the folder said it
+        // was unavailable for the moment DataStore took, and a worker or the
+        // first-run check that asked then sent the user back to the picker.
+        val picked = runBlocking { servers.folder.first() }
         AppGraph(
             servers,
             AndroidNetworkInfo(this),
             soshuhenHttpClient(),
             scope,
             LocalStore(database),
-            SafChapterFolder(this, servers.folder.stateIn(scope, SharingStarted.Eagerly, null)),
+            SafChapterFolder(this, servers.folder.stateIn(scope, SharingStarted.Eagerly, picked)),
             cacheDir.absolutePath.toPath(),
             zip,
             zip,
