@@ -42,6 +42,7 @@ class SeriesDetailViewModelTest {
 
     private lateinit var db: SoshuhenDatabase
     private lateinit var store: LocalStore
+    private val home = MutableStateFlow(true)
 
     @BeforeTest fun setUp() {
         Dispatchers.setMain(dispatcher)
@@ -78,7 +79,7 @@ class SeriesDetailViewModelTest {
     }
 
     @Test fun loadsRowsAndWhatToContinue() = runTest(dispatcher) {
-        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), store, DeviceLibrary(store, FakeChapterFolder()))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), home, store, DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         val ui = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value).data
         assertEquals(listOf(2.5, 2.0, 1.0), ui.rows.map { it.number })
@@ -87,7 +88,7 @@ class SeriesDetailViewModelTest {
 
     @Test fun detailRefreshFailureKeepsLoadedRows() = runTest(dispatcher) {
         var ok = true
-        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { ok }), store, DeviceLibrary(store, FakeChapterFolder()))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { ok }), home, store, DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         ok = false
         vm.refresh()
@@ -99,7 +100,7 @@ class SeriesDetailViewModelTest {
 
     @Test fun aServerFoundAtANewAddressReloadsByItself() = runTest(dispatcher) {
         val api = MutableStateFlow<SoshuhenApi?>(api { false })
-        val vm = SeriesDetailViewModel(1, api, store, DeviceLibrary(store, FakeChapterFolder()))
+        val vm = SeriesDetailViewModel(1, api, home, store, DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         assertIs<LoadState.Failed>(vm.state.value)
         api.value = api { true }
@@ -109,14 +110,14 @@ class SeriesDetailViewModelTest {
 
     @Test fun detailOfflineShowsTheSnapshot() = runTest(dispatcher) {
         store.saveDetail(1, Fixtures.DETAIL)
-        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { false }), store, DeviceLibrary(store, FakeChapterFolder()))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { false }), home, store, DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         val state = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value)
         assertEquals(3, state.data.rows.size)
         assertEquals(OFFLINE, state.refreshFailed)
     }
     @Test fun aFailedSaveDoesNotChangeWhatIsShown() = runTest(dispatcher) {
-        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), FailingStore(db), DeviceLibrary(store, FakeChapterFolder()))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), home, FailingStore(db), DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         val state = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value)
         assertEquals(3, state.data.rows.size)
@@ -126,12 +127,12 @@ class SeriesDetailViewModelTest {
     @Test fun offlineContinueKeepsTheServersResumePoint() = runTest(dispatcher) {
         val online = SeriesDetailViewModel(
             1, MutableStateFlow(api({ HttpStatusCode.OK }, """{"chapter_id": 11, "page": 4}""") { true }),
-            store, DeviceLibrary(store, FakeChapterFolder()),
+            home, store, DeviceLibrary(store, FakeChapterFolder()),
         )
         advanceUntilIdle()
         assertEquals(11L, assertIs<LoadState.Loaded<DetailUi>>(online.state.value).data.continueWith?.id)
 
-        val offline = SeriesDetailViewModel(1, MutableStateFlow(api { false }), store, DeviceLibrary(store, FakeChapterFolder()))
+        val offline = SeriesDetailViewModel(1, MutableStateFlow(api { false }), home, store, DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         val ui = assertIs<LoadState.Loaded<DetailUi>>(offline.state.value).data
         assertEquals(11L, ui.continueWith?.id)
@@ -142,7 +143,7 @@ class SeriesDetailViewModelTest {
         store.saveDetail(1, Fixtures.DETAIL)
         Outbox(store) { Instant.parse("2026-10-21T08:10:00Z") }.position(1, 11, 2)
         Outbox(store) { Instant.parse("2026-10-21T08:11:00Z") }.position(1, 13, 6)
-        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { false }), store, DeviceLibrary(store, FakeChapterFolder()))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { false }), home, store, DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()
         val ui = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value).data
         assertEquals(13L, ui.continueWith?.id)
@@ -152,12 +153,23 @@ class SeriesDetailViewModelTest {
     @Test fun aFailedResumeKeepsTheDetailThatLoaded() = runTest(dispatcher) {
         val vm = SeriesDetailViewModel(
             1, MutableStateFlow(api({ HttpStatusCode.InternalServerError }) { true }),
-            store, DeviceLibrary(store, FakeChapterFolder()),
+            home, store, DeviceLibrary(store, FakeChapterFolder()),
         )
         advanceUntilIdle()
         val state = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value)
         assertNull(state.refreshFailed)
         assertEquals(13L, state.data.continueWith?.id)
         assertNotNull(store.detailSnapshot(1))
+    }
+
+    @Test fun aRefreshThatFailsAwayFromHomeSaysOffline() = runTest(dispatcher) {
+        var ok = true
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { ok }), home, store, DeviceLibrary(store, FakeChapterFolder()))
+        advanceUntilIdle()
+        ok = false
+        home.value = false
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(OFFLINE, assertIs<LoadState.Loaded<DetailUi>>(vm.state.value).refreshFailed)
     }
 }

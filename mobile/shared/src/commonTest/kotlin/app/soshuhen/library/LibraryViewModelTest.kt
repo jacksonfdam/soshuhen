@@ -137,4 +137,14 @@ class LibraryViewModelTest {
         assertEquals(listOf(243L), state.data.map { it.id })
         assertNull(state.refreshFailed)
     }
+
+    @Test fun aRefreshThatFailsAwayFromHomeSaysOffline() = runTest(dispatcher) {
+        val home = MutableStateFlow(true)
+        val vm = LibraryViewModel(MutableStateFlow(api(true, false)), store, home)
+        advanceUntilIdle()
+        home.value = false
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(OFFLINE, assertIs<LoadState.Loaded<List<app.soshuhen.api.Series>>>(vm.state.value).refreshFailed)
+    }
 }

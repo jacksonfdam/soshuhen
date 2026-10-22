@@ -54,6 +54,7 @@ const val FOLDER_GONE = "The chapters folder is not available. Pick it again in 
 class SeriesDetailViewModel(
     private val seriesId: Long,
     private val api: StateFlow<SoshuhenApi?>,
+    private val atHome: StateFlow<Boolean>,
     private val local: LocalStore,
     private val library: DeviceLibrary,
 ) : ViewModel() {
@@ -161,7 +162,7 @@ class SeriesDetailViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                if (previous is LoadState.Loaded) previous.copy(refreshFailed = UNREACHABLE)
+                if (previous is LoadState.Loaded) previous.copy(refreshFailed = refreshFailure())
                 else local.detailSnapshot(seriesId)?.let {
                     lastDetail = it
                     LoadState.Loaded(Remote(it, local.resume(seriesId)), refreshFailed = OFFLINE)
@@ -180,4 +181,8 @@ class SeriesDetailViewModel(
     } catch (_: Exception) {
         local.resume(seriesId)
     }
+
+    // Away from home the server is not down, it is simply not there: the same
+    // words as a cold start offline, not a second wording for one situation.
+    private fun refreshFailure() = if (atHome.value) UNREACHABLE else OFFLINE
 }

@@ -68,7 +68,7 @@ class LibraryViewModel(
             } catch (_: Exception) {
                 // Over loaded data a failure is a banner, not a blank screen:
                 // the laptop went to sleep, the library did not vanish.
-                if (previous is LoadState.Loaded) previous.copy(refreshFailed = UNREACHABLE)
+                if (previous is LoadState.Loaded) previous.copy(refreshFailed = refreshFailure())
                 else local.seriesSnapshot()?.let { LoadState.Loaded(comics(it), refreshFailed = OFFLINE) }
                     ?: LoadState.Failed(FAILED_FIRST)
             }
@@ -78,4 +78,8 @@ class LibraryViewModel(
     fun setStatus(status: String?) { _status.value = status }
 
     fun setQuery(query: String) { _query.value = query }
+
+    // Away from home the server is not down, it is simply not there: the same
+    // words as a cold start offline, not a second wording for one situation.
+    private fun refreshFailure() = if (atHome.value) UNREACHABLE else OFFLINE
 }
