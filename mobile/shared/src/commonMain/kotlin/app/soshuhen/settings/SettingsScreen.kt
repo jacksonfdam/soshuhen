@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,9 +56,10 @@ fun SettingsScreen(model: SettingsViewModel, appVersion: String) {
         val side = if (maxWidth < Tokens.box.sm) Tokens.space.lg else Tokens.space.margin
         Column(
             // Scrolls: with the device card a short phone in landscape no longer fits it all.
-            Modifier.verticalScroll(rememberScrollState())
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(start = side, end = side, top = Tokens.space.xl, bottom = Tokens.space.xxl)
-                .widthIn(max = Tokens.contentMaxWidth),
+                .wrapContentWidth()
+                .widthIn(max = Tokens.canvasMaxWidth),
             verticalArrangement = Arrangement.spacedBy(Tokens.space.xxl),
         ) {
             WebCard(Modifier.fillMaxWidth(), spacing = Tokens.space.xs) {

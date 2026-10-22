@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -52,7 +53,7 @@ fun UpdatesScreen(
     BoxWithConstraints(Modifier.fillMaxSize().background(Tokens.background).statusBarsPadding()) {
         val side = if (maxWidth < Tokens.box.sm) Tokens.space.lg else Tokens.space.margin
         LazyColumn(
-            Modifier.fillMaxSize().widthIn(max = Tokens.contentMaxWidth),
+            Modifier.fillMaxHeight().fillMaxWidth().widthIn(max = Tokens.canvasMaxWidth).align(Alignment.TopCenter),
             contentPadding = PaddingValues(start = side, end = side, top = Tokens.space.xl, bottom = Tokens.space.xxl),
             verticalArrangement = Arrangement.spacedBy(Tokens.space.lg),
         ) {

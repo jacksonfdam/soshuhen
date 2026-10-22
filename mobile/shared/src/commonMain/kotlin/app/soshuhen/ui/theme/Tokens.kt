@@ -127,6 +127,8 @@ object Tokens {
         val sm = 640.dp
         val md = 768.dp
         val lg = 1024.dp
+        // Where AppShell swaps its bottom bar for the header nav (xl:hidden).
+        val xl = 1280.dp
         // Toggle's track (h-6 w-11) and thumb (h-4).
         val toggleWidth = 44.dp
         val toggleHeight = 24.dp
@@ -166,8 +168,11 @@ object Tokens {
     val coverMinWidth = 112.dp
     // The cover beside a row in a list, as the web's notification panel draws it.
     val thumbWidth = 36.dp
-    // Forms and lists stop growing here on a tablet, so a line stays readable.
+    // Onboarding's forms, which have no web page to follow, stop growing here.
     val contentMaxWidth = 560.dp
+    // AppShell's max-w-canvas: every web page fills the window up to this and
+    // is centred beyond it.
+    val canvasMaxWidth = 1440.dp
 
     // The reader, from frontend/src/features/reader/.
     object reader {

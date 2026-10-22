@@ -12,6 +12,9 @@ import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldDefaults
 import androidx.compose.material3.adaptive.layout.calculateThreePaneScaffoldValue
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -116,9 +119,11 @@ fun MainShell(
 }
 
 /**
- * NavigationSuiteScaffold draws a bottom bar on a phone and a rail on a tablet
- * or a phone on its side, and the library is a list-detail pair that sits side
- * by side when there is room: window size decides, not device type.
+ * A bottom bar below the web's xl breakpoint, as AppShell keeps its own until
+ * 1280 px, and a rail from there. Material's own choice put a rail on an 800 dp
+ * tablet, which took the width the web gives a third column of covers. The
+ * library is a list-detail pair that sits side by side when there is room:
+ * window size decides, not device type.
  */
 @Composable
 private fun Shell(
@@ -160,7 +165,9 @@ private fun Shell(
     )
     val itemColors = NavigationSuiteDefaults.itemColors(navigationBarItemColors = barItem, navigationRailItemColors = railItem)
     val label: @Composable (String) -> Unit = { Text(it, style = MaterialTheme.typography.labelSmall.mono()) }
+    val wide = LocalWindowInfo.current.containerSize.width.let { with(LocalDensity.current) { it.toDp() } } >= Tokens.box.xl
     NavigationSuiteScaffold(
+        layoutType = if (wide) NavigationSuiteType.NavigationRail else NavigationSuiteType.NavigationBar,
         navigationSuiteColors = NavigationSuiteDefaults.colors(
             navigationBarContainerColor = Tokens.surfaceContainerLowest,
             navigationRailContainerColor = Tokens.surfaceContainerLowest,
