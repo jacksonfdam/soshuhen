@@ -364,7 +364,10 @@ home network, and never to a source site or a list provider: covers come from th
   home. Re-reading an earlier chapter never moves a list backwards.
 - **Settings.** The server, the folder with **Change folder** (chapters already copied stay where
   they are; new ones go to the new folder), whether background copies are unrestricted with a way
-  to the battery settings, and the volume buttons.
+  to the battery settings, and the volume buttons. **Change server** to a different Soshuhen
+  installation starts the device over: which series are kept, which chapters were copied and any
+  reading not yet sent are forgotten, since they name the old server's series. The files stay in
+  the folder; a chapter the new server holds byte for byte is taken up again without a copy.
 
 Nothing is ever deleted unless you ask. Turning **Keep on this device** off asks whether to keep the
 files or delete them, and keeps them unless you choose **Delete**; **Delete read chapters** and a

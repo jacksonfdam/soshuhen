@@ -510,4 +510,19 @@ class ImportRunnerTest {
             assertEquals(setOf(file("one", 1.0)), folder.files.keys)
         }
     }
+
+    @Test fun aRenamedSeriesNeverWritesOverAFileUnderItsNewName() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0))
+        serve(10)
+        store.mark(1, "one")
+        runner().run()
+        // The server now files the series under another slug, where a file of
+        // the same name already sits that the app never made.
+        series.clear()
+        addSeries(1, "renamed", downloaded(10, 1.0))
+        serve(10, text = "PK rebuilt ".repeat(30), etag = "\"e10-new\"")
+        folder.files[file("renamed", 1.0)] = "PK something else".encodeToByteArray()
+        runner().run()
+        assertContentEquals("PK something else".encodeToByteArray(), folder.files[file("renamed", 1.0)])
+    }
 }

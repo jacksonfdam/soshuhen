@@ -31,4 +31,7 @@ interface OutboxDao {
 
     @Query("DELETE FROM outbox WHERE series_id = :seriesId AND kind = :kind")
     suspend fun deleteKind(seriesId: Long, kind: String)
+
+    @Query("DELETE FROM outbox")
+    suspend fun clear()
 }

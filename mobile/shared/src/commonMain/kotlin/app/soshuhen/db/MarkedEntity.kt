@@ -28,4 +28,7 @@ interface MarkedDao {
 
     @Query("SELECT series_id FROM marked")
     fun ids(): Flow<List<Long>>
+
+    @Query("DELETE FROM marked")
+    suspend fun clear()
 }

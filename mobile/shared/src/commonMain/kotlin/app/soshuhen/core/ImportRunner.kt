@@ -101,7 +101,10 @@ class ImportRunner(
         var unreadable = 0
 
         suspend fun copy(w: Work): Outcome {
-            val namedAsIndexed = w.indexed != null && w.indexed.fileName == w.fileName
+            // The very file the index holds, not just one of the same name: under
+            // a renamed series' new slug that name may be someone else's file.
+            val namedAsIndexed = w.indexed != null && w.indexed.fileName == w.fileName &&
+                folder.find(w.slug, w.fileName) == w.indexed.uri
             if (w.indexed != null) {
                 val current = probe(api, w.chapter.id, w.indexed.size)
                 if (current != null && current.etag == w.indexed.etag) return Outcome.UpToDate

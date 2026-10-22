@@ -16,6 +16,7 @@ import app.soshuhen.db.SoshuhenDatabase
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -37,6 +38,7 @@ data class DeviceChapter(
 )
 
 private const val SERIES_KEY = "series"
+private const val INSTANCE_KEY = "instance"
 private fun detailKey(id: Long) = "series/$id"
 private fun prefsKey(id: Long) = "prefs/$id"
 private fun resumeKey(id: Long) = "resume/$id"
@@ -166,6 +168,30 @@ open class LocalStore(
     suspend fun partEtag(chapterId: Long): String? = db.importParts().etag(chapterId)
 
     suspend fun forgetPart(chapterId: Long) = db.importParts().delete(chapterId)
+
+    /**
+     * Every id kept here is one server installation's. When the saved server
+     * turns out to be another installation, the queued reading, the marks, the
+     * index and the snapshots would name its series by the old one's ids, and
+     * replaying them would move unrelated list progress. The files in the folder
+     * stay: they are the user's, and the new server's copies adopt them by name.
+     * Recorded last, so a clear cut short is done again on the next save.
+     */
+    suspend fun belongTo(instanceId: String) {
+        val current = read<String>(INSTANCE_KEY)
+        if (current == instanceId) return
+        // Nothing recorded is a device set up before this was kept: its data
+        // was the saved server's, which is the one being saved again.
+        if (current != null) {
+            db.outbox().clear()
+            db.importParts().clear()
+            db.snapshots().clear()
+            db.problems().clear()
+            db.marked().clear()
+            db.deviceChapters().clear()
+        }
+        save(INSTANCE_KEY, SoshuhenJson.encodeToString(String.serializer(), instanceId))
+    }
 
     private suspend fun save(key: String, json: String) =
         db.snapshots().put(SnapshotEntity(key, json, clock().toEpochMilliseconds()))

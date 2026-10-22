@@ -28,4 +28,7 @@ interface ImportPartDao {
 
     @Query("DELETE FROM import_part WHERE chapter_id = :chapterId")
     suspend fun delete(chapterId: Long)
+
+    @Query("DELETE FROM import_part")
+    suspend fun clear()
 }

@@ -21,4 +21,7 @@ interface SnapshotDao {
 
     @Query("SELECT * FROM snapshot WHERE `key` = :key")
     suspend fun get(key: String): SnapshotEntity?
+
+    @Query("DELETE FROM snapshot")
+    suspend fun clear()
 }

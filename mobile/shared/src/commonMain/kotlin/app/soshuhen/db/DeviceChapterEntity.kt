@@ -36,4 +36,7 @@ interface DeviceChapterDao {
 
     @Query("SELECT chapter_id FROM device_chapter")
     fun ids(): Flow<List<Long>>
+
+    @Query("DELETE FROM device_chapter")
+    suspend fun clear()
 }
