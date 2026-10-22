@@ -25,7 +25,7 @@ class FakeServerStore(initial: SavedServer? = null) : ServerStore {
 
 class FakeNetworkInfo(var wifi: Pair<String, Int>?) : NetworkInfo {
     val changeEvents = MutableSharedFlow<Unit>()
-    // Like the Android one: says so once on collection, then on each change.
+    // Like the Android one on a network: reports it once on collection, then each change.
     override val changes: Flow<Unit> = changeEvents.onStart { emit(Unit) }
     override fun wifiAddress(): Pair<String, Int>? = wifi
 }

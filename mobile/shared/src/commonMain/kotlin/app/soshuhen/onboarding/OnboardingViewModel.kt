@@ -32,6 +32,8 @@ data class OnboardingUi(
     val error: String? = null,
 )
 
+private val SLOW_HOST_TIMEOUT = 2.seconds
+
 class OnboardingViewModel(
     private val scanner: ServerScanner,
     private val probe: suspend (ServerAddress) -> Identity?,
@@ -46,8 +48,20 @@ class OnboardingViewModel(
     // server was chosen and then forgotten it must start over, not resume.
     private var finished = false
 
+    // The network the last scan ran on (null off Wi-Fi), so a change of network
+    // can be told from Android repeating the one the phone is already on.
+    private var scannedOn: Pair<String, Int>? = null
+
     init {
         rescan()
+        // A fresh install is often opened before the Wi-Fi is up, or on another
+        // one; the server should appear without the user thinking to scan again.
+        viewModelScope.launch {
+            network.changes.collect {
+                val now = _state.value
+                if (!finished && now.found.isEmpty() && !now.checking && network.wifiAddress() != scannedOn) rescan()
+            }
+        }
     }
 
     fun onShown() {
@@ -61,6 +75,7 @@ class OnboardingViewModel(
         scanning?.cancel()
         scanning = viewModelScope.launch {
             val wifi = network.wifiAddress()
+            scannedOn = wifi
             // Off Wi-Fi there is nothing to scan; the address field is the
             // only way in, and a spinner would only make the person wait.
             if (wifi == null) {
@@ -71,7 +86,11 @@ class OnboardingViewModel(
             // A budget for the whole scan, so a network that drops every probe
             // still ends with the field rather than an endless spinner.
             withTimeoutOrNull(scanBudget) {
-                scanner.scan(subnetHosts(wifi.first, wifi.second)).collect { server ->
+                scanner.scan(
+                    subnetHosts(wifi.first, wifi.second),
+                    retryTimeout = SLOW_HOST_TIMEOUT,
+                    warmUp = wifi.first,
+                ).collect { server ->
                     _state.update { it.copy(found = it.found + server) }
                 }
             }

@@ -38,9 +38,10 @@ class OnboardingViewModelTest {
     private fun vm(
         wifi: Pair<String, Int>? = "10.0.0.1" to 24,
         answers: Map<String, suspend () -> Identity?> = emptyMap(),
+        network: FakeNetworkInfo = FakeNetworkInfo(wifi),
     ): OnboardingViewModel {
         val probe: suspend (ServerAddress) -> Identity? = { answers[it.host]?.invoke() }
-        return OnboardingViewModel(ServerScanner(probe), probe, FakeNetworkInfo(wifi), store, scanBudget = 15.seconds)
+        return OnboardingViewModel(ServerScanner(probe), probe, network, store, scanBudget = 15.seconds)
     }
 
     private fun TestScope.settled(vm: OnboardingViewModel): OnboardingUi {
@@ -123,6 +124,25 @@ class OnboardingViewModelTest {
         val model = vm(answers = mapOf("10.0.0.2" to { probes++; identity() }))
         settled(model)
         model.onShown()
+        settled(model)
+        assertEquals(1, probes)
+    }
+
+    @Test fun aNetworkThatComesUpWhileShownIsScanned() = runTest(dispatcher) {
+        val network = FakeNetworkInfo(null)
+        val model = vm(answers = mapOf("10.0.0.2" to { identity(id = "id-1") }), network = network)
+        assertTrue(settled(model).found.isEmpty())
+        network.wifi = "10.0.0.1" to 24
+        network.changeEvents.emit(Unit)
+        assertEquals(listOf("10.0.0.2"), settled(model).found.map { it.address.host })
+    }
+
+    @Test fun aChangeOnTheSameNetworkDoesNotRestartTheScan() = runTest(dispatcher) {
+        val network = FakeNetworkInfo("10.0.0.1" to 24)
+        var probes = 0
+        val model = vm(answers = mapOf("10.0.0.2" to { probes++; delay(300); null }), network = network)
+        advanceTimeBy(100)
+        network.changeEvents.emit(Unit)
         settled(model)
         assertEquals(1, probes)
     }

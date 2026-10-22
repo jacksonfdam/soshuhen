@@ -7,9 +7,11 @@ interface NetworkInfo {
     fun wifiAddress(): Pair<String, Int>?
 
     /**
-     * Emits once on collection and again each time the device's default network
-     * changes, so the session looks for the server at startup and on every move
-     * without a second, separate initial check.
+     * Emits each time a default network becomes available or is lost. Android
+     * reports the network the device is already on as soon as collection
+     * starts, so with a network there is an emission at once; with none there
+     * is nothing until one appears. A collector that must act at startup either
+     * way does so itself.
      */
     val changes: Flow<Unit>
 }
