@@ -539,4 +539,19 @@ class ImportRunnerTest {
         assertContentEquals(archives.getValue(10).first, folder.files[file("one", 1.0)])
         assertEquals("\"e10\"", indexed(10)!!.etag)
     }
+
+    @Test fun aRevokedFolderKeepsItsBannerWhenNothingNeedsCopying() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0))
+        serve(10)
+        store.mark(1, "one")
+        runner().run()
+        val message = "SD card or folder not available: pick the folder again in Settings"
+        store.setProblem(message)
+        // Every chapter indexed and unchanged: the run touches no file, and
+        // only asking the folder itself shows it is still gone.
+        folder.available = false
+        val report = runner().run()
+        assertEquals(message, report.problem)
+        assertEquals(message, store.problem().first())
+    }
 }

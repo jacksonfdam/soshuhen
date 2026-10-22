@@ -178,6 +178,9 @@ class ImportRunner(
                     .sortedBy { it.number }
                     .forEach { work += Work(detail, it, store.deviceChapter(it.id)) }
             }
+            // A run over chapters that are all indexed and unchanged touches no
+            // file, and would clear the banner of a folder that is still gone.
+            if (work.isNotEmpty() && !folder.isAvailable()) throw FolderUnavailable()
             onPlan(work.count { it.indexed == null })
             onProgress(0, work.size)
             for ((done, w) in work.withIndex()) {
