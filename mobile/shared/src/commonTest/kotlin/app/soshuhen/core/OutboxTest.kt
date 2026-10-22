@@ -59,6 +59,8 @@ class OutboxTest {
         return SoshuhenApi("http://10.0.0.5:8080", soshuhenHttpClient(engine))
     }
 
+    private suspend fun queuedChapters() = store.outbox().map { it.chapterId }
+
     @Test fun positionsCoalescePerSeries() = runTest {
         outbox.position(1, 10, 3)
         outbox.position(1, 11, 5)
@@ -90,6 +92,7 @@ class OutboxTest {
             apiAnswering(mutableListOf()) { n, _ -> if (n == 0) HttpStatusCode.NotFound else HttpStatusCode.OK },
         )
         assertEquals(DrainResult(sent = 1, dropped = 1, remaining = 0), result)
+        assertTrue(store.outbox().isEmpty())
     }
 
     @Test fun aRateLimitOrRequestTimeoutIsRetriedNotDropped() = runTest {
@@ -99,6 +102,7 @@ class OutboxTest {
         assertEquals(DrainResult(sent = 0, dropped = 0, remaining = 2), result)
         val timedOut = outbox.drain(apiAnswering(mutableListOf()) { _, _ -> HttpStatusCode.RequestTimeout })
         assertEquals(DrainResult(sent = 0, dropped = 0, remaining = 2), timedOut)
+        assertEquals(listOf(10L, 11L), queuedChapters())
     }
 
     @Test fun aServerErrorStopsAndKeepsTheRest() = runTest {
@@ -108,6 +112,18 @@ class OutboxTest {
         val result = outbox.drain(apiAnswering(sent) { _, _ -> HttpStatusCode.InternalServerError })
         assertEquals(DrainResult(sent = 0, dropped = 0, remaining = 2), result)
         assertEquals(1, sent.size)
+        assertEquals(listOf(10L, 11L), queuedChapters())
+    }
+
+    @Test fun aStopPartWayKeepsOnlyWhatWasNotSent() = runTest {
+        outbox.complete(1, 10)
+        outbox.complete(1, 11)
+        outbox.complete(1, 12)
+        val result = outbox.drain(
+            apiAnswering(mutableListOf()) { n, _ -> if (n == 0) HttpStatusCode.OK else HttpStatusCode.BadGateway },
+        )
+        assertEquals(DrainResult(sent = 1, dropped = 0, remaining = 2), result)
+        assertEquals(listOf(11L, 12L), queuedChapters())
     }
 
     @Test fun aTimeoutStopsAndKeepsTheRest() = runTest {
@@ -121,6 +137,7 @@ class OutboxTest {
         )
         val api = SoshuhenApi("http://10.0.0.5:8080", soshuhenHttpClient(engine))
         assertEquals(DrainResult(sent = 0, dropped = 0, remaining = 2), outbox.drain(api))
+        assertEquals(listOf(10L, 11L), queuedChapters())
     }
 
     @Test fun prefsReplacePerSeriesAndAreSentAsTheServerExpects() = runTest {
