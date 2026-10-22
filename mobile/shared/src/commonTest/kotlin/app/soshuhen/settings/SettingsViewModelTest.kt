@@ -47,4 +47,19 @@ class SettingsViewModelTest {
         advanceUntilIdle()
         assertEquals("http://10.0.0.31:8080", vm.server.value?.baseUrl)
     }
+
+    @Test fun volumeKeysTurnPagesUntilSwitchedOff() = runTest(dispatcher) {
+        val store = FakeServerStore()
+        val vm = SettingsViewModel(MutableStateFlow(null), store)
+        advanceUntilIdle()
+        assertEquals(true, vm.volumeKeys.value)
+        assertEquals(false, vm.volumeInvert.value)
+        vm.setVolumeKeys(false)
+        vm.setVolumeInvert(true)
+        advanceUntilIdle()
+        assertEquals(false, store.volumeKeys.value)
+        assertEquals(true, store.volumeInvert.value)
+        assertEquals(false, vm.volumeKeys.value)
+        assertEquals(true, vm.volumeInvert.value)
+    }
 }

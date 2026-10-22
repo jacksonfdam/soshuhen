@@ -63,6 +63,8 @@ object Tokens {
     object radius {
         val sm = 6.dp
         val md = 12.dp
+        val lg = 16.dp
+        val xl = 24.dp
         val full = 999.dp
     }
 
@@ -74,4 +76,34 @@ object Tokens {
     val thumbWidth = 36.dp
     // Forms and lists stop growing here on a tablet, so a line stays readable.
     val contentMaxWidth = 560.dp
+
+    // The reader, from frontend/src/features/reader/.
+    object reader {
+        // TabletChrome's round chapter buttons (h-11 w-11).
+        val control = 44.dp
+        // PageSlider's page numbers (w-8).
+        val pageNumberWidth = 32.dp
+        // A strip page's column outside fit width (max-w-3xl).
+        val columnMaxWidth = 768.dp
+        // A page that failed to load (max-w-xl).
+        val placeholderMaxWidth = 576.dp
+        // ReaderMessage's detail line (max-w-md).
+        val messageMaxWidth = 448.dp
+        // The settings sheet's selected tab (border-b-2) and an option's outline (border).
+        val tabIndicator = 2.dp
+        val hairline = 1.dp
+        // The chrome's bars over the page (bg-surface-container/95).
+        const val barAlpha = 0.95f
+        // Behind a sheet (bg-surface-container-lowest/70).
+        const val scrimAlpha = 0.7f
+        // A selected option or chapter (bg-primary/[0.12]).
+        const val selectedAlpha = 0.12f
+        // A sheet's tallest (max-h-[85vh]).
+        const val sheetMaxHeight = 0.85f
+        // How far a key scrolls a strip (innerHeight * 0.9), leaving a line of overlap.
+        const val stripStep = 0.9f
+        // EndOfChapter's min-h-[60vh] and a strip page's min-h-[50vh] before it loads.
+        const val endMinHeight = 0.6f
+        const val pageMinHeight = 0.5f
+    }
 }

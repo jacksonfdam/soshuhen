@@ -7,6 +7,8 @@ import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.core.ServerStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.collectLatest
@@ -21,6 +23,17 @@ class SettingsViewModel(
 ) : ViewModel() {
     private val _server = MutableStateFlow<ServerCard?>(null)
     val server: StateFlow<ServerCard?> = _server
+
+    val volumeKeys: StateFlow<Boolean> = store.volumeKeys.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val volumeInvert: StateFlow<Boolean> = store.volumeInvert.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    fun setVolumeKeys(on: Boolean) {
+        viewModelScope.launch { store.setVolumeKeys(on) }
+    }
+
+    fun setVolumeInvert(on: Boolean) {
+        viewModelScope.launch { store.setVolumeInvert(on) }
+    }
 
     init {
         viewModelScope.launch {

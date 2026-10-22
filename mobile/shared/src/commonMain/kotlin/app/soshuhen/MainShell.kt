@@ -28,11 +28,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
 import app.soshuhen.core.AppGraph
 import app.soshuhen.detail.SeriesDetailScreen
 import app.soshuhen.detail.SeriesDetailViewModel
 import app.soshuhen.library.LibraryScreen
 import app.soshuhen.library.LibraryViewModel
+import app.soshuhen.reader.ReaderScreen
+import app.soshuhen.reader.ReaderViewModel
 import app.soshuhen.settings.SettingsScreen
 import app.soshuhen.settings.SettingsViewModel
 import app.soshuhen.ui.Glyph
@@ -47,11 +50,17 @@ import kotlinx.serialization.Serializable
 @Serializable object UpdatesRoute
 @Serializable object SettingsRoute
 
+@Serializable object ShellRoute
+
+/** [page] is [SAVED_PLACE] when the reader should find the chapter's own saved place. */
+@Serializable data class ReaderRoute(val seriesId: Long, val chapterId: Long, val page: Int, val title: String)
+
+// Navigation arguments cannot be a nullable Int.
+private const val SAVED_PLACE = -1
+
 /**
- * The app once a server is chosen. NavigationSuiteScaffold draws a bottom bar
- * on a phone and a rail on a tablet or a phone on its side, and the library is
- * a list-detail pair that sits side by side when there is room: window size
- * decides, not device type.
+ * The app once a server is chosen. The reader is a route beside the shell
+ * rather than inside it, so a page fills the screen with no navigation bar.
  */
 @Composable
 fun MainShell(
@@ -62,11 +71,57 @@ fun MainShell(
     requestedSeries: StateFlow<Long?>,
     onRequestHandled: () -> Unit,
 ) {
+    val root = rememberNavController()
+    var opening by remember { mutableStateOf<Long?>(null) }
+    val requested by requestedSeries.collectAsStateWithLifecycle()
+    LaunchedEffect(requested) {
+        requested?.let { id ->
+            // Out of the reader first: the series opens in the shell.
+            root.popBackStack(ShellRoute, inclusive = false)
+            opening = id
+            onRequestHandled()
+        }
+    }
+    NavHost(root, startDestination = ShellRoute) {
+        composable<ShellRoute> {
+            Shell(graph, appVersion, importNow, opening, { opening = it }) { seriesId, chapterId, page, title ->
+                root.navigate(ReaderRoute(seriesId, chapterId, page ?: SAVED_PLACE, title))
+            }
+        }
+        composable<ReaderRoute> { entry ->
+            val route = entry.toRoute<ReaderRoute>()
+            ReaderScreen(
+                viewModel {
+                    ReaderViewModel(
+                        route.seriesId, route.chapterId, route.page.takeIf { it != SAVED_PLACE },
+                        graph.session.api, graph.session.atHome, graph.local, graph.folder, graph.pages, graph.outbox,
+                    )
+                },
+                route.title,
+                onBack = { root.popBackStack() },
+            )
+        }
+    }
+}
+
+/**
+ * NavigationSuiteScaffold draws a bottom bar on a phone and a rail on a tablet
+ * or a phone on its side, and the library is a list-detail pair that sits side
+ * by side when there is room: window size decides, not device type.
+ */
+@Composable
+private fun Shell(
+    graph: AppGraph,
+    appVersion: String,
+    importNow: () -> Unit,
+    opening: Long?,
+    setOpening: (Long?) -> Unit,
+    onRead: (seriesId: Long, chapterId: Long, page: Int?, title: String) -> Unit,
+) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val onSettings = entry?.destination?.hasRoute(SettingsRoute::class) == true
     val onUpdates = entry?.destination?.hasRoute(UpdatesRoute::class) == true
-    var opening by remember { mutableStateOf<Long?>(null) }
     val goToLibrary = { nav.navigate(LibraryRoute) { popUpTo(LibraryRoute) { inclusive = true } } }
     // Marking is what makes a series worth copying, so a new mark starts a run
     // instead of waiting up to an hour. The first emission is only what was
@@ -78,13 +133,8 @@ fun MainShell(
             known = ids
         }
     }
-    val requested by requestedSeries.collectAsStateWithLifecycle()
-    LaunchedEffect(requested) {
-        requested?.let { id ->
-            opening = id
-            goToLibrary()
-            onRequestHandled()
-        }
+    LaunchedEffect(opening) {
+        if (opening != null) goToLibrary()
     }
     NavigationSuiteScaffold(
         navigationSuiteItems = {
@@ -109,14 +159,14 @@ fun MainShell(
         },
     ) {
         NavHost(nav, startDestination = LibraryRoute) {
-            composable<LibraryRoute> { LibraryPanes(graph, opening, { opening = null }, importNow) }
+            composable<LibraryRoute> { LibraryPanes(graph, opening, { setOpening(null) }, importNow, onRead) }
             composable<UpdatesRoute> {
                 val api by graph.session.api.collectAsStateWithLifecycle()
                 UpdatesScreen(
                     viewModel { UpdatesViewModel(graph.local) },
                     graph.local,
                     coverUrl = { id -> api?.coverUrl(id).orEmpty() },
-                    onOpen = { id -> opening = id; goToLibrary() },
+                    onOpen = { id -> setOpening(id) },
                 )
             }
             composable<SettingsRoute> {
@@ -128,10 +178,17 @@ fun MainShell(
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class, ExperimentalComposeUiApi::class)
 @Composable
-private fun LibraryPanes(graph: AppGraph, opening: Long?, onOpened: () -> Unit, importNow: () -> Unit) {
+private fun LibraryPanes(
+    graph: AppGraph,
+    opening: Long?,
+    onOpened: () -> Unit,
+    importNow: () -> Unit,
+    onRead: (seriesId: Long, chapterId: Long, page: Int?, title: String) -> Unit,
+) {
     val navigator = rememberListDetailPaneScaffoldNavigator<Long>()
     val scope = rememberCoroutineScope()
     val api by graph.session.api.collectAsStateWithLifecycle()
+    val atHome by graph.session.atHome.collectAsStateWithLifecycle()
     val coverUrl = { id: Long -> api?.coverUrl(id).orEmpty() }
     LaunchedEffect(opening) {
         opening?.let { id ->
@@ -168,6 +225,8 @@ private fun LibraryPanes(graph: AppGraph, opening: Long?, onOpened: () -> Unit, 
                     SeriesDetailScreen(
                         viewModel(key = "series-$id") { SeriesDetailViewModel(id, graph.session.api, graph.local, graph.library) },
                         coverUrl(id),
+                        home = atHome && api != null,
+                        onRead = { chapterId, page, title -> onRead(id, chapterId, page, title) },
                     )
                 }
             }

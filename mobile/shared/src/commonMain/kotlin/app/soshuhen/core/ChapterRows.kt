@@ -37,3 +37,11 @@ fun chapterRows(detail: SeriesDetail, onDevice: Set<Long> = emptySet()): List<Ch
             },
         )
     }
+
+/**
+ * Whether the reader will open [row]: a copy on the device always, the
+ * server's file only at home. Anything else the server would have to fetch
+ * from its source.
+ */
+fun readableFrom(row: ChapterRow, home: Boolean): Boolean =
+    row.availability == Availability.OnDevice || (home && row.availability == Availability.OnServer)

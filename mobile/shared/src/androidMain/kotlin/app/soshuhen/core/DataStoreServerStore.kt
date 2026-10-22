@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -33,10 +34,10 @@ class DataStoreServerStore(context: Context) : ServerStore {
         }
     }
 
-    // Kept across a change of server: the folder belongs to the phone, and the
-    // files in it are the user's, not the server's.
+    // Kept across a change of server: the folder and the volume buttons belong
+    // to the phone, and the files in the folder are the user's, not the server's.
     override suspend fun clear() {
-        store.edit { prefs -> prefs.asMap().keys.filter { it != FOLDER }.forEach { prefs.remove(it) } }
+        store.edit { prefs -> prefs.asMap().keys.filter { it !in DEVICE }.forEach { prefs.remove(it) } }
     }
 
     override val folder: Flow<String?> = store.data.map { it[FOLDER] }
@@ -45,11 +46,26 @@ class DataStoreServerStore(context: Context) : ServerStore {
         store.edit { it[FOLDER] = uri }
     }
 
+    override val volumeKeys: Flow<Boolean> = store.data.map { it[VOLUME_KEYS] ?: true }
+
+    override suspend fun setVolumeKeys(on: Boolean) {
+        store.edit { it[VOLUME_KEYS] = on }
+    }
+
+    override val volumeInvert: Flow<Boolean> = store.data.map { it[VOLUME_INVERT] ?: false }
+
+    override suspend fun setVolumeInvert(on: Boolean) {
+        store.edit { it[VOLUME_INVERT] = on }
+    }
+
     private companion object {
         val SCHEME = stringPreferencesKey("server_scheme")
         val HOST = stringPreferencesKey("server_host")
         val PORT = intPreferencesKey("server_port")
         val FOLDER = stringPreferencesKey("chapter_folder")
         val INSTANCE_ID = stringPreferencesKey("instance_id")
+        val VOLUME_KEYS = booleanPreferencesKey("volume_keys")
+        val VOLUME_INVERT = booleanPreferencesKey("volume_invert")
+        val DEVICE: Set<Preferences.Key<*>> = setOf(FOLDER, VOLUME_KEYS, VOLUME_INVERT)
     }
 }

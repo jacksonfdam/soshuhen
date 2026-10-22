@@ -34,6 +34,9 @@ data class DetailUi(
     val series: Series,
     val rows: List<ChapterRow>,
     val continueWith: ChapterRow?,
+    // The server's resume page when Continue is that chapter; null leaves the
+    // reader to find the chapter's own saved place.
+    val continuePage: Int?,
     val marked: Boolean,
     val deviceChapters: Int,
     val readOnDevice: Int,
@@ -78,8 +81,10 @@ class SeriesDetailViewModel(
     private fun ui(remote: Remote, marked: Boolean, onDevice: List<DeviceChapter>): DetailUi {
         val ids = onDevice.map { it.chapterId }.toSet()
         val series = remote.detail.series
+        val next = continueChapter(remote.detail, remote.resume, ids)
         return DetailUi(
-            series, chapterRows(remote.detail, ids), continueChapter(remote.detail, remote.resume, ids),
+            series, chapterRows(remote.detail, ids), next,
+            remote.resume?.takeIf { it.chapterId == next?.id }?.page,
             marked, onDevice.size, onDevice.count { floor(it.number) <= series.progress },
         )
     }

@@ -12,4 +12,12 @@ interface ServerStore {
     /** The tree URI of the folder the user picked for chapters, once they have. */
     val folder: Flow<String?>
     suspend fun saveFolder(uri: String)
+
+    /** Whether the volume buttons turn the reader's pages. On by default. */
+    val volumeKeys: Flow<Boolean>
+    suspend fun setVolumeKeys(on: Boolean)
+
+    /** Volume up turns forward instead of back. Off by default. */
+    val volumeInvert: Flow<Boolean>
+    suspend fun setVolumeInvert(on: Boolean)
 }

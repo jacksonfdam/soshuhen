@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,6 +14,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import app.soshuhen.core.EXTRA_SERIES_ID
 import app.soshuhen.core.ImportScheduler
+import app.soshuhen.reader.ReaderKeys
+import app.soshuhen.reader.volumeKey
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
@@ -48,6 +51,33 @@ class MainActivity : ComponentActivity() {
                 onRequestHandled = { requestedSeries.value = null },
             )
         }
+    }
+
+    // Keys whose press a reader took. Their release is swallowed too, or the
+    // system would see a lone ACTION_UP and still show the volume panel.
+    private val consumed = mutableSetOf<Int>()
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val code = event.keyCode
+        if (code != KeyEvent.KEYCODE_VOLUME_DOWN && code != KeyEvent.KEYCODE_VOLUME_UP) return super.dispatchKeyEvent(event)
+        val graph = (application as SoshuhenApplication).graph
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (event.repeatCount > 0) {
+                    // A held key turns one page, not a page every 50 ms.
+                    if (code in consumed) return true
+                } else if (graph.volumeKeys.value) {
+                    val key = volumeKey(down = code == KeyEvent.KEYCODE_VOLUME_DOWN, inverted = graph.volumeInvert.value)
+                    // Unclaimed outside a reader, so the volume still works everywhere else.
+                    if (ReaderKeys.emit(key)) {
+                        consumed += code
+                        return true
+                    }
+                }
+            }
+            KeyEvent.ACTION_UP -> if (consumed.remove(code)) return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onNewIntent(intent: Intent) {

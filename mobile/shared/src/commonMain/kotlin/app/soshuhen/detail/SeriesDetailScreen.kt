@@ -1,6 +1,9 @@
 package app.soshuhen.detail
 
 import app.soshuhen.core.Availability
+import app.soshuhen.core.readableFrom
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,7 +33,13 @@ import app.soshuhen.ui.LoadState
 import app.soshuhen.ui.theme.Tokens
 
 @Composable
-fun SeriesDetailScreen(model: SeriesDetailViewModel, coverUrl: String) {
+fun SeriesDetailScreen(
+    model: SeriesDetailViewModel,
+    coverUrl: String,
+    // At home with the server found: decides which rows the reader will open.
+    home: Boolean,
+    onRead: (chapterId: Long, page: Int?, seriesTitle: String) -> Unit,
+) {
     val state by model.state.collectAsStateWithLifecycle()
     val prompt by model.unmarkPrompt.collectAsStateWithLifecycle()
     val notice by model.notice.collectAsStateWithLifecycle()
@@ -76,16 +85,20 @@ fun SeriesDetailScreen(model: SeriesDetailViewModel, coverUrl: String) {
                             }
                             TextButton(onClick = model::deleteRead, enabled = ui.readOnDevice > 0) { Text("Delete read chapters") }
                             ui.continueWith?.let { next ->
-                                // Shown so the layout is the one reading will use;
-                                // the reader itself arrives with offline reading.
-                                Button(onClick = {}, enabled = false) { Text("Continue chapter ${formatNumber(next.number)}") }
-                                Text("Reading arrives in the next update", style = MaterialTheme.typography.bodySmall, color = Tokens.onSurfaceVariant)
+                                Button(onClick = { onRead(next.id, ui.continuePage, ui.series.title) }) {
+                                    Text("Continue chapter ${formatNumber(next.number)}")
+                                }
                             }
                         }
                     }
                 }
                 items(ui.rows, key = { it.id }) { row ->
-                    Column {
+                    // Still tappable: the reader says why it cannot open the chapter.
+                    Column(
+                        Modifier
+                            .clickable { onRead(row.id, 0, ui.series.title) }
+                            .alpha(if (readableFrom(row, home)) 1f else Tokens.dimmed),
+                    ) {
                         Row(
                             Modifier.fillMaxWidth().padding(vertical = Tokens.space.sm),
                             horizontalArrangement = Arrangement.SpaceBetween,

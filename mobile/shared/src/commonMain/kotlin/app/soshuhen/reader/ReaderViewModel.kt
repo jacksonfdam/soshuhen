@@ -15,6 +15,7 @@ import app.soshuhen.core.FolderUnavailable
 import app.soshuhen.core.LocalStore
 import app.soshuhen.core.Outbox
 import app.soshuhen.core.chapterRows
+import app.soshuhen.core.readableFrom
 import app.soshuhen.ui.keep
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -36,6 +37,10 @@ data class ReaderUi(
     val previous: Long?,
     val next: Long?,
     val chromeVisible: Boolean,
+    // Every chapter of the series, newest first, for the chapter list; the
+    // ones in [readable] are the ones that open from where the phone is.
+    val chapters: List<ChapterRow> = emptyList(),
+    val readable: Set<Long> = emptySet(),
 )
 
 sealed interface ReaderState {
@@ -196,7 +201,7 @@ class ReaderViewModel(
             is PageSource.Device -> source.pages.size
             is PageSource.Server -> source.pageCount
         }
-        val readable = rows.filter { readable(it, client != null) }
+        val readable = rows.filter { readableFrom(it, client != null) }
         return ReaderState.Ready(
             ReaderUi(
                 seriesId = seriesId,
@@ -208,12 +213,11 @@ class ReaderViewModel(
                 previous = readable.filter { it.number < row.number }.maxByOrNull { it.number }?.id,
                 next = readable.filter { it.number > row.number }.minByOrNull { it.number }?.id,
                 chromeVisible = chromeVisible,
+                chapters = rows.sortedByDescending { it.number },
+                readable = readable.map { it.id }.toSet(),
             ),
         )
     }
-
-    private fun readable(row: ChapterRow, home: Boolean) =
-        row.availability == Availability.OnDevice || (home && row.availability == Availability.OnServer)
 
     private sealed interface DeviceOpen {
         class Pages(val files: List<okio.Path>) : DeviceOpen

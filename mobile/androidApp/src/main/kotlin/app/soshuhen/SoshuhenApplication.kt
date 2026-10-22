@@ -23,6 +23,7 @@ class SoshuhenApplication : Application(), ImportEnvironment {
         val database = databaseBuilder(this).build()
         val servers = DataStoreServerStore(this)
         val scope = MainScope()
+        val zip = ZipPages(cacheDir.absolutePath.toPath())
         AppGraph(
             servers,
             AndroidNetworkInfo(this),
@@ -31,7 +32,8 @@ class SoshuhenApplication : Application(), ImportEnvironment {
             LocalStore(database),
             SafChapterFolder(this, servers.folder.stateIn(scope, SharingStarted.Eagerly, null)),
             cacheDir.absolutePath.toPath(),
-            ZipPages(cacheDir.absolutePath.toPath()),
+            zip,
+            zip,
         )
     }
 

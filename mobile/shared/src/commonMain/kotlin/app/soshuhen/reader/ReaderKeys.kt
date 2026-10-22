@@ -18,3 +18,6 @@ object ReaderKeys {
 
     fun emit(k: ReaderKey): Boolean = keys.subscriptionCount.value > 0 && keys.tryEmit(k)
 }
+
+/** Volume down reads on, as on most e-readers; [inverted] is for a hand that prefers the other way. */
+fun volumeKey(down: Boolean, inverted: Boolean): ReaderKey = if (down != inverted) ReaderKey.Next else ReaderKey.Previous
