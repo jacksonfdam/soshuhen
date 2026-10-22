@@ -9,6 +9,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -18,10 +23,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -46,7 +47,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.Density
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.soshuhen.api.Series
 import app.soshuhen.core.LocalStore
@@ -110,6 +110,7 @@ fun LibraryScreen(
     BoxWithConstraints(Modifier.fillMaxSize().background(Tokens.background).statusBarsPadding()) {
         // The web pads by space-md on a phone and by margin from sm up.
         val phone = maxWidth < Tokens.box.sm
+        val pane = maxWidth
         val side = if (phone) Tokens.space.lg else Tokens.space.margin
         Column(Modifier.fillMaxSize()) {
             ProblemBanner(store, Modifier.padding(horizontal = side, vertical = Tokens.space.sm))
@@ -128,42 +129,55 @@ fun LibraryScreen(
                         val all = s.data
                         val shown = visible(all, status, query, marked)
                         val comics = comics(all)
-                        val full: (androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope) -> GridItemSpan = { GridItemSpan(it.maxLineSpan) }
-                        LazyVerticalGrid(
-                            columns = WebGrid(phone),
+                        // AppShell's canvas: the page fills the pane up to its max and is centred past it.
+                        val content = minOf(pane, Tokens.canvasMaxWidth + side * 2) - side * 2
+                        val cells = gridCells(content, phone)
+                        LazyColumn(
                             contentPadding = PaddingValues(start = side, end = side, top = Tokens.space.xl, bottom = Tokens.space.xxl),
-                            horizontalArrangement = Arrangement.spacedBy(Tokens.space.gutter),
                             verticalArrangement = Arrangement.spacedBy(Tokens.space.gutter),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.fillMaxSize(),
                         ) {
+                            val page = Modifier.width(content)
                             s.refreshFailed?.let { message ->
-                                item(span = full) {
-                                    NoticeBar(message, NoticeTone.Error) { WebButton("Retry", model::refresh, small = true, icon = WebIcon.Sync) }
+                                item {
+                                    NoticeBar(message, NoticeTone.Error, page) { WebButton("Retry", model::refresh, small = true, icon = WebIcon.Sync) }
                                 }
                             }
-                            notice?.let { message -> item(span = full) { NoticeBar(message) } }
-                            item(span = full) { StatusPanel(comics, marked, status, model::setStatus) }
-                            item(span = full) { FilterPanel(query, model::setQuery) }
+                            notice?.let { message -> item { NoticeBar(message, modifier = page) } }
+                            item { StatusPanel(comics, marked, status, model::setStatus, page) }
+                            item { FilterPanel(query, model::setQuery, page) }
                             val continuing = continueReading(comics)
                             if (continuing.isNotEmpty()) {
-                                item(span = full) {
-                                    ContinueReading(continuing, coverUrl, { reachable(it, atHome, marked) }, open, Modifier.padding(top = Tokens.space.gutter))
+                                item {
+                                    ContinueReading(continuing, coverUrl, { reachable(it, atHome, marked) }, open, threeUp = pane >= Tokens.box.md, page.padding(top = Tokens.space.gutter))
                                 }
                             }
-                            item(span = full) {
-                                Heading(status, shown.size, comics.size, Modifier.padding(top = Tokens.space.gutter))
+                            item {
+                                Heading(status, shown.size, comics.size, page.padding(top = Tokens.space.gutter))
                             }
                             if (shown.isEmpty()) {
-                                item(span = full) {
+                                item {
                                     EmptyState(
                                         WebIcon.Search,
                                         "No matches",
                                         "Nothing in this status matches the current filter. Try another tab or clear the search.",
+                                        page,
                                     )
                                 }
                             }
-                            items(shown, key = { it.id }) { series ->
-                                CoverCard(series, coverUrl(series.id), dimmed = !reachable(series, atHome, marked)) { open(series) }
+                            // Rows laid out by hand rather than a lazy grid: a grid's
+                            // full-width items are only as wide as its columns, which
+                            // left the panels above short of the page's right edge.
+                            items(shown.chunked(cells.count), key = { row -> row.first().id }) { row ->
+                                Row(page, horizontalArrangement = Arrangement.spacedBy(Tokens.space.gutter)) {
+                                    row.forEach { series ->
+                                        CoverCard(
+                                            series, coverUrl(series.id), dimmed = !reachable(series, atHome, marked),
+                                            Modifier.width(cells.width),
+                                        ) { open(series) }
+                                    }
+                                }
                             }
                         }
                     }
@@ -173,36 +187,30 @@ fun LibraryScreen(
     }
 }
 
+private class Cells(val count: Int, val width: Dp)
+
 /**
  * SeriesGrid.tsx: two columns on a phone, then auto-fill minmax(160px, 220px)
  * from sm, so the columns stop at 220 and leave the rest of the row empty
  * instead of stretching the covers. The 160 floor never binds: a pane too
  * narrow for one 220 column is a phone, which takes the two-column branch.
  */
-private class WebGrid(private val phone: Boolean) : GridCells {
-    override fun Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): List<Int> {
-        if (phone) {
-            val width = (availableSize - spacing) / 2
-            return listOf(width, width)
-        }
-        // CSS counts auto-fill repetitions by the track's max when it has one,
-        // then lets each track grow no further than that max.
-        val most = Tokens.box.gridMax.roundToPx()
-        val count = max(1, (availableSize + spacing) / (most + spacing))
-        val width = min(most, (availableSize - spacing * (count - 1)) / count)
-        return List(count) { width }
-    }
-
-    override fun equals(other: Any?) = other is WebGrid && other.phone == phone
-    override fun hashCode() = phone.hashCode()
+private fun gridCells(available: Dp, phone: Boolean): Cells {
+    val gap = Tokens.space.gutter
+    if (phone) return Cells(2, (available - gap) / 2)
+    // CSS counts auto-fill repetitions by the track's max when it has one,
+    // then lets each track grow no further than that max.
+    val most = Tokens.box.gridMax
+    val count = max(1, ((available + gap) / (most + gap)).toInt())
+    return Cells(count, minOf(most, (available - gap * (count - 1)) / count))
 }
 
 /** StatusTabs.tsx on LibraryPage's rounded-2xl panel: every status, then the device, then All last. */
 @Composable
-private fun StatusPanel(all: List<Series>, marked: Set<Long>, status: String?, onChange: (String?) -> Unit) {
+private fun StatusPanel(all: List<Series>, marked: Set<Long>, status: String?, onChange: (String?) -> Unit, modifier: Modifier) {
     val shape = RoundedCornerShape(Tokens.radius.lg)
     Row(
-        Modifier.fillMaxWidth()
+        modifier
             .shadow(Tokens.cardElevation, shape, clip = false)
             .background(Tokens.surfaceContainerLow, shape)
             .padding(Tokens.space.sm)
@@ -219,9 +227,9 @@ private fun StatusPanel(all: List<Series>, marked: Set<Long>, status: String?, o
 
 /** The filter panel's SearchField (ListControls.tsx). */
 @Composable
-private fun FilterPanel(query: String, onQuery: (String) -> Unit) {
+private fun FilterPanel(query: String, onQuery: (String) -> Unit, modifier: Modifier) {
     Box(
-        Modifier.fillMaxWidth()
+        modifier
             .background(Tokens.surfaceContainer.copy(alpha = Tokens.filterPanelAlpha), RoundedCornerShape(Tokens.radius.xl))
             .padding(Tokens.space.mdPlus),
     ) {
@@ -258,6 +266,9 @@ private fun ContinueReading(
     coverUrl: (Long) -> String,
     isReachable: (Series) -> Boolean,
     onOpen: (Series) -> Unit,
+    // md: is the window's width on the web, not the section's, so a page
+    // inset by its margins still goes three-up at 768.
+    threeUp: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Tokens.space.lg)) {
@@ -272,17 +283,15 @@ private fun ContinueReading(
                     .padding(horizontal = Tokens.space.sm, vertical = Tokens.space.xxs),
             )
         }
-        BoxWithConstraints {
-            if (maxWidth < Tokens.box.md) {
-                Column(verticalArrangement = Arrangement.spacedBy(Tokens.space.lg)) {
-                    series.forEach { ContinueCard(it, coverUrl(it.id), isReachable(it), onOpen, Modifier.fillMaxWidth()) }
-                }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.space.lg)) {
-                    series.forEach { ContinueCard(it, coverUrl(it.id), isReachable(it), onOpen, Modifier.weight(1f)) }
-                    // Three slots whatever the count, as the web's grid-cols-3 keeps them.
-                    repeat(3 - series.size) { Box(Modifier.weight(1f)) }
-                }
+        if (!threeUp) {
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.space.lg)) {
+                series.forEach { ContinueCard(it, coverUrl(it.id), isReachable(it), onOpen, Modifier.fillMaxWidth()) }
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(Tokens.space.lg)) {
+                series.forEach { ContinueCard(it, coverUrl(it.id), isReachable(it), onOpen, Modifier.weight(1f)) }
+                // Three slots whatever the count, as the web's grid-cols-3 keeps them.
+                repeat(3 - series.size) { Box(Modifier.weight(1f)) }
             }
         }
     }
@@ -309,7 +318,10 @@ private fun ContinueCard(row: Series, coverUrl: String, reachable: Boolean, onOp
             seriesFormat(row.format)?.let { OverlayBadge(it, Tokens.onSurfaceVariant, Modifier.padding(Tokens.space.xs)) }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.space.xxs)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Tokens.space.xs)) {
+            Row(Modifier.fillMaxWidth()) {
+                // Three-up on a tablet the line cannot hold both; the web lets the
+                // time overflow the card. Here the count keeps its words and the
+                // time gives way: "21…" told the reader nothing.
                 MonoLabel(
                     when {
                         total == null -> "Reading"
@@ -317,9 +329,10 @@ private fun ContinueCard(row: Series, coverUrl: String, reachable: Boolean, onOp
                         else -> "Up to date"
                     },
                     if (extra > 0) Tokens.secondary else Tokens.outline,
-                    Modifier.weight(1f),
                 )
-                row.updatedAt?.let { MonoLabel(relativeTime(it)) }
+                // Measured after the count, so it is the one that gives way.
+                Box(Modifier.weight(1f))
+                row.updatedAt?.let { MonoLabel(relativeTime(it), modifier = Modifier.padding(start = Tokens.space.xs)) }
             }
             Text(
                 row.title,
@@ -339,6 +352,7 @@ private fun chapterOf(progress: Int, total: Int?) = buildAnnotatedString {
     if (total != null) withStyle(SpanStyle(color = Tokens.outline)) { append(" / $total") }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Heading(status: String?, shown: Int, total: Int, modifier: Modifier = Modifier) {
     val title = when (status) {
@@ -347,14 +361,27 @@ private fun Heading(status: String?, shown: Int, total: Int, modifier: Modifier 
         ON_DEVICE -> "On this device"
         else -> "${STATUS_LABEL.getValue(status)} series"
     }
-    Row(modifier, verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Tokens.space.sm)) {
-        Text(title, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold), color = Tokens.onSurface)
+    // The web's flex-wrap items-baseline: the count moves under the title as one
+    // line when the two do not fit side by side, rather than breaking mid-phrase.
+    FlowRow(
+        modifier,
+        horizontalArrangement = Arrangement.spacedBy(Tokens.space.sm),
+        itemVerticalAlignment = Alignment.Bottom,
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
+            color = Tokens.onSurface,
+            modifier = Modifier.alignByBaseline(),
+        )
         // The app has no pages, so what is shown is what matched.
         Text(
             "Showing $shown of $shown matching · $total in the library",
             style = MaterialTheme.typography.labelMedium.mono(),
             color = Tokens.outline,
-            modifier = Modifier.weight(1f, fill = false),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.alignByBaseline(),
         )
     }
 }
@@ -386,7 +413,7 @@ private fun pipelineNote(series: Series): Note? = when {
 
 /** CoverCard.tsx: the art with its badges and progress strip, then the lines under it. */
 @Composable
-private fun CoverCard(series: Series, coverUrl: String, dimmed: Boolean, onClick: () -> Unit) {
+private fun CoverCard(series: Series, coverUrl: String, dimmed: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val total = totalChapters(series)
     val pct = total?.let { min(100, (series.progress * 100f / it).roundToInt()) }
     val format = seriesFormat(series.format)
@@ -394,7 +421,7 @@ private fun CoverCard(series: Series, coverUrl: String, dimmed: Boolean, onClick
     val needsReview = series.state == "needs_review"
     val extra = unread(series)
     val shape = RoundedCornerShape(Tokens.radius.lg)
-    Column(Modifier.alpha(if (dimmed) Tokens.dimmed else 1f).clickable(onClick = onClick)) {
+    Column(modifier.alpha(if (dimmed) Tokens.dimmed else 1f).clickable(onClick = onClick)) {
         Box(
             Modifier.fillMaxWidth().clip(shape)
                 .border(Tokens.hairline, if (needsReview) Tokens.error.copy(alpha = Tokens.reviewBorderAlpha) else Tokens.coverEdge, shape),
