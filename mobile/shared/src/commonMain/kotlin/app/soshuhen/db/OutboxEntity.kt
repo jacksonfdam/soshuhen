@@ -7,7 +7,11 @@ import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 
-/** Reading done away from home, waiting to be told to the server. kind: position, complete or prefs. */
+/**
+ * One table for positions, completions and prefs rather than one each: the
+ * server must hear them in the order they happened, and a single
+ * autoincrement id is that order.
+ */
 @Entity(tableName = "outbox")
 data class OutboxEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

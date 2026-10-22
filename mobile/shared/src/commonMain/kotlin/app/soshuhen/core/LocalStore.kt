@@ -46,7 +46,10 @@ private fun detailKey(id: Long) = "series/$id"
 private fun prefsKey(id: Long) = "prefs/$id"
 private fun resumeKey(id: Long) = "resume/$id"
 
-/** Everything the app keeps on the device, behind the types the screens already use. */
+/**
+ * The screens and the importer speak the API's types, not Room's rows, so a
+ * change in how something is stored stays in this file.
+ */
 // Open so a test can hand a view model a store whose writes fail: a closed Room
 // database hangs instead of throwing, which proves nothing about the fallback.
 open class LocalStore(

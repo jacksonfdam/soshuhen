@@ -9,7 +9,12 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
-/** What the Updates tab lists. */
+/**
+ * Apart from device_chapter so the Updates tab still lists a chapter after it
+ * is deleted from the device: it reports what arrived, not what is left.
+ * Keyed by chapter, so a chapter copied again moves to the top instead of
+ * being listed twice.
+ */
 @Entity(tableName = "import_log")
 data class ImportLogEntity(
     @PrimaryKey @ColumnInfo(name = "chapter_id") val chapterId: Long,
