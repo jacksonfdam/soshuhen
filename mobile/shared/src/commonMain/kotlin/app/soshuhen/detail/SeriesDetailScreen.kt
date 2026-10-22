@@ -2,6 +2,7 @@ package app.soshuhen.detail
 
 import app.soshuhen.core.Availability
 import app.soshuhen.core.readableFrom
+import app.soshuhen.core.unreadableReason
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.layout.Arrangement
@@ -85,8 +86,18 @@ fun SeriesDetailScreen(
                             }
                             TextButton(onClick = model::deleteRead, enabled = ui.readOnDevice > 0) { Text("Delete read chapters") }
                             ui.continueWith?.let { next ->
-                                Button(onClick = { onRead(next.id, ui.continuePage, ui.series.title) }) {
+                                // Still the resume chapter, as on the web: that is where the
+                                // user is. Dimmed like the rows when the reader would refuse it,
+                                // and still tappable, with the reason said here first.
+                                val reason = unreadableReason(next, home)
+                                Button(
+                                    onClick = { onRead(next.id, ui.continuePage, ui.series.title) },
+                                    modifier = Modifier.alpha(if (reason == null) 1f else Tokens.dimmed),
+                                ) {
                                     Text("Continue chapter ${formatNumber(next.number)}")
+                                }
+                                reason?.let {
+                                    Text(it, style = MaterialTheme.typography.bodySmall, color = Tokens.onSurfaceVariant)
                                 }
                             }
                         }

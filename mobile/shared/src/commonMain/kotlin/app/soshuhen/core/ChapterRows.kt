@@ -45,3 +45,18 @@ fun chapterRows(detail: SeriesDetail, onDevice: Set<Long> = emptySet()): List<Ch
  */
 fun readableFrom(row: ChapterRow, home: Boolean): Boolean =
     row.availability == Availability.OnDevice || (home && row.availability == Availability.OnServer)
+
+// Here rather than in the reader so the series screen can say the same thing
+// before the reader is ever opened.
+const val NOT_ON_DEVICE = "Not on this device. It will be copied the next time you are home."
+
+// Only a chapter the server holds as a file is ever copied, so the promise in
+// NOT_ON_DEVICE would be false for one it never downloaded.
+const val NOT_DOWNLOADED = "Not downloaded on the server yet."
+
+/** Why the reader would refuse [row] from where the phone is, or null when it would open it. */
+fun unreadableReason(row: ChapterRow, home: Boolean): String? = when {
+    readableFrom(row, home) -> null
+    row.availability == Availability.NotDownloaded -> NOT_DOWNLOADED
+    else -> NOT_ON_DEVICE
+}

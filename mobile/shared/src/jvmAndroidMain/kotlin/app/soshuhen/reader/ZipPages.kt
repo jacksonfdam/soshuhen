@@ -1,6 +1,7 @@
 package app.soshuhen.reader
 
 import app.soshuhen.core.ArchiveCheck
+import app.soshuhen.core.PageExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock

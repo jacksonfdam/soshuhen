@@ -1,5 +1,6 @@
 package app.soshuhen.reader
 
+import app.soshuhen.core.PageExtractor
 import app.soshuhen.api.Fixtures
 import app.soshuhen.api.ReaderPrefs
 import app.soshuhen.api.SoshuhenApi

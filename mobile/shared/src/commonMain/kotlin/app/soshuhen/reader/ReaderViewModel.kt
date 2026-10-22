@@ -13,7 +13,10 @@ import app.soshuhen.core.ChapterRow
 import app.soshuhen.core.DeviceChapter
 import app.soshuhen.core.FolderUnavailable
 import app.soshuhen.core.LocalStore
+import app.soshuhen.core.NOT_DOWNLOADED
+import app.soshuhen.core.NOT_ON_DEVICE
 import app.soshuhen.core.Outbox
+import app.soshuhen.core.PageExtractor
 import app.soshuhen.core.chapterRows
 import app.soshuhen.core.readableFrom
 import app.soshuhen.ui.keep
@@ -49,13 +52,8 @@ sealed interface ReaderState {
     data class Unavailable(val message: String) : ReaderState
 }
 
-const val NOT_ON_DEVICE = "Not on this device. It will be copied the next time you are home."
 const val FILE_MISSING = "This chapter's file is missing from the folder. It will be copied again at home."
 const val FILE_UNREADABLE = "This chapter's file could not be read. It will be copied again at home."
-
-// Only a chapter the server holds as a file is ever copied, so the promise in
-// NOT_ON_DEVICE would be false for one it never downloaded.
-const val NOT_DOWNLOADED = "Not downloaded on the server yet."
 
 // Duplicated from the series screen on purpose: feature packages do not import
 // from each other.

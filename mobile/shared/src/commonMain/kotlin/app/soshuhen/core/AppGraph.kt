@@ -3,7 +3,6 @@ package app.soshuhen.core
 import app.soshuhen.server.ServerLocator
 import app.soshuhen.server.ServerScanner
 import app.soshuhen.server.identityProbe
-import app.soshuhen.reader.PageExtractor
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
