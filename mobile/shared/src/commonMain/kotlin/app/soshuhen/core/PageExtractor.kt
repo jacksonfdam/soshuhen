@@ -8,5 +8,9 @@ import okio.Source
  * common code and only needs the pages it yields.
  */
 fun interface PageExtractor {
-    suspend fun extract(chapterId: Long, source: Source): List<Path>
+    /**
+     * [version] names the copy of the archive [source] reads, so pages cached
+     * from a copy since replaced are extracted again rather than served.
+     */
+    suspend fun extract(chapterId: Long, version: String, source: Source): List<Path>
 }

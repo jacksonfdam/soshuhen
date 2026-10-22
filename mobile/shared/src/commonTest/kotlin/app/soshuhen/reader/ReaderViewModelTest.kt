@@ -64,7 +64,7 @@ class ReaderViewModelTest {
 
     // Never reads the source, as ZipPages does not when the chapter is already
     // in its cache: closing it is the caller's job either way.
-    private val extractor = PageExtractor { chapterId, _: Source ->
+    private val extractor = PageExtractor { chapterId, _, _: Source ->
         extractFails?.let { throw it }
         extracted += chapterId
         pagesOf(devicePages)

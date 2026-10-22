@@ -26,15 +26,20 @@ class ZipPages(
     private val root = cacheDir / "reader"
     private val lock = Mutex()
 
-    override suspend fun extract(chapterId: Long, source: Source): List<Path> = lock.withLock {
+    override suspend fun extract(chapterId: Long, version: String, source: Source): List<Path> = lock.withLock {
         withContext(Dispatchers.IO) {
             val dir = root / chapterId.toString()
             val done = dir / DONE
-            if (!fileSystem.exists(done)) {
-                // A directory with no marker is an extraction that died halfway;
-                // reusing it would serve a chapter with pages missing.
+            val from = dir / FROM
+            // A directory with no marker is an extraction that died halfway;
+            // reusing it would serve a chapter with pages missing. One made from
+            // another copy of the archive would serve the old copy's pages.
+            val current = fileSystem.exists(done) && fileSystem.exists(from) &&
+                fileSystem.read(from) { readUtf8() } == version
+            if (!current) {
                 fileSystem.deleteRecursively(dir)
                 write(dir, source)
+                fileSystem.write(from) { writeUtf8(version) }
             }
             mark(dir)
             prune(keep = dir)
@@ -105,11 +110,13 @@ class ZipPages(
 
     private fun pagesIn(dir: Path): List<Path> =
         fileSystem.list(dir)
-            .filter { it.name != DONE && !it.name.startsWith("part-") }
+            .filter { !it.name.startsWith(".") && !it.name.startsWith("part-") }
             .sortedBy { it.name.substringBefore('.').toInt() }
 
     private companion object {
         const val DONE = ".done"
+        // Which copy of the archive the pages came from.
+        const val FROM = ".from"
         const val DRAIN_BUFFER = 8192
         // The reader moves between neighbouring chapters; a few cover that
         // without a long read filling the phone's storage.

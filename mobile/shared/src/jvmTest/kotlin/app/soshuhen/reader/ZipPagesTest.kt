@@ -40,30 +40,30 @@ class ZipPagesTest {
     )
 
     @Test fun extractsInServerOrderSkippingNonPages() = runTest {
-        val paths = ZipPages(cache).extract(7, source(sample))
+        val paths = ZipPages(cache).extract(7, "v1", source(sample))
         assertEquals(listOf("two", "ten"), paths.map { FileSystem.SYSTEM.read(it) { readUtf8() } })
         assertEquals(listOf("0.jpg", "1.jpg"), paths.map { it.name })
     }
 
     @Test fun secondOpenDoesNotReread() = runTest {
         val pages = ZipPages(cache)
-        val first = pages.extract(7, source(sample))
-        val second = pages.extract(7, source(ByteArray(0)))
+        val first = pages.extract(7, "v1", source(sample))
+        val second = pages.extract(7, "v1", source(ByteArray(0)))
         assertEquals(first, second)
     }
 
     @Test fun keepsOnlyFiveChapters() = runTest {
         val pages = ZipPages(cache)
-        for (id in 1L..6L) pages.extract(id, source(sample))
+        for (id in 1L..6L) pages.extract(id, "v1", source(sample))
         assertFalse(FileSystem.SYSTEM.exists(cache / "reader" / "1"))
         for (id in 2L..6L) assertTrue(FileSystem.SYSTEM.exists(cache / "reader" / id.toString()))
     }
 
     @Test fun reopeningAChapterKeepsItFresh() = runTest {
         val pages = ZipPages(cache)
-        for (id in 1L..5L) pages.extract(id, source(sample))
-        pages.extract(1, source(sample))
-        pages.extract(6, source(sample))
+        for (id in 1L..5L) pages.extract(id, "v1", source(sample))
+        pages.extract(1, "v1", source(sample))
+        pages.extract(6, "v1", source(sample))
         assertTrue(FileSystem.SYSTEM.exists(cache / "reader" / "1"))
         assertFalse(FileSystem.SYSTEM.exists(cache / "reader" / "2"))
     }
@@ -78,8 +78,8 @@ class ZipPagesTest {
                 return sample[read++].toInt() and 0xff
             }
         }.source()
-        assertFailsWith<java.io.IOException> { pages.extract(9, failing) }
-        val paths = pages.extract(9, source(sample))
+        assertFailsWith<java.io.IOException> { pages.extract(9, "v1", failing) }
+        val paths = pages.extract(9, "v1", source(sample))
         assertEquals(2, paths.size)
     }
 
@@ -93,5 +93,12 @@ class ZipPagesTest {
 
     @Test fun pageCountOfNonZipIsZero() = runTest {
         assertEquals(0, ZipPages(cache).pageCount(source("not a zip".toByteArray())))
+    }
+
+    @Test fun anArchiveCopiedAgainIsExtractedAgain() = runTest {
+        val pages = ZipPages(cache)
+        pages.extract(7, "\"old\":40", source(sample))
+        val again = pages.extract(7, "\"new\":52", source(zip("001.jpg" to "rebuilt")))
+        assertEquals(listOf("rebuilt"), again.map { FileSystem.SYSTEM.read(it) { readUtf8() } })
     }
 }

@@ -235,7 +235,7 @@ class ReaderViewModel(
         // Closed here on every path: on a cache hit ZipPages never touches the
         // source, and each one left open is a file descriptor held by SAF.
         return try {
-            DeviceOpen.Pages(source.use { pages.extract(chapter.chapterId, it) })
+            DeviceOpen.Pages(source.use { pages.extract(chapter.chapterId, "${chapter.etag}:${chapter.size}", it) })
         } catch (e: CancellationException) {
             throw e
         } catch (e: FolderUnavailable) {
