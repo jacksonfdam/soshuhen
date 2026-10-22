@@ -10,13 +10,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import app.soshuhen.resources.Res
-import app.soshuhen.resources.jetbrains_mono
-import app.soshuhen.resources.plus_jakarta_sans
+import app.soshuhen.resources.jetbrains_mono_medium
+import app.soshuhen.resources.jetbrains_mono_regular
+import app.soshuhen.resources.jetbrains_mono_semibold
+import app.soshuhen.resources.plus_jakarta_sans_bold
+import app.soshuhen.resources.plus_jakarta_sans_extrabold
+import app.soshuhen.resources.plus_jakarta_sans_medium
+import app.soshuhen.resources.plus_jakarta_sans_regular
+import app.soshuhen.resources.plus_jakarta_sans_semibold
 import org.jetbrains.compose.resources.Font
-import org.jetbrains.compose.resources.FontResource
 
 // Dark only, like the web interface.
 fun soshuhenColorScheme(): ColorScheme = darkColorScheme(
@@ -56,18 +60,24 @@ fun soshuhenColorScheme(): ColorScheme = darkColorScheme(
     onErrorContainer = Tokens.onErrorContainer,
 )
 
-// google/fonts ships both families as one variable file each, so every weight
-// is the same file pinned to a point on its weight axis.
+// One static file per weight, cut from google/fonts' variable files at the
+// weights frontend/src/styles/index.css loads. Android 11 and earlier set the
+// variable files' lighter weights with the spaces collapsed ("Plantoread").
 @Composable
-private fun variable(resource: FontResource, weights: List<FontWeight>): FontFamily = FontFamily(
-    weights.map { weight ->
-        Font(resource, weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
-    },
+private fun sansFamily(): FontFamily = FontFamily(
+    Font(Res.font.plus_jakarta_sans_regular, FontWeight.Normal),
+    Font(Res.font.plus_jakarta_sans_medium, FontWeight.Medium),
+    Font(Res.font.plus_jakarta_sans_semibold, FontWeight.SemiBold),
+    Font(Res.font.plus_jakarta_sans_bold, FontWeight.Bold),
+    Font(Res.font.plus_jakarta_sans_extrabold, FontWeight.ExtraBold),
 )
 
-// Only the weights frontend/src/styles/index.css loads.
-private val sansWeights = listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold)
-private val monoWeights = listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold)
+@Composable
+private fun monoFamily(): FontFamily = FontFamily(
+    Font(Res.font.jetbrains_mono_regular, FontWeight.Normal),
+    Font(Res.font.jetbrains_mono_medium, FontWeight.Medium),
+    Font(Res.font.jetbrains_mono_semibold, FontWeight.SemiBold),
+)
 
 /** JetBrains Mono, the web's font-mono, which Material's Typography has no slot for. */
 val LocalMonoFamily = staticCompositionLocalOf<FontFamily> { FontFamily.Monospace }
@@ -79,8 +89,8 @@ fun TextStyle.mono(): TextStyle = copy(fontFamily = LocalMonoFamily.current)
 
 @Composable
 fun SoshuhenTheme(content: @Composable () -> Unit) {
-    val sans = variable(Res.font.plus_jakarta_sans, sansWeights)
-    val mono = variable(Res.font.jetbrains_mono, monoWeights)
+    val sans = sansFamily()
+    val mono = monoFamily()
     val typography = remember(sans) { soshuhenTypography(sans) }
     CompositionLocalProvider(LocalMonoFamily provides mono) {
         MaterialTheme(colorScheme = soshuhenColorScheme(), typography = typography, content = content)
