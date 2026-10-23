@@ -1,0 +1,100 @@
+"""Importing PDFs a user owns into a prose series.
+
+The preview answers with a plan and writes nothing; the confirmation queues the
+write on the download lane, the only process that may write /manga. Both read
+the same staged files through the same code, so what was reviewed is what lands.
+"""
+
+import asyncio
+from decimal import Decimal, InvalidOperation
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import db_session
+from app.importer import staging
+from app.importer.plan import Existing, Override, PlannedFile
+from app.importer.reading import build_plan, sha256_of
+
+router = APIRouter(prefix="/api/series", tags=["import"])
+
+Session = Annotated[AsyncSession, Depends(db_session)]
+
+# Twenty volumes of a novel are about 200 MB; a drop past that is not one book.
+_MAX_DROP_BYTES = 200 * 1024 * 1024
+
+
+async def import_target(session: AsyncSession, series_id: int) -> tuple[str, Existing]:
+    row = (
+        await session.execute(
+            text("select slug, kind from series where id = :id"), {"id": series_id}
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="no such series")
+    if row.kind != "prose":
+        raise HTTPException(status_code=409, detail="import is for prose series")
+    chapters = (
+        await session.execute(
+            text("select number from chapter where series_id = :id"), {"id": series_id}
+        )
+    ).scalars()
+    volumes = (
+        await session.execute(
+            text("select number, edition from volume where series_id = :id"), {"id": series_id}
+        )
+    ).all()
+    return row.slug, Existing(
+        chapters=frozenset(Decimal(str(n)) for n in chapters),
+        volumes=frozenset((Decimal(str(v.number)), v.edition) for v in volumes),
+    )
+
+
+def planned_json(item: PlannedFile) -> dict[str, Any]:
+    return {
+        "name": item.name,
+        "sha256": item.sha256,
+        "volume": str(item.volume) if item.volume is not None else None,
+        "edition": item.edition,
+        "chapters": [str(n) for n in item.chapters],
+        "outputs": item.outputs,
+        "status": item.status,
+        "reason": item.reason,
+    }
+
+
+def parse_overrides(raw: dict[str, Any]) -> dict[str, Override]:
+    overrides: dict[str, Override] = {}
+    for sha256, value in raw.items():
+        try:
+            volume = Decimal(str(value["volume"])) if value.get("volume") is not None else None
+        except (InvalidOperation, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=f"volume for {sha256} is not a number") from exc
+        edition = value.get("edition")
+        if edition not in (None, "web", "light"):
+            raise HTTPException(status_code=422, detail=f"edition for {sha256} is not web or light")
+        overrides[sha256] = Override(volume=volume, edition=edition, replace=bool(value.get("replace")))
+    return overrides
+
+
+@router.post("/{series_id}/import")
+async def preview(series_id: int, files: list[UploadFile], session: Session) -> dict[str, Any]:
+    slug, existing = await import_target(session, series_id)
+    received: list[tuple[str, str, bytes]] = []
+    total = 0
+    for upload in files:
+        data = await upload.read()
+        total += len(data)
+        if total > _MAX_DROP_BYTES:
+            raise HTTPException(status_code=413, detail="the drop is over 200 MB")
+        if not data.startswith(b"%PDF-"):
+            raise HTTPException(status_code=415, detail=f"{upload.filename} is not a PDF")
+        received.append((upload.filename or "unnamed.pdf", sha256_of(data), data))
+    await session.close()
+
+    # Parsing twenty books takes seconds; the event loop keeps serving meanwhile.
+    planned, _ = await asyncio.to_thread(build_plan, slug, received, existing, {})
+    token = await asyncio.to_thread(staging.stage, received)
+    return {"token": token, "files": [planned_json(item) for item in planned]}

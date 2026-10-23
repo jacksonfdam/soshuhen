@@ -15,6 +15,7 @@ from app.api import (
     routes_discovery,
     routes_health,
     routes_identity,
+    routes_import,
     routes_jobs,
     routes_notifications,
     routes_reader,
@@ -49,6 +50,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Soshuhen", lifespan=lifespan)
 app.include_router(routes_series.router)
+app.include_router(routes_import.router)
 app.include_router(routes_discovery.router)
 app.include_router(routes_discover.router)
 app.include_router(routes_jobs.router)
