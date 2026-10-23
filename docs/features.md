@@ -223,9 +223,21 @@ rather than a thing you deduce.
 events from the day they started being recorded and fills forward, so a series read for years can
 still show nothing. The panel says so on itself rather than leaving you to infer it.
 
-Where a provider serves nothing, the screen shows nothing. A release schedule and per-chapter page
-counts are absent for that reason: no source states them, and an invented figure would be worse than
-the gap.
+Where a provider serves nothing, the screen shows nothing. Per-chapter page counts are absent for
+that reason: no source states them, and an invented figure would be worse than the gap.
+
+The one schedule shown is observed, not stated: once a series has had a few chapters arrive after
+you started following it, its header says how often they come — Daily, Weekly, Every 10 days —
+from the middle gap between the last ten. It never appears for a series whose chapters all came in
+its first discovery.
+
+### Checking only when a chapter is due
+
+Off by default, under Settings → Automation. With it on, the scheduled discovery leaves a series
+alone until the day before its next chapter is expected by that rhythm, and asks every run from
+then until the day after. A series running late is asked once per rhythm, and one ten releases
+late is treated as on a break and asked every four weeks. A series with no rhythm yet is asked
+every run, as before. Only the schedule follows it; any other discovery asks the source.
 
 ![A series](images/series.webp)
 
