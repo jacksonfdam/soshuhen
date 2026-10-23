@@ -8,6 +8,7 @@ export function StripView({
   chapterId,
   pageCount,
   scale,
+  width,
   initialPage,
   onPage,
   onEnd,
@@ -17,6 +18,7 @@ export function StripView({
   chapterId: number
   pageCount: number
   scale: ReaderScale
+  width: string | null
   initialPage: number
   onPage: (page: number) => void
   onEnd: () => void
@@ -85,7 +87,7 @@ export function StripView({
             chapterId={chapterId}
             index={index}
             eager={Math.abs(index - initialPage) < 3}
-            className={STRIP_FIT[scale]}
+            className={width ?? STRIP_FIT[scale]}
           />
         </div>
       ))}

@@ -6,6 +6,7 @@ import { HomePage } from '../features/home/HomePage'
 import { LibraryPage } from '../features/library/LibraryPage'
 import { ReaderRoute } from '../features/reader/ReaderPage'
 import { ResumePage } from '../features/reader/ResumePage'
+import { SearchPage } from '../features/search/SearchPage'
 import { SeriesDetailPage } from '../features/series/SeriesDetailPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { StatsPage } from '../features/stats/StatsPage'
@@ -41,6 +42,7 @@ export function AppRoutes() {
         <Route path="discovery" element={<Navigate to="/discover" replace />} />
         <Route path="unmatched" element={<Navigate to="/discover" replace />} />
         <Route path="review" element={<Navigate to="/discover" replace />} />
+        <Route path="search" element={<SearchPage />} />
         <Route path="downloads" element={<DownloadsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>

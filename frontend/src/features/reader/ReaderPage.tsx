@@ -11,7 +11,9 @@ import { BACKGROUND } from './lib/styles'
 import { usePositionSaver } from './lib/usePositionSaver'
 import { usePreload } from './lib/usePreload'
 import { useReaderKeys } from './lib/useReaderKeys'
+import { useStripWidth } from './lib/useStripWidth'
 import { PagedView, type Zone } from './PagedView'
+import { ProgressRail } from './ProgressRail'
 import { ReaderMessage } from './ReaderMessage'
 import { SettingsPanel } from './SettingsPanel'
 import { StripView } from './StripView'
@@ -72,6 +74,7 @@ function ReaderPage() {
   const strip = mode === 'long_strip'
   const groups = useMemo(() => spreads(manifest?.page_count ?? 0, mode), [manifest, mode])
   const step = spreadOf(groups, page)
+  const stripWidth = useStripWidth(strip, prefs?.scale ?? 'fit_screen')
 
   const goTo = useCallback(
     (next: number) => {
@@ -230,11 +233,13 @@ function ReaderPage() {
 
   return (
     <main className={`min-h-screen w-full ${BACKGROUND[prefs.background]}`}>
+      {strip && <ProgressRail page={page} pageCount={manifest.page_count} />}
       {strip ? (
         <StripView
           chapterId={manifest.chapter.id}
           pageCount={manifest.page_count}
           scale={prefs.scale}
+          width={stripWidth}
           initialPage={page}
           onPage={(index) => {
             setPage(index)
