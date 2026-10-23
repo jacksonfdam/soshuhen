@@ -94,6 +94,7 @@ fun LibraryScreen(
     val status by model.status.collectAsStateWithLifecycle()
     val query by model.query.collectAsStateWithLifecycle()
     val marked by model.marked.collectAsStateWithLifecycle()
+    val onDevice by model.onDevice.collectAsStateWithLifecycle()
     val atHome by model.atHome.collectAsStateWithLifecycle()
     var notice by remember { mutableStateOf<String?>(null) }
     // One rule for the grid and the continue row, so neither opens what the
@@ -174,6 +175,7 @@ fun LibraryScreen(
                                     row.forEach { series ->
                                         CoverCard(
                                             series, coverUrl(series.id), dimmed = !reachable(series, atHome, marked),
+                                            onDevice = series.id in onDevice,
                                             Modifier.width(cells.width),
                                         ) { open(series) }
                                     }
@@ -400,6 +402,21 @@ private fun OverlayBadge(text: String, color: androidx.compose.ui.graphics.Color
     )
 }
 
+/**
+ * The ⬇ on a cover whose archives are on the device, in OverlayBadge's frame.
+ * The web has no such badge; the arrow is its Download glyph, so it reads as
+ * the same family as the pipeline note's.
+ */
+@Composable
+private fun DeviceBadge() {
+    Box(
+        Modifier.background(Tokens.surfaceContainerLowest.copy(alpha = Tokens.overlayAlpha), RoundedCornerShape(Tokens.radius.base))
+            .padding(horizontal = Tokens.space.xsPlus, vertical = Tokens.space.xxs),
+    ) {
+        WebGlyph(WebIcon.Download, Tokens.secondary, Tokens.icon.sm)
+    }
+}
+
 private class Note(val text: String, val icon: WebIcon, val tone: androidx.compose.ui.graphics.Color)
 
 // CoverCard.tsx's pipelineNote, for the signals the app reads: a real one or none.
@@ -413,7 +430,7 @@ private fun pipelineNote(series: Series): Note? = when {
 
 /** CoverCard.tsx: the art with its badges and progress strip, then the lines under it. */
 @Composable
-private fun CoverCard(series: Series, coverUrl: String, dimmed: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun CoverCard(series: Series, coverUrl: String, dimmed: Boolean, onDevice: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val total = totalChapters(series)
     val pct = total?.let { min(100, (series.progress * 100f / it).roundToInt()) }
     val format = seriesFormat(series.format)
@@ -434,7 +451,10 @@ private fun CoverCard(series: Series, coverUrl: String, dimmed: Boolean, modifie
                         format != null -> OverlayBadge(format, Tokens.onSurfaceVariant)
                         else -> Box(Modifier)
                     }
-                    series.score?.let { OverlayBadge("★ ${(kotlin.math.round(it * 10) / 10)}", Tokens.tertiary) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.space.xs)) {
+                        series.score?.let { OverlayBadge("★ ${(kotlin.math.round(it * 10) / 10)}", Tokens.tertiary) }
+                        if (onDevice) DeviceBadge()
+                    }
                 }
                 if (series.providers.isNotEmpty()) {
                     OverlayBadge("${providers(series.providers)} sync", Tokens.primary, bold = false)

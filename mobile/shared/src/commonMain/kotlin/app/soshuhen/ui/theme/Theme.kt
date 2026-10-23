@@ -61,8 +61,9 @@ fun soshuhenColorScheme(): ColorScheme = darkColorScheme(
 )
 
 // One static file per weight, cut from google/fonts' variable files at the
-// weights frontend/src/styles/index.css loads. Android 11 and earlier set the
-// variable files' lighter weights with the spaces collapsed ("Plantoread").
+// weights frontend/src/styles/index.css loads, so no weight depends on the
+// platform's variation handling. The collapsed spaces these were first blamed
+// for came from hinting; see step() in Tokens.kt.
 @Composable
 private fun sansFamily(): FontFamily = FontFamily(
     Font(Res.font.plus_jakarta_sans_regular, FontWeight.Normal),

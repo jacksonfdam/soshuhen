@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -209,12 +210,19 @@ object Tokens {
 // tracking / weight as written there. Material's roles map onto it by size;
 // where Material has a step the web does not, the nearest web step stands in
 // rather than an invented one.
+//
+// Every step is laid out unhinted, at subpixel positions. Compose's default
+// (TextMotion.Static) hints glyphs to whole pixels, and a Galaxy Tab A on
+// Android 11 at font scale 1.1 autohints Plus Jakarta Sans, which ships no
+// hints of its own, until a 12sp space is a pixel wide: "Plantoread". The stock
+// emulator rasterises the same text with its spaces intact.
 private fun step(size: Int, line: Int, weight: FontWeight, tracking: TextUnit, family: FontFamily) = TextStyle(
     fontFamily = family,
     fontSize = size.sp,
     lineHeight = line.sp,
     fontWeight = weight,
     letterSpacing = tracking,
+    textMotion = TextMotion.Animated,
 )
 
 fun soshuhenTypography(sans: FontFamily = FontFamily.Default): Typography {

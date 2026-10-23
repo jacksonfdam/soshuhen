@@ -13,13 +13,15 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Instant
 
-/** One copied chapter, with the heading of the day it arrived on. */
-data class ImportLogRow(
-    val chapterId: Long,
+/**
+ * A series' chapters copied on one day, as one row: a first import brings a
+ * whole backlog at once, and the notification already says it in one line.
+ */
+data class UpdateGroup(
     val seriesId: Long,
     val seriesTitle: String,
-    val number: Double,
-    val importedAt: Instant,
+    val numbers: List<Double>,
+    val latestAt: Instant,
     val day: String,
 )
 
@@ -30,13 +32,16 @@ class UpdatesViewModel(
     private val clock: () -> Instant = { Clock.System.now() },
     private val zone: TimeZone = TimeZone.currentSystemDefault(),
 ) : ViewModel() {
-    val rows: StateFlow<List<ImportLogRow>> = store.importLog()
+    val rows: StateFlow<List<UpdateGroup>> = store.importLog()
         .map { log ->
             val today = clock().toLocalDateTime(zone).date
-            log.map {
-                val at = Instant.fromEpochMilliseconds(it.importedAt)
-                ImportLogRow(it.chapterId, it.seriesId, it.seriesTitle, it.number, at, label(at.toLocalDateTime(zone).date, today))
-            }
+            // The log arrives newest first and groupBy keeps first appearances in
+            // order, so days and the series within them stay newest first.
+            log.groupBy { label(Instant.fromEpochMilliseconds(it.importedAt).toLocalDateTime(zone).date, today) to it.seriesId }
+                .map { (key, chapters) ->
+                    val newest = chapters.first()
+                    UpdateGroup(newest.seriesId, newest.seriesTitle, chapters.map { it.number }, Instant.fromEpochMilliseconds(newest.importedAt), key.first)
+                }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
