@@ -145,3 +145,76 @@ async def test_a_light_volume_after_known_web_chapters_reads_as_light(client):
     response = await preview(client, series_id, ("Tsukimichi - Volume 19.pdf", LIGHT_19[1]))
 
     assert response.json()["files"][0]["edition"] == "light"
+
+
+async def confirm(client, series_id: int, token: str, files: dict | None = None):
+    return await client.post(f"/api/series/{series_id}/import/{token}", json={"files": files or {}})
+
+
+async def test_confirm_enqueues_one_import_job_on_the_download_lane(client):
+    series_id = await a_series()
+    token = (await preview(client, series_id, WEB_15, LIGHT_19)).json()["token"]
+
+    response = await confirm(client, series_id, token)
+
+    assert response.status_code == 202, response.text
+    async with get_sessionmaker()() as session:
+        jobs = (await session.execute(text("select type, payload from job"))).all()
+    assert [job.type for job in jobs] == ["import_files"]
+    assert jobs[0].payload["token"] == token
+    assert jobs[0].payload["series_id"] == series_id
+
+
+async def test_confirming_twice_queues_one_job(client):
+    series_id = await a_series()
+    token = (await preview(client, series_id, WEB_15)).json()["token"]
+
+    await confirm(client, series_id, token)
+    await confirm(client, series_id, token)
+
+    async with get_sessionmaker()() as session:
+        assert (await session.execute(text("select count(*) from job"))).scalar_one() == 1
+
+
+async def test_confirm_applies_overrides_to_the_plan(client):
+    series_id = await a_series()
+    body = (await preview(client, series_id, ("odd.pdf", WEB_15[1]))).json()
+    sha = body["files"][0]["sha256"]
+
+    response = await confirm(
+        client, series_id, body["token"], {sha: {"volume": "20", "edition": "light", "replace": False}}
+    )
+
+    assert response.json()["files"][0]["edition"] == "light"
+    assert response.json()["files"][0]["volume"] == "20"
+
+
+async def test_confirm_after_staging_vanished_is_410(client):
+    series_id = await a_series()
+
+    response = await confirm(client, series_id, "gone-token")
+
+    assert response.status_code == 410
+
+
+async def test_a_token_that_walks_out_of_staging_is_410(client):
+    series_id = await a_series()
+
+    response = await client.post(f"/api/series/{series_id}/import/..", json={"files": {}})
+
+    assert response.status_code in (404, 405, 410)
+
+
+async def test_confirm_with_nothing_ready_is_409(client):
+    series_id = await a_series()
+    async with get_sessionmaker()() as session:
+        await session.execute(
+            text("insert into chapter (series_id, number, title, state) values (:s, 213, 'x', 'downloaded')"),
+            {"s": series_id},
+        )
+        await session.commit()
+    token = (await preview(client, series_id, WEB_15)).json()["token"]
+
+    response = await confirm(client, series_id, token)
+
+    assert response.status_code == 409

@@ -24,6 +24,8 @@ def test_every_job_type_belongs_to_exactly_one_lane():
 def test_downloads_are_the_download_lane():
     assert lane_of(JobType.DOWNLOAD_BATCH) is Lane.DOWNLOAD
     assert lane_of(JobType.DOWNLOAD_CHAPTER) is Lane.DOWNLOAD
+    # Writing /manga is the download lane's alone, and an import writes it.
+    assert lane_of(JobType.IMPORT_FILES) is Lane.DOWNLOAD
 
 
 def test_the_jobs_a_user_waits_on_are_the_fetch_lane():

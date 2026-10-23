@@ -9,14 +9,16 @@ import asyncio
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import db_session
+from app.enums import JobType
 from app.importer import staging
 from app.importer.plan import Existing, Override, PlannedFile
 from app.importer.reading import build_plan, sha256_of
+from app.queue import repo
 
 router = APIRouter(prefix="/api/series", tags=["import"])
 
@@ -98,3 +100,44 @@ async def preview(series_id: int, files: list[UploadFile], session: Session) -> 
     planned, _ = await asyncio.to_thread(build_plan, slug, received, existing, {})
     token = await asyncio.to_thread(staging.stage, received)
     return {"token": token, "files": [planned_json(item) for item in planned]}
+
+
+@router.post("/{series_id}/import/{token}", status_code=202)
+async def confirm(
+    series_id: int,
+    token: str,
+    session: Session,
+    files: Annotated[dict[str, dict[str, Any]], Body(embed=True)],
+) -> dict[str, Any]:
+    slug, existing = await import_target(session, series_id)
+    overrides = parse_overrides(files)
+    received = await asyncio.to_thread(staging.staged, token)
+    if received is None:
+        raise HTTPException(status_code=410, detail="upload again")
+    planned, _ = await asyncio.to_thread(build_plan, slug, received, existing, overrides)
+    if not any(item.status == "ready" for item in planned):
+        raise HTTPException(status_code=409, detail="nothing in this drop can be imported")
+
+    job_id = await repo.enqueue(
+        session,
+        JobType.IMPORT_FILES,
+        {
+            "series_id": series_id,
+            "token": token,
+            "overrides": {
+                sha: {
+                    "volume": str(o.volume) if o.volume is not None else None,
+                    "edition": o.edition,
+                    "replace": o.replace,
+                }
+                for sha, o in overrides.items()
+            },
+        },
+        series_id=series_id,
+        dedupe_key=f"import_files:{token}",
+        # A failed write leaves its job to be read in the queue; the files and
+        # the rows are idempotent per volume, so a retry finishes what is left.
+        max_attempts=3,
+    )
+    await session.commit()
+    return {"job_id": job_id, "files": [planned_json(item) for item in planned]}
