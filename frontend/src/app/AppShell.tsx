@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 import { api } from '../lib/api'
 import { settleQueuedProgress } from '../lib/queuedProgress'
@@ -96,6 +96,7 @@ export function AppShell() {
       run: () => navigate(item.to),
     })),
     { id: 'sync-all', label: 'Sync all lists', icon: 'sync', run: () => void syncAll() },
+    { id: 'go-search', label: 'Go to Search sources', icon: 'search', run: () => navigate('/search') },
   ]
 
   const badges: Record<string, number> = {
@@ -171,6 +172,14 @@ export function AppShell() {
                 </span>
               ))}
             </div>
+            <Link
+              to="/search"
+              aria-label="Search sources (Ctrl+K)"
+              title="Search sources (Ctrl+K)"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+            >
+              <Icon name="search" className="h-5 w-5" />
+            </Link>
             <NotificationBell />
             <Button variant="surface" size="sm" icon="sync" className="shrink-0 whitespace-nowrap" onClick={syncAll}>
               Sync all
