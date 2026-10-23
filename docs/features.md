@@ -322,6 +322,24 @@ running, and MangaFire additionally raises a challenge only a person can clear â
 
 ![The source list in Settings, narrowed to one language](images/settings-sources.webp)
 
+### Mihon backup
+
+Under Settings â†’ Backup. **Export** downloads a `.tachibk` file that Mihon restores: every series
+with a confirmed source, under that source, with its chapters marked read up to where your lists
+say, your bookmarks, and its MyAnimeList, AniList and MangaBaka links. Mihon finds each title under
+an installed extension of the same name; one whose extension uses a different id shows as a missing
+source, and Mihon's own migration moves it.
+
+**Read a backup** goes the other way, and shows before it changes anything. Each title in it is
+matched to a series here by the tracker it is linked to in Mihon, or else by its title. A matched
+series that has no source yet takes the one Mihon read it from, when Soshuhen has that site
+enabled; one that already has a source keeps it. **Import** applies that, and copies bookmarks onto
+the chapters already listed here. A title no list of yours holds is reported and left out: series
+come from your lists, not from a backup.
+
+Taking the source from a backup skips the review a search would park it in. That is deliberate: the
+backup records a choice you already made, and the list is shown before anything is applied.
+
 ## What it reads and writes
 
 | Service | Role |
