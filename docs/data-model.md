@@ -116,7 +116,15 @@ where Komga sorts the volume: just after the last part it collects. Download lin
 What exists and what is held locally. Unique on `(series_id, number)`.
 
 `id`, `series_id`, `number` (`Numeric`), `title`, `source_url`, `state`, `file_path`,
-`komga_book_id`, `discovered_at`, `available_until`
+`komga_book_id`, `discovered_at`, `available_until`, `bookmarked`
+
+`bookmarked` is the one mark a chapter keeps that no list knows: read is derived from list progress
+and never stored here.
+
+`discovered_at` is also what "new" means. `chapter_discover` stamps the chapters a mapping's first
+run inserts and that mapping's `discovered_at` in one transaction, so the two are equal for exactly
+the back catalogue. The new chapters screen and the release rhythm (`app/rhythm.py`) both count
+only chapters whose `discovered_at` matches no mapping of their series.
 
 `available_until` is when the source stops serving the chapter to the signed-in account; null, which
 is every chapter of every source but J-Novel Club's pre-publication parts, means never. Discovery
