@@ -57,6 +57,7 @@ splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "spla
 activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
 sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
 documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile" }
 work-runtime = { module = "androidx.work:work-runtime", version.ref = "work" }

@@ -3,6 +3,7 @@ package app.soshuhen.core
 import app.soshuhen.api.Series
 import app.soshuhen.api.SeriesChapter
 import app.soshuhen.api.SeriesDetail
+import app.soshuhen.api.SeriesEntry
 import app.soshuhen.db.SoshuhenDatabase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -71,6 +72,40 @@ class DeviceLibraryTest {
         library.deleteRead(detail)
         assertEquals(setOf(3L), indexed())
         assertEquals(1, folder.files.size)
+    }
+
+    private suspend fun volumeOnDevice(id: Long, number: Double) {
+        val name = "v$id.epub"
+        store.indexVolume(DeviceVolume(id, 7, number, name, folder.put("s", name), "\"e\"", 1, Instant.fromEpochMilliseconds(0)))
+    }
+
+    private suspend fun volumes() = store.deviceVolumes(7).first().map { it.volumeId }.toSet()
+
+    @Test fun unmarkWithDeleteRemovesVolumesToo() = runTest {
+        library.mark(series)
+        volumeOnDevice(41, 1.0)
+        library.unmark(7, deleteFiles = true)
+        assertTrue(volumes().isEmpty())
+        assertTrue(folder.files.isEmpty())
+    }
+
+    @Test fun deleteVolumeRemovesItsFile() = runTest {
+        volumeOnDevice(41, 1.0)
+        library.deleteVolume(41)
+        assertTrue(volumes().isEmpty())
+        assertTrue(folder.files.isEmpty())
+    }
+
+    // A volume counts as read by the lists' volume count or the device's own,
+    // whichever is further: the device's is what was finished on the train.
+    @Test fun deleteReadRemovesReadVolumes() = runTest {
+        volumeOnDevice(41, 1.0)
+        volumeOnDevice(42, 2.0)
+        volumeOnDevice(43, 3.0)
+        store.raiseVolumeProgress(7, 2)
+        val detail = SeriesDetail(series, emptyList(), entries = listOf(SeriesEntry("mal", userProgressVolume = 1)))
+        library.deleteRead(detail)
+        assertEquals(setOf(43L), volumes())
     }
 
     @Test fun aFileAlreadyGoneIsStillForgotten() = runTest {

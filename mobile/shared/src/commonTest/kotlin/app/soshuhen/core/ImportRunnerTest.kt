@@ -271,7 +271,7 @@ class ImportRunnerTest {
         store.mark(1, "one")
         val original = archives.getValue(10).first
         folder.files[file("one", 1.0) + ".part"] = original.copyOfRange(0, 100)
-        store.savePartEtag(10, "\"e10\"")
+        store.savePartEtag(BookRef(BookKind.Chapter, 10), "\"e10\"")
         runner().run()
         assertEquals(listOf("GET /api/chapters/10/archive bytes=100- if-range \"e10\""), archiveRequests())
         assertContentEquals(original, folder.files[file("one", 1.0)])
@@ -284,7 +284,7 @@ class ImportRunnerTest {
         store.mark(1, "one")
         val original = archives.getValue(10).first
         folder.files[file("one", 1.0) + ".part"] = original
-        store.savePartEtag(10, "\"e10\"")
+        store.savePartEtag(BookRef(BookKind.Chapter, 10), "\"e10\"")
         val report = runner().run()
         assertNull(report.problem)
         assertContentEquals(original, folder.files[file("one", 1.0)])
@@ -353,7 +353,7 @@ class ImportRunnerTest {
         store.mark(1, "one")
         val part = file("one", 1.0) + ".part"
         folder.files[part] = archives.getValue(10).first.copyOfRange(0, 100)
-        store.savePartEtag(10, "\"e10\"")
+        store.savePartEtag(BookRef(BookKind.Chapter, 10), "\"e10\"")
         archiveStatus = HttpStatusCode.BadGateway
         val report = runner().run()
         val message = "Lost the server while copying; will continue next time"
@@ -448,14 +448,14 @@ class ImportRunnerTest {
         serve(10, text = "PK version A ".repeat(30), etag = "\"A\"")
         store.mark(1, "one")
         folder.files[file("one", 1.0) + ".part"] = archives.getValue(10).first.copyOfRange(0, 100)
-        store.savePartEtag(10, "\"A\"")
+        store.savePartEtag(BookRef(BookKind.Chapter, 10), "\"A\"")
         serve(10, text = "PK version B, rebuilt ".repeat(30), etag = "\"B\"")
         val report = runner().run()
         assertNull(report.problem)
         assertEquals(listOf("GET /api/chapters/10/archive bytes=100- if-range \"A\""), archiveRequests())
         assertContentEquals(archives.getValue(10).first, folder.files[file("one", 1.0)])
         assertEquals("\"B\"", indexed(10)!!.etag)
-        assertNull(store.partEtag(10))
+        assertNull(store.partEtag(BookRef(BookKind.Chapter, 10)))
     }
 
     @Test fun aPartWithNoRecordedEtagStartsOver() = runTest {

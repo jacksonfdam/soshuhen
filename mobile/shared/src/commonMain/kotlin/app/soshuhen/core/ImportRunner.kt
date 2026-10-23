@@ -133,7 +133,7 @@ class ImportRunner(
             }
             val size = folder.size(w.slug, w.part) ?: return Outcome.Missing
             val uri = folder.rename(w.slug, w.part, w.fileName)
-            store.forgetPart(w.chapter.id)
+            store.forgetPart(BookRef(BookKind.Chapter, w.chapter.id))
             val now = clock()
             store.indexChapter(
                 DeviceChapter(w.chapter.id, w.detail.series.id, w.chapter.number, w.fileName, uri, got.etag, size, now),
@@ -240,7 +240,7 @@ class ImportRunner(
 
     private suspend fun download(api: SoshuhenApi, w: Work): Probe {
         val held = folder.size(w.slug, w.part) ?: 0L
-        val startedFrom = if (held > 0) store.partEtag(w.chapter.id) else null
+        val startedFrom = if (held > 0) store.partEtag(BookRef(BookKind.Chapter, w.chapter.id)) else null
         // A .part with no recorded ETag cannot be vouched for as the head of
         // the current archive, so it is written over from the start.
         val from = if (startedFrom == null) 0L else held
@@ -263,7 +263,7 @@ class ImportRunner(
             val append = from > 0 && !d.restarted
             if (!append) {
                 // Recorded before the first byte, so a copy cut off at any point resumes only onto its own archive.
-                d.etag?.let { store.savePartEtag(w.chapter.id, it) } ?: store.forgetPart(w.chapter.id)
+                d.etag?.let { store.savePartEtag(BookRef(BookKind.Chapter, w.chapter.id), it) } ?: store.forgetPart(BookRef(BookKind.Chapter, w.chapter.id))
             }
             folder.write(w.slug, w.part, append) { sink -> pump(d.body, sink) }
             Probe(d.etag, d.total)
@@ -306,7 +306,7 @@ class ImportRunner(
     }
 
     private suspend fun removePart(w: Work) {
-        store.forgetPart(w.chapter.id)
+        store.forgetPart(BookRef(BookKind.Chapter, w.chapter.id))
         try {
             folder.find(w.slug, w.part)?.let { folder.delete(it) }
         } catch (e: CancellationException) {

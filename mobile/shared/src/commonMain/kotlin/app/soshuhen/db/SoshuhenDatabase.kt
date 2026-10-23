@@ -15,9 +15,10 @@ import androidx.room.RoomDatabaseConstructor
         ImportLogEntity::class,
         ProblemEntity::class,
         ImportPartEntity::class,
+        DeviceVolumeEntity::class,
     ],
-    version = 2,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    version = 3,
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 @ConstructedBy(SoshuhenDatabaseConstructor::class)
 abstract class SoshuhenDatabase : RoomDatabase() {
@@ -28,6 +29,7 @@ abstract class SoshuhenDatabase : RoomDatabase() {
     abstract fun importLog(): ImportLogDao
     abstract fun problems(): ProblemDao
     abstract fun importParts(): ImportPartDao
+    abstract fun deviceVolumes(): DeviceVolumeDao
 }
 
 // Room generates the actual for each target; the compiler needs this to exist.

@@ -8,6 +8,7 @@ import app.soshuhen.api.Series
 import app.soshuhen.api.SeriesDetail
 import app.soshuhen.api.SoshuhenJson
 import app.soshuhen.db.DeviceChapterEntity
+import app.soshuhen.db.DeviceVolumeEntity
 import app.soshuhen.db.ImportLogEntity
 import app.soshuhen.db.ImportPartEntity
 import app.soshuhen.db.MarkedEntity
@@ -16,6 +17,7 @@ import app.soshuhen.db.ProblemEntity
 import app.soshuhen.db.SnapshotEntity
 import app.soshuhen.db.SoshuhenDatabase
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
@@ -39,6 +41,17 @@ data class DeviceChapter(
     val importedAt: Instant,
 )
 
+data class DeviceVolume(
+    val volumeId: Long,
+    val seriesId: Long,
+    val number: Double,
+    val fileName: String,
+    val uri: String,
+    val etag: String?,
+    val size: Long,
+    val importedAt: Instant,
+)
+
 private const val SERIES_KEY = "series"
 private const val INSTANCE_KEY = "instance"
 
@@ -47,6 +60,7 @@ private const val UNREADABLE_ETAG = "unreadable"
 private fun detailKey(id: Long) = "series/$id"
 private fun prefsKey(id: Long) = "prefs/$id"
 private fun resumeKey(id: Long) = "resume/$id"
+private fun volumesKey(id: Long) = "volumes/$id"
 
 /**
  * The screens and the importer speak the API's types, not Room's rows, so a
@@ -125,6 +139,19 @@ open class LocalStore(
         return if (progress > current) JsonObject(series + ("progress" to JsonPrimitive(progress))) else series
     }
 
+    /**
+     * The highest light novel volume finished on this device. The lists' own
+     * count arrives with the detail; this covers what they have not heard yet.
+     * Never lowers, as chapter progress never does.
+     */
+    suspend fun raiseVolumeProgress(seriesId: Long, number: Int) {
+        if (number > (volumeProgress(seriesId) ?: 0)) {
+            save(volumesKey(seriesId), SoshuhenJson.encodeToString(Int.serializer(), number))
+        }
+    }
+
+    suspend fun volumeProgress(seriesId: Long): Int? = read(volumesKey(seriesId))
+
     fun isMarked(seriesId: Long): Flow<Boolean> = db.marked().isMarked(seriesId)
 
     fun markedIds(): Flow<Set<Long>> = db.marked().ids().map { it.toSet() }
@@ -143,8 +170,9 @@ open class LocalStore(
 
     fun allDeviceChapterIds(): Flow<Set<Long>> = db.deviceChapters().ids().map { it.toSet() }
 
-    /** Every series with at least one chapter copied to the device. */
-    fun seriesWithChapters(): Flow<Set<Long>> = db.deviceChapters().seriesIds().map { it.toSet() }
+    /** Every series with at least one chapter or volume copied to the device. */
+    fun seriesWithChapters(): Flow<Set<Long>> =
+        combine(db.deviceChapters().seriesIds(), db.deviceVolumes().seriesIds()) { a, b -> (a + b).toSet() }
 
     suspend fun indexChapter(c: DeviceChapter) = db.deviceChapters().put(
         DeviceChapterEntity(
@@ -162,6 +190,23 @@ open class LocalStore(
      * knows, which it never writes over, and the chapter would never come back.
      */
     suspend fun markUnreadable(chapterId: Long) = db.deviceChapters().setEtag(chapterId, UNREADABLE_ETAG)
+
+    fun deviceVolumes(seriesId: Long): Flow<List<DeviceVolume>> =
+        db.deviceVolumes().forSeries(seriesId).map { rows -> rows.map { it.toVolume() } }
+
+    suspend fun deviceVolume(volumeId: Long): DeviceVolume? = db.deviceVolumes().get(volumeId)?.toVolume()
+
+    suspend fun indexVolume(v: DeviceVolume) = db.deviceVolumes().put(
+        DeviceVolumeEntity(
+            v.volumeId, v.seriesId, v.number, v.fileName, v.uri, v.etag, v.size,
+            v.importedAt.toEpochMilliseconds(),
+        ),
+    )
+
+    suspend fun forgetVolume(volumeId: Long) = db.deviceVolumes().delete(volumeId)
+
+    /** As [markUnreadable], for a volume. */
+    suspend fun markVolumeUnreadable(volumeId: Long) = db.deviceVolumes().setEtag(volumeId, UNREADABLE_ETAG)
 
     fun problem(): Flow<String?> = db.problems().message()
 
@@ -182,11 +227,12 @@ open class LocalStore(
 
     fun importLog(): Flow<List<ImportLogEntity>> = db.importLog().newestFirst()
 
-    suspend fun savePartEtag(chapterId: Long, etag: String) = db.importParts().put(ImportPartEntity(chapterId, etag))
+    suspend fun savePartEtag(ref: BookRef, etag: String) =
+        db.importParts().put(ImportPartEntity(ref.id, etag, ref.kind.key))
 
-    suspend fun partEtag(chapterId: Long): String? = db.importParts().etag(chapterId)
+    suspend fun partEtag(ref: BookRef): String? = db.importParts().etag(ref.kind.key, ref.id)
 
-    suspend fun forgetPart(chapterId: Long) = db.importParts().delete(chapterId)
+    suspend fun forgetPart(ref: BookRef) = db.importParts().delete(ref.kind.key, ref.id)
 
     /**
      * Every id kept here is one server installation's. When the saved server
@@ -215,6 +261,7 @@ open class LocalStore(
                     db.problems().clear()
                     db.marked().clear()
                     db.deviceChapters().clear()
+                    db.deviceVolumes().clear()
                     db.snapshots().clear()
                 }
                 beforeRecordingInstance()
@@ -236,6 +283,10 @@ open class LocalStore(
             null
         }
     }
+
+    private fun DeviceVolumeEntity.toVolume() = DeviceVolume(
+        volumeId, seriesId, number, fileName, uri, etag, size, Instant.fromEpochMilliseconds(importedAt),
+    )
 
     private fun DeviceChapterEntity.toChapter() = DeviceChapter(
         chapterId, seriesId, number, fileName, uri, etag, size, Instant.fromEpochMilliseconds(importedAt),
