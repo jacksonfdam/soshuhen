@@ -62,6 +62,14 @@ docker compose build api && docker compose up -d --force-recreate api worker wor
 docker compose ps
 ```
 
+`web` is a separate image built from `frontend/`, so a frontend change needs
+`docker compose build web && docker compose up -d --force-recreate web` as well. Check the bundle
+it serves, not the build log's last line: once a host `node_modules` copied over the image's own
+and the build failed, `up` recreated the container from the previous image, and the interface ran
+a six-day-old frontend while every service reported itself started. `frontend/.dockerignore` now
+keeps the host's modules out; a cached `npm install` layer from before it can still need
+`--no-cache` once.
+
 Read the `ps` output, not just the `up` output: `up` reports only the services it touched. Once,
 `web`, `komga`, `comick` and `flaresolverr` were found stopped after a rebuild that never touched
 them, and the interface was down until `docker compose ps` showed it.

@@ -1,0 +1,6 @@
+# The host's node_modules carries the host's native binaries (TypeScript and
+# Rolldown ship one per platform), and COPY . . laid them over the Linux ones
+# npm install had just fetched: the build then died looking for the Linux
+# TypeScript binary, and the web image stayed on whatever built last.
+node_modules
+dist
