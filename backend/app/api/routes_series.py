@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import rhythm, settings_store
 from app.api.deps import db_session
+from app.api.library_content import HOLDS_FILES
 from app.api.list_raw import display_fields, metadata_of
 from app.api.progress_queue import progress_bounds, queue_progress_write
 from app.api.reading_frequency import reading_frequency
@@ -85,6 +86,10 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        coalesce(m.source_site, '') as source_site,
        coalesce(m.source_url, '') as source_url,
        coalesce(max(ch.downloaded), 0) as downloaded,
+       -- A subquery rather than a join: a volume row beside list_entry and the
+       -- chapter stats would multiply both, the trap #34 was about.
+       (select count(*) from volume v
+         where v.series_id = s.id and v.state = 'downloaded') as volumes_downloaded,
        coalesce(max(ch.known), 0) as known,
        coalesce(max(ch.in_flight), 0) as in_flight,
        coalesce(max(ch.failed), 0) as failed,
@@ -142,6 +147,10 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        coalesce(m.source_site, '') as source_site,
        coalesce(m.source_url, '') as source_url,
        coalesce(max(ch.downloaded), 0) as downloaded,
+       -- A subquery rather than a join: a volume row beside list_entry and the
+       -- chapter stats would multiply both, the trap #34 was about.
+       (select count(*) from volume v
+         where v.series_id = s.id and v.state = 'downloaded') as volumes_downloaded,
        coalesce(max(ch.known), 0) as known,
        coalesce(max(ch.in_flight), 0) as in_flight,
        coalesce(max(ch.failed), 0) as failed,
@@ -201,7 +210,7 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
 #
 # Same `not exists` shape the dashboard's pending-mappings count already uses,
 # so the two cannot drift into disagreeing about what "waiting" means.
-REVIEW_QUEUE_SQL = """
+REVIEW_QUEUE_SQL = f"""
 select s.id, s.canonical_title, s.meta,
        count(c.id) as candidate_count
   from series s
@@ -209,6 +218,7 @@ select s.id, s.canonical_title, s.meta,
  where not exists (
      select 1 from source_mapping m where m.series_id = s.id and m.active
  )
+   and not {HOLDS_FILES}
    and (s.review_ignored_at is not null) = cast(:ignored as boolean)
  group by s.id
  -- id breaks the tie, or two series sharing a title could swap places between
@@ -324,6 +334,11 @@ def _state_of(row: Any) -> str:
     if row.failed:
         return "failed"
     if not row.source_url:
+        # Nothing to download from, but the library already holds it: an
+        # imported novel reads fine without a source, and asking it for one
+        # is a request nobody can usefully answer.
+        if row.downloaded or row.volumes_downloaded:
+            return "local"
         return "needs_review"
     return "mapped"
 

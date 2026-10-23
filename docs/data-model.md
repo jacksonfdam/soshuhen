@@ -26,6 +26,9 @@ The canonical work.
 - **`auto_download` is opt-in and defaults false.** Only a followed series has its missing chapters
   queued by discovery. Confirming a mapping does not imply fetching a backlog; before this existed,
   forty-five confirmations queued tens of thousands of chapters.
+- **The state a screen shows is derived, not stored.** No active mapping reads `needs_review`, unless
+  a chapter or volume of the series is already `downloaded`: then it is `local`, and nothing asks it
+  for a mapping (`app/api/library_content.py`). Ongoing downloads and failures win over both.
 - **`meta.aliases`** holds normalised titles, widened as each provider contributes spellings.
 - **`meta.cross_refs`** holds identifiers with their provenance. See
   [`providers.md`](providers.md#identity-and-hearsay).

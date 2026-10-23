@@ -31,7 +31,7 @@ DEFAULT_FAILURE_LIMIT = 5
 # The states `GET /api/series` derives, stated here so a tool can refuse an
 # unknown one by name instead of answering with an empty list that reads like
 # "nothing matches" rather than "that is not a state".
-SERIES_STATES = ("needs_review", "mapped", "downloading", "failed")
+SERIES_STATES = ("needs_review", "local", "mapped", "downloading", "failed")
 
 # The widest span of chapter numbers one call may queue. Both bounds null means
 # "every missing chapter" to the API, which is what once queued tens of
