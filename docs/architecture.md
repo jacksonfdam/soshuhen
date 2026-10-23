@@ -10,7 +10,7 @@ gated behind Compose profiles and start only when asked for by name.
 | `postgres` | The only datastore. Domain, queue and history |
 | `api` | FastAPI. REST and the SSE stream. Runs migrations on start. Fetches pages from source sites for the reader |
 | `worker` | The fetch lane: every job type but the two downloads, plus the cron that feeds them. The only process running the scheduler |
-| `worker-download` | The download lane: `download_batch` and `download_chapter`. The only process that writes archives, and the one that empties the reader cache |
+| `worker-download` | The download lane: `download_batch`, `download_chapter`, `volume_download` and `import_files`. The only process that writes archives, and the one that empties the reader cache |
 | `web` | Caddy, serving the built interface and proxying `/api` |
 | `komga` | The library server, and one reader of several |
 | `bootstrap` | One-shot: claims Komga if needed, creates the library, exits |
@@ -131,6 +131,15 @@ The download handlers read the kind once and branch once, at the archive write. 
 `write_epub`. Batching, leasing, retries and the `ChapterUnavailable` to `PermanentError` mapping sit
 outside the branch and are shared. Prose does not use the reader cache, so the image reader answers
 409 for a prose chapter; Komga's own reader is where a novel is read.
+
+**Importing PDFs** follows the same split. `api` never writes `/manga`, so the preview route keeps
+the upload in `reader-cache/imports/<token>/`, the one volume `api` and `worker-download` share, and
+answers with a plan built by `app/importer/`. Confirming queues `import_files` on the download lane,
+which rebuilds the plan from the same staged files through the same function before it writes.
+What the user reviewed is therefore what lands, and a retry after a crash skips what is already in
+the library. `app/importer/` is pure at its edges like `downloader/`: it takes bytes and returns
+values, and its tests build their PDFs rather than reading anyone's books. A drop left unconfirmed is
+swept the next time anyone drops, after 24 hours.
 
 Known risk: LoLoBun and Novelight number chapters by list position, so a chapter the site inserts
 mid-list shifts every later number, and `upsert_chapters` would rebind existing rows to new URLs. A

@@ -96,12 +96,18 @@ both the API and the worker, so enabling a site in settings is the same act as r
 Search results awaiting confirmation. Replaced wholesale on each `match_search`.
 
 ### `volume`
-A volume the user owns, or has pre-ordered, on J-Novel Club, for a series mapped to J-Novel Club.
-Unique on `(series_id, number)` and on `(series_id, source_volume_id)`.
+A volume the user owns: one owned or pre-ordered on J-Novel Club, or one imported from the user's
+own PDFs. Unique on `(series_id, number, edition)` and on `(series_id, source_volume_id)`.
 
-`id`, `series_id`, `number`, `source_volume_id`, `title`, `status` (`owned`, `preorder`),
+`id`, `series_id`, `number`, `edition` (`web`, `light`), `source_volume_id`, `title`, `status` (`owned`, `preorder`),
 `last_updated`, `downloaded_updated`, `first_part`, `last_part`, `state`, `file_path`,
 `komga_book_id`, `discovered_at`
+
+**One number, two editions.** A light novel rewrites and merges the web novel's chapters, so the
+same volume number can be two different books. `number` is always the light novel's volume number.
+A `light` row owns a `Vol.` file; a `web` row owns no file and is only the range `first_part` to
+`last_part` of imported chapters. J-Novel Club rows are `light`. Imported rows have
+`source_volume_id = 'import:<sha256 of the PDF>'`.
 
 **Kept apart from `chapter` on purpose.** Everything that counts chapters or turns a Komga book into
 a chapter number would otherwise need a filter, and a forgotten one would count volume 16 as
@@ -114,6 +120,9 @@ where Komga sorts the volume: just after the last part it collects. Download lin
 
 ### `chapter`
 What exists and what is held locally. Unique on `(series_id, number)`.
+
+A chapter imported from a PDF has no `source_url` and is born `downloaded` with its `file_path`, so
+nothing ever queues it for download.
 
 `id`, `series_id`, `number` (`Numeric`), `title`, `source_url`, `state`, `file_path`,
 `komga_book_id`, `discovered_at`, `available_until`, `bookmarked`
