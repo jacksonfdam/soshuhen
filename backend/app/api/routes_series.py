@@ -1,5 +1,6 @@
 """Library and review screens."""
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -9,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import settings_store
+from app import rhythm, settings_store
 from app.api.deps import db_session
 from app.api.list_raw import display_fields, metadata_of
 from app.api.progress_queue import progress_bounds, queue_progress_write
@@ -439,7 +440,8 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
     chapters = await session.execute(
         text(
             """
-            select id, number, title, state, file_path, komga_book_id, available_until
+            select id, number, title, state, file_path, komga_book_id, available_until,
+                   bookmarked
               from chapter where series_id = :id order by number
             """
         ),
@@ -476,8 +478,12 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
     entry_rows = entries.all()
     enrichment = (row.meta or {}).get("enrichment")
 
+    days = await rhythm.release_days(session, [series_id])
     result = {
         "series": _row_to_series(row),
+        # Observed, not stated: how often chapters have turned up here. None
+        # until enough have, which is most series for their first month.
+        "rhythm_days": rhythm.rhythm_days(days.get(series_id, [])),
         "metadata": metadata_of([entry.raw for entry in entry_rows], enrichment),
         "mapping": {"source_site": row.source_site, "source_url": row.source_url}
         if row.source_url
@@ -494,6 +500,7 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
                 # and the row simply does not offer a link.
                 "komga_book_id": c.komga_book_id,
                 "available_until": c.available_until.isoformat() if c.available_until else None,
+                "bookmarked": c.bookmarked,
             }
             for c in chapters.all()
         ],
@@ -617,6 +624,71 @@ async def list_candidates(series_id: int, session: Session) -> dict[str, Any]:
             }
             for row in result.all()
         ],
+    }
+
+
+@router.get("/{series_id}/mapping/preview")
+async def preview_mapping(series_id: int, source_url: str, session: Session) -> dict[str, Any]:
+    """What moving this series to another source would do, before it is done.
+
+    Asks the new source for its chapter list, the one request a move costs, and
+    compares it with what is held here. Persists nothing: confirming is still
+    POST /mapping, and the first discovery after it applies what this predicts
+    (chapter_discover.hand_over).
+    """
+    try:
+        source = source_for_url(source_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    expected = await series_kind(session, series_id)
+    if kind_of(source) != expected:
+        raise HTTPException(
+            status_code=422, detail=f"{source.site} publishes {kind_of(source)}, not {expected}"
+        )
+
+    rows = (
+        await session.execute(
+            text("select number, state from chapter where series_id = :id"), {"id": series_id}
+        )
+    ).all()
+    progress = (
+        await session.execute(
+            text(
+                "select coalesce(max(user_progress_chapter), 0) from list_entry"
+                " where series_id = :id"
+            ),
+            {"id": series_id},
+        )
+    ).scalar_one()
+    timeout = await settings_store.get_int(session, settings_store.SOURCE_SEARCH_TIMEOUT)
+    # Released before the source is asked, which can take the whole timeout.
+    await session.close()
+
+    try:
+        listed = await asyncio.wait_for(source.list_chapters(source_url), timeout)
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504, detail=f"{source.site} did not answer in {timeout}s"
+        ) from exc
+    except Exception as exc:  # the source's own words are the answer
+        raise HTTPException(status_code=502, detail=f"{source.site}: {exc}"[:300]) from exc
+
+    offered = {chapter.number for chapter in listed}
+    held = {row.number: row.state for row in rows}
+    fetchable = ("known", "queued", "failed")
+    return {
+        "source_site": source.site,
+        "chapters": len(offered),
+        "last": float(max(offered)) if offered else None,
+        "current_last": float(max(held)) if held else None,
+        "progress": progress,
+        # A source that stops before where reading got to cannot carry on from
+        # there, which is the one thing a move is usually for.
+        "stops_before_progress": bool(offered) and max(offered) < progress,
+        "gained": len(offered - held.keys()),
+        "retried": sum(1 for n, s in held.items() if n in offered and s in ("failed", "skipped")),
+        "set_aside": sum(1 for n, s in held.items() if n not in offered and s in fetchable),
+        "downloaded": sum(1 for s in held.values() if s == "downloaded"),
     }
 
 
@@ -793,6 +865,36 @@ async def list_chapters(series_id: int, session: Session) -> list[dict[str, Any]
         }
         for row in result.all()
     ]
+
+
+class BookmarkIn(BaseModel):
+    bookmarked: bool
+
+
+@router.put("/{series_id}/chapters/{chapter_id}/bookmark")
+async def set_bookmark(
+    series_id: int, chapter_id: int, body: BookmarkIn, session: Session
+) -> dict[str, Any]:
+    """Mark a chapter to come back to, or clear the mark.
+
+    Read is derived from the lists and never stored here; a bookmark is the one
+    thing about a chapter only this installation knows, so it is the one mark
+    the chapter row keeps.
+    """
+    result = await session.execute(
+        text(
+            """
+            update chapter set bookmarked = :bookmarked
+             where id = :chapter_id and series_id = :series_id
+            returning id
+            """
+        ),
+        {"bookmarked": body.bookmarked, "chapter_id": chapter_id, "series_id": series_id},
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="chapter not found in this series")
+    await session.commit()
+    return {"ok": True, "bookmarked": body.bookmarked}
 
 
 @router.post("/{series_id}/search")

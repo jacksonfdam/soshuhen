@@ -97,6 +97,7 @@ export function AppShell() {
     })),
     { id: 'sync-all', label: 'Sync all lists', icon: 'sync', run: () => void syncAll() },
     { id: 'go-search', label: 'Go to Search sources', icon: 'search', run: () => navigate('/search') },
+    { id: 'go-updates', label: 'Go to New chapters', icon: 'bell', run: () => navigate('/updates') },
   ]
 
   const badges: Record<string, number> = {

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { Button, Icon } from '../../ui'
+import { Button, Icon, SelectField } from '../../ui'
 import type { SeriesChapter } from '../../lib/api'
 import { externalBase } from '../../lib/externalUrl'
 import { formatChapter } from '../../lib/format'
@@ -68,11 +68,23 @@ function ChapterStateBadge({ state }: { state: string }) {
 // and a chapter it has indexed can be opened straight into it.
 type Order = 'newest' | 'oldest'
 
+// Narrowing, one at a time. A scanlation group filter is absent on purpose:
+// a series here reads from one mapped source, so every chapter has the same one.
+type Show = 'all' | 'unread' | 'downloaded' | 'bookmarked'
+
+const SHOW_OPTIONS: { value: Show; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'unread', label: 'Unread' },
+  { value: 'downloaded', label: 'Downloaded' },
+  { value: 'bookmarked', label: 'Bookmarked' },
+]
+
 export function ChapterTable({
   chapters,
   komgaBaseUrl,
   progress,
   prose,
+  onBookmark,
 }: {
   chapters: SeriesChapter[]
   /** Where Komga is served to a browser. Empty means no reader links at all. */
@@ -82,12 +94,18 @@ export function ChapterTable({
   progress: number
   /** Prose chapters are EPUBs, which only Komga reads; the image reader would refuse them. */
   prose: boolean
+  onBookmark: (chapterId: number, bookmarked: boolean) => void
 }) {
   // Checked here rather than trusted from the prop: this is where the href is
   // built, so this is where a scheme the browser would execute has to stop.
   const komgaHref = externalBase(komgaBaseUrl)
   const [showAll, setShowAll] = useState(false)
   const [order, setOrder] = useUrlState<Order>('order', 'newest', ['newest', 'oldest'])
+  const [show, setShow] = useUrlState<Show>(
+    'show',
+    'all',
+    SHOW_OPTIONS.map((option) => option.value),
+  )
 
   if (chapters.length === 0) {
     return (
@@ -97,15 +115,24 @@ export function ChapterTable({
     )
   }
 
-  const bounded = chapters.length > PREVIEW_ROWS && !showAll
-  // Newest first by default: chapter 1 of 313 is the end a reader has already
-  // left behind, and it is what the pipeline touched least recently. Oldest
-  // first is for starting a series, and its preview is the first chapters.
-  const ordered = order === 'newest' ? [...chapters].reverse() : chapters
-  const visible = bounded ? ordered.slice(0, PREVIEW_ROWS) : ordered
   // Read is derived, never marked: the lists already know how far reading
   // got, and a second record here would disagree with them by the next sync.
   const isRead = (chapter: SeriesChapter) => chapter.number <= progress
+  const shown = chapters.filter((chapter) =>
+    show === 'unread'
+      ? !isRead(chapter)
+      : show === 'downloaded'
+        ? chapter.state === 'downloaded'
+        : show === 'bookmarked'
+          ? chapter.bookmarked
+          : true,
+  )
+  const bounded = shown.length > PREVIEW_ROWS && !showAll
+  // Newest first by default: chapter 1 of 313 is the end a reader has already
+  // left behind, and it is what the pipeline touched least recently. Oldest
+  // first is for starting a series, and its preview is the first chapters.
+  const ordered = order === 'newest' ? [...shown].reverse() : shown
+  const visible = bounded ? ordered.slice(0, PREVIEW_ROWS) : ordered
   const next = chapters.find((chapter) => !isRead(chapter))
   // The furthest chapter actually held, not `progress` itself: a series with a
   // gap in its numbering may have no chapter carrying that exact number.
@@ -117,7 +144,8 @@ export function ChapterTable({
     {/* One button that names the order in force, rather than the segmented
         control: that one drops its labels below sm, and these options have no
         icon to fall back on, so on a phone it rendered two empty pills. */}
-    <div className="flex justify-end">
+    <div className="flex items-center justify-end gap-space-sm">
+      <SelectField label="Show" value={show} options={SHOW_OPTIONS} onChange={setShow} />
       <Button
         variant="ghost"
         size="sm"
@@ -127,6 +155,11 @@ export function ChapterTable({
         {order === 'newest' ? 'Newest first' : 'Oldest first'}
       </Button>
     </div>
+    {shown.length === 0 ? (
+      <p className="rounded-xl bg-surface-container-low px-space-md py-space-md text-body-sm text-on-surface-variant">
+        No {show} chapters.
+      </p>
+    ) : (
     <div className="overflow-x-auto rounded-xl bg-surface-container-low shadow-card">
       <table className="w-full min-w-[520px] border-collapse">
         <thead>
@@ -197,6 +230,18 @@ export function ChapterTable({
               </td>
               <td className="w-0 whitespace-nowrap px-space-md py-space-sm text-right">
                 <div className="inline-flex items-center gap-space-xs">
+                  <button
+                    type="button"
+                    aria-pressed={chapter.bookmarked}
+                    aria-label={chapter.bookmarked ? 'Remove bookmark' : 'Bookmark'}
+                    title={chapter.bookmarked ? 'Remove bookmark' : 'Bookmark'}
+                    onClick={() => onBookmark(chapter.id, !chapter.bookmarked)}
+                    className={`inline-flex items-center rounded-lg px-space-xs py-1 transition-colors hover:bg-surface-container-high ${
+                      chapter.bookmarked ? 'text-warning' : 'text-outline/40 hover:text-on-surface'
+                    }`}
+                  >
+                    <Icon name="star" className="h-3.5 w-3.5" />
+                  </button>
                   {/* Every chapter can be read now: one not downloaded yet is
                       streamed from its source and saved as it is read. */}
                   {!prose && (
@@ -237,7 +282,8 @@ export function ChapterTable({
         </tbody>
       </table>
     </div>
-      {chapters.length > PREVIEW_ROWS && (
+    )}
+      {shown.length > PREVIEW_ROWS && (
         <div className="flex items-center gap-space-md">
           <Button
             variant="surface"
@@ -245,11 +291,11 @@ export function ChapterTable({
             aria-expanded={showAll}
             onClick={() => setShowAll(!showAll)}
           >
-            {showAll ? `Show the ${edge} ${PREVIEW_ROWS}` : `Show all ${chapters.length} chapters`}
+            {showAll ? `Show the ${edge} ${PREVIEW_ROWS}` : `Show all ${shown.length} chapters`}
           </Button>
           {bounded && (
             <span className="font-mono text-label-sm text-outline">
-              Showing the {edge} {PREVIEW_ROWS} of {chapters.length}
+              Showing the {edge} {PREVIEW_ROWS} of {shown.length}
             </span>
           )}
         </div>

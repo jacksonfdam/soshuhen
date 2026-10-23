@@ -33,6 +33,7 @@ EDITABLE = {
     settings_store.SOURCE_SEARCH_TIMEOUT,
     settings_store.DOWNLOAD_BATCH_SIZE,
     settings_store.AUTO_DOWNLOAD_NEW,
+    settings_store.DISCOVER_BY_RHYTHM,
     settings_store.COMICK_URL,
     settings_store.COMICK_ENABLED,
     settings_store.READING_MINUTES_PER_CHAPTER,

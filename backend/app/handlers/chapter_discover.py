@@ -78,6 +78,61 @@ async def upsert_chapters(
     return inserted
 
 
+async def had_another_source(session: AsyncSession, series_id: int) -> bool:
+    """Whether a mapping before the active one was ever discovered."""
+    return (
+        await session.execute(
+            text(
+                "select exists (select 1 from source_mapping where series_id = :id"
+                " and not active and discovered_at is not null)"
+            ),
+            {"id": series_id},
+        )
+    ).scalar_one()
+
+
+async def hand_over(
+    session: AsyncSession, series_id: int, listed: list[Decimal]
+) -> tuple[int, int]:
+    """Settle the chapters a change of source leaves behind. Returns (retried, retired).
+
+    Progress needs nothing: the lists count chapters by number, and so does this
+    table. What a new source changes is which chapters can still be fetched. One
+    the old source failed or would not serve is worth asking the new one for.
+    One the new source does not list kept the old source's address, and a
+    download would have gone back to the site the user just left; it is retired
+    as skipped instead, the state for "the source will not serve this". Files
+    already in the library are never touched.
+
+    Only the first discovery after a change of source does this. A source that
+    merely stops listing a chapter later is left alone, since that is as often
+    a page that failed to load as a chapter that went away.
+    """
+    retried = await session.execute(
+        text(
+            """
+            update chapter set state = 'known'
+             where series_id = :series_id
+               and state in ('failed', 'skipped')
+               and number = any(cast(:listed as numeric[]))
+            """
+        ),
+        {"series_id": series_id, "listed": listed},
+    )
+    retired = await session.execute(
+        text(
+            """
+            update chapter set state = 'skipped'
+             where series_id = :series_id
+               and state in ('known', 'queued', 'failed')
+               and not (number = any(cast(:listed as numeric[])))
+            """
+        ),
+        {"series_id": series_id, "listed": listed},
+    )
+    return retried.rowcount or 0, retired.rowcount or 0
+
+
 async def announce_new_chapters(
     session: AsyncSession, series_id: int, *, first_discovery: bool, inserted: list[Decimal]
 ) -> int | None:
@@ -246,6 +301,14 @@ async def handle(ctx: JobContext) -> None:
         )
     ).first() is not None
     inserted = await upsert_chapters(ctx.session, series_id, chapters)
+    if first_discovery and await had_another_source(ctx.session, series_id):
+        retried, retired = await hand_over(
+            ctx.session, series_id, [chapter.number for chapter in chapters]
+        )
+        await ctx.log(
+            f"new source: {retried} chapters to try again, "
+            f"{retired} it does not list set aside"
+        )
     await announce_new_chapters(
         ctx.session, series_id, first_discovery=first_discovery, inserted=inserted
     )

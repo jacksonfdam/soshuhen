@@ -210,6 +210,18 @@ Three panels are worth knowing about before you need them:
 the search turned up underneath it, each with how well it matched. If the mapping is wrong, the right
 one is usually already on that list; re-running the search asks the sites again.
 
+Moving a mapped series to another source shows what the move does before it is made: how far the
+new source goes against what is held here, how many chapters it adds, how many that failed here it
+will try again, and how many it does not list. It warns when the new source stops before where your
+reading got to. Progress and list entries are untouched by a move, since they count chapters by
+number. After the move, chapters already in the library stay as they are, and chapters the new
+source does not list are set aside as skipped rather than fetched from the site you left.
+
+**The chapter list** shows newest first or oldest first, and narrows to the unread, the
+downloaded or the bookmarked. The star on a row bookmarks a chapter to come back to. Read is never
+marked here — it follows how far your lists say you got — so a bookmark is the only mark a chapter
+keeps.
+
 **Sync targets** shows, list by list, exactly what MyAnimeList, AniList and MangaBaka each record
 right now — status, chapter and when it last moved. Three lists that disagree is a thing you can see
 rather than a thing you deduce.
@@ -218,9 +230,21 @@ rather than a thing you deduce.
 events from the day they started being recorded and fills forward, so a series read for years can
 still show nothing. The panel says so on itself rather than leaving you to infer it.
 
-Where a provider serves nothing, the screen shows nothing. A release schedule and per-chapter page
-counts are absent for that reason: no source states them, and an invented figure would be worse than
-the gap.
+Where a provider serves nothing, the screen shows nothing. Per-chapter page counts are absent for
+that reason: no source states them, and an invented figure would be worse than the gap.
+
+The one schedule shown is observed, not stated: once a series has had a few chapters arrive after
+you started following it, its header says how often they come — Daily, Weekly, Every 10 days —
+from the middle gap between the last ten. It never appears for a series whose chapters all came in
+its first discovery.
+
+### Checking only when a chapter is due
+
+Off by default, under Settings → Automation. With it on, the scheduled discovery leaves a series
+alone until the day before its next chapter is expected by that rhythm, and asks every run from
+then until the day after. A series running late is asked once per rhythm, and one ten releases
+late is treated as on a break and asked every four weeks. A series with no rhythm yet is asked
+every run, as before. Only the schedule follows it; any other discovery asks the source.
 
 ![A series](images/series.webp)
 
@@ -254,6 +278,17 @@ again, whichever of the three it came from.
 `/discovery`, `/unmatched` and `/review` redirect here.
 
 ![The Discover screen](images/discover.webp)
+
+### New chapters
+
+Every chapter found at a source after its series was already being followed, grouped by the day it
+turned up and then by series, for the last week, month or three months. A chapter opens straight
+in the reader. A series' back catalogue never appears here: the chapters a first discovery lists,
+including the first discovery after a change of source, are history rather than news.
+
+The bell says that something arrived and forgets what it said a month after you read it; this
+screen lists the chapters themselves for as long as they are in the period. Open it from **By day**
+in the bell.
 
 ### Search sources
 
@@ -300,6 +335,24 @@ running, and MangaFire additionally raises a challenge only a person can clear �
 [configuration](configuration.md).
 
 ![The source list in Settings, narrowed to one language](images/settings-sources.webp)
+
+### Mihon backup
+
+Under Settings → Backup. **Export** downloads a `.tachibk` file that Mihon restores: every series
+with a confirmed source, under that source, with its chapters marked read up to where your lists
+say, your bookmarks, and its MyAnimeList, AniList and MangaBaka links. Mihon finds each title under
+an installed extension of the same name; one whose extension uses a different id shows as a missing
+source, and Mihon's own migration moves it.
+
+**Read a backup** goes the other way, and shows before it changes anything. Each title in it is
+matched to a series here by the tracker it is linked to in Mihon, or else by its title. A matched
+series that has no source yet takes the one Mihon read it from, when Soshuhen has that site
+enabled; one that already has a source keeps it. **Import** applies that, and copies bookmarks onto
+the chapters already listed here. A title no list of yours holds is reported and left out: series
+come from your lists, not from a backup.
+
+Taking the source from a backup skips the review a search would park it in. That is deliberate: the
+backup records a choice you already made, and the list is shown before anything is applied.
 
 ## What it reads and writes
 

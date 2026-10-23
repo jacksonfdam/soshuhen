@@ -2,6 +2,63 @@ import type { ListStatus } from './format'
 
 export type SeriesState = 'mapped' | 'needs_review' | 'downloading' | 'failed'
 
+/** A chapter found after its series was already followed. */
+export interface UpdateChapter {
+  id: number
+  number: number
+  title: string | null
+  state: string
+  discovered_at: string
+  series_id: number
+  series_title: string
+  prose: boolean
+}
+
+export interface Updates {
+  days: number
+  /** More chapters fell in the period than the API returns at once. */
+  truncated: boolean
+  chapters: UpdateChapter[]
+}
+
+/** What moving a series to another source would do. Nothing is changed by asking. */
+export interface MappingPreview {
+  source_site: string
+  chapters: number
+  last: number | null
+  current_last: number | null
+  progress: number
+  stops_before_progress: boolean
+  /** Chapters the new source has that nothing here does. */
+  gained: number
+  /** Failed or skipped here, listed there: tried again from the new source. */
+  retried: number
+  /** Not in the library and not listed there: set aside rather than fetched from the old site. */
+  set_aside: number
+  /** In the library already, and left as they are. */
+  downloaded: number
+}
+
+/** One title of a Mihon backup, as read against the library. */
+export interface MihonImportItem {
+  title: string
+  series_id: number | null
+  /** map: takes the backup's source. same: already reads from it. kept: left as it is. unmatched: no series here. */
+  action: 'map' | 'same' | 'kept' | 'unmatched'
+  reason?: string
+  matched_by?: string
+  source_site?: string
+  source_url?: string
+  bookmarks?: number
+}
+
+export interface MihonImport {
+  applied: boolean
+  titles: number
+  counts: Partial<Record<MihonImportItem['action'], number>>
+  items: MihonImportItem[]
+}
+
 /** One title as a source answered it. `series_id` is set when the library
     already maps this exact URL. */
 export interface SourceResult {
@@ -86,6 +143,8 @@ export interface SeriesChapter {
   komga_book_id: string | null
   /** When the source stops serving this chapter. Null means it never expires. */
   available_until: string | null
+  /** Marked to come back to. The one mark a chapter keeps here; read is derived from the lists. */
+  bookmarked: boolean
 }
 
 export type ReaderMode = 'paged_ltr' | 'paged_rtl' | 'long_strip' | 'double'
@@ -250,6 +309,9 @@ export interface SeriesDetail {
   /** Where Komga is served to a browser. Empty until it is configured. */
   komga_public_url: string
   reading_frequency: SeriesReadingFrequency
+  /** How often chapters have turned up here, in days. Observed, not stated by
+      any source; null until enough new chapters have been seen. */
+  rhythm_days: number | null
 }
 
 export interface ReviewPayload {
@@ -947,6 +1009,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ source_url: sourceUrl }),
     }),
+  setBookmark: (seriesId: number, chapterId: number, bookmarked: boolean) =>
+    request<{ ok: boolean; bookmarked: boolean }>(
+      `/api/series/${seriesId}/chapters/${chapterId}/bookmark`,
+      { method: 'PUT', body: JSON.stringify({ bookmarked }) },
+    ),
+  previewMapping: (id: number, sourceUrl: string) =>
+    request<MappingPreview>(
+      `/api/series/${id}/mapping/preview?source_url=${encodeURIComponent(sourceUrl)}`,
+    ),
+  importMihon: (file: Blob, apply: boolean) =>
+    request<MihonImport>(`/api/backup/mihon${apply ? '?apply=true' : ''}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    }),
   research: (id: number) =>
     request<{ ok: boolean }>(`/api/series/${id}/search`, { method: 'POST' }),
   setProgress: (id: number, chapter: number) =>
@@ -1054,6 +1131,7 @@ export const api = {
     query.set('page', String(params.page ?? 1))
     return request<SourcePage>(`/api/sources?${query}`)
   },
+  updates: (days: number) => request<Updates>(`/api/updates?days=${days}`),
   searchSources: (q: string) =>
     request<SourceSearch>(`/api/sources/search?q=${encodeURIComponent(q)}`),
   setSourceEnabled: (key: string, enabled: boolean) =>

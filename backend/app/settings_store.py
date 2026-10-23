@@ -24,6 +24,7 @@ SOURCE_SEARCH_CONCURRENCY = "source_search_concurrency"
 SOURCE_SEARCH_TIMEOUT = "source_search_timeout"
 DOWNLOAD_BATCH_SIZE = "download_batch_size"
 AUTO_DOWNLOAD_NEW = "auto_download_new"
+DISCOVER_BY_RHYTHM = "discover_by_rhythm"
 COMICK_URL = "comick_url"
 COMICK_ENABLED = "comick_enabled"
 READING_MINUTES_PER_CHAPTER = "reading_minutes_per_chapter"
@@ -64,6 +65,9 @@ class Defaults:
     source_search_timeout: int = 20
     download_batch_size: int = 20
     auto_download_new: bool = True
+    # Off until switched on: it stops asking sources about series that are not
+    # due, and a rhythm read wrongly costs a late chapter, so it is a choice.
+    discover_by_rhythm: bool = False
     comick_url: str = ""
     comick_enabled: bool = False
     reading_minutes_per_chapter: int = 8
@@ -115,6 +119,8 @@ def _fallback(key: str) -> str:
             return str(DEFAULTS.download_batch_size)
         case k if k == AUTO_DOWNLOAD_NEW:
             return "true" if DEFAULTS.auto_download_new else "false"
+        case k if k == DISCOVER_BY_RHYTHM:
+            return "true" if DEFAULTS.discover_by_rhythm else "false"
         case k if k == COMICK_URL:
             return DEFAULTS.comick_url
         case k if k == COMICK_ENABLED:
@@ -193,6 +199,7 @@ async def all_settings(session: AsyncSession) -> dict[str, str]:
         SOURCE_SEARCH_TIMEOUT,
         DOWNLOAD_BATCH_SIZE,
         AUTO_DOWNLOAD_NEW,
+        DISCOVER_BY_RHYTHM,
         COMICK_URL,
         COMICK_ENABLED,
         READING_MINUTES_PER_CHAPTER,

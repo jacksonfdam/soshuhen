@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 import { Button, ErrorState, Icon, NoticeBar, Skeleton, Toggle, type IconName } from '../../ui'
 import { ProviderCard } from './ProviderCard'
+import { MihonBackupCard } from './MihonBackupCard'
 import { PipelineFields } from './PipelineFields'
 import { SourcesPanel } from './SourcesPanel'
 import { JNovelClubCard } from './JNovelClubCard'
@@ -290,6 +291,15 @@ export function SettingsPage() {
           }
         />
         <StorageFields libraryPath={data.library_path} draft={draft} onChange={setField} />
+      </section>
+
+      <section className="flex flex-col gap-space-md">
+        <SectionHeader
+          icon="save"
+          title="Backup"
+          subtitle="Carry your library to Mihon and back"
+        />
+        <MihonBackupCard />
       </section>
 
       <div className="sticky bottom-nav-clearance z-40 mt-space-md w-full xl:bottom-space-lg">

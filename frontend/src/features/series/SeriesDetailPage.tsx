@@ -22,10 +22,11 @@ import { totalChapters, useSeriesDetail } from './useSeriesDetail'
 type Panel = 'chapters' | 'notes' | 'characters'
 
 // The mockup's own geometry: a twelve-column hero with the cover on three,
-// then a two-column body. Four things the mockup shows are deliberately absent
-// here — a release cadence, per-chapter release dates, page counts, and a
-// ComicInfo validation badge. No provider serves any of them, and an invented
-// figure that fills a gap in a mockup is worse than the gap. The weekday
+// then a two-column body. Three things the mockup shows are deliberately absent
+// here — per-chapter release dates, page counts, and a ComicInfo validation
+// badge. No provider serves any of them, and an invented figure that fills a
+// gap in a mockup is worse than the gap. The release cadence it also shows is
+// in the header now, read from when chapters arrived here rather than invented. The weekday
 // reading chart was deferred rather than dropped, and it is built now that
 // `progress_event` has landed.
 export function SeriesDetailPage() {
@@ -46,6 +47,7 @@ export function SeriesDetailPage() {
     setProgress,
     setListStatus,
     saveNotes,
+    bookmark,
   } = useSeriesDetail(seriesId)
   const [panel, setPanel] = useState<Panel>('chapters')
   // The screen that linked here says where "back" goes; the library stands in
@@ -117,6 +119,7 @@ export function SeriesDetailPage() {
           series={series}
           metadata={metadata}
           komgaBaseUrl={detail.komga_public_url}
+          rhythmDays={detail.rhythm_days}
         />
       </section>
 
@@ -159,6 +162,7 @@ export function SeriesDetailPage() {
                 komgaBaseUrl={detail.komga_public_url}
                 progress={series.progress}
                 prose={series.kind === 'prose'}
+                onBookmark={bookmark}
               />
             </div>
             <div hidden={panel !== 'notes'}>

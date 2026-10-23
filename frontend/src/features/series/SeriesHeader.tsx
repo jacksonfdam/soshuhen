@@ -11,6 +11,14 @@ const PUBLICATION_LABEL: Record<string, string> = {
   hiatus: 'On hiatus',
 }
 
+/** How often chapters have been arriving, in words. */
+function rhythmLabel(days: number): string {
+  if (days === 1) return 'Daily'
+  if (days === 7) return 'Weekly'
+  if (days === 14) return 'Every two weeks'
+  return `Every ${days} days`
+}
+
 /** "2020 — present", "2015 — 2021", or "2020" when only one year is known. */
 function runYears(start: number | null, end: number | null): string | null {
   if (!start) return null
@@ -23,9 +31,11 @@ export function SeriesHeader({
   series,
   metadata,
   komgaBaseUrl,
+  rhythmDays,
 }: {
   series: Series
   metadata: SeriesMetadata
+  rhythmDays: number | null
   /** Where Komga is served to a browser. Empty means no link is offered. */
   komgaBaseUrl: string
 }) {
@@ -50,6 +60,13 @@ export function SeriesHeader({
           <Badge tone="secondary">{PUBLICATION_LABEL[metadata.publication_status]}</Badge>
         )}
         {years && <Badge tone="tertiary">{years}</Badge>}
+        {/* Read from when chapters arrived here, never stated by a source,
+            which the tooltip says so the badge is not taken for a schedule. */}
+        {rhythmDays !== null && (
+          <span title="How often new chapters have turned up here">
+            <Badge tone="primary">{rhythmLabel(rhythmDays)}</Badge>
+          </span>
+        )}
         {metadata.demographic && <Badge tone="primary">{metadata.demographic}</Badge>}
         {metadata.country && (
           <span className="rounded bg-surface-container-high px-2 py-0.5 font-mono text-label-sm text-on-surface-variant">
