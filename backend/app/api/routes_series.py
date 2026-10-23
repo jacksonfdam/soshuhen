@@ -1,5 +1,6 @@
 """Library and review screens."""
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -623,6 +624,71 @@ async def list_candidates(series_id: int, session: Session) -> dict[str, Any]:
             }
             for row in result.all()
         ],
+    }
+
+
+@router.get("/{series_id}/mapping/preview")
+async def preview_mapping(series_id: int, source_url: str, session: Session) -> dict[str, Any]:
+    """What moving this series to another source would do, before it is done.
+
+    Asks the new source for its chapter list, the one request a move costs, and
+    compares it with what is held here. Persists nothing: confirming is still
+    POST /mapping, and the first discovery after it applies what this predicts
+    (chapter_discover.hand_over).
+    """
+    try:
+        source = source_for_url(source_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    expected = await series_kind(session, series_id)
+    if kind_of(source) != expected:
+        raise HTTPException(
+            status_code=422, detail=f"{source.site} publishes {kind_of(source)}, not {expected}"
+        )
+
+    rows = (
+        await session.execute(
+            text("select number, state from chapter where series_id = :id"), {"id": series_id}
+        )
+    ).all()
+    progress = (
+        await session.execute(
+            text(
+                "select coalesce(max(user_progress_chapter), 0) from list_entry"
+                " where series_id = :id"
+            ),
+            {"id": series_id},
+        )
+    ).scalar_one()
+    timeout = await settings_store.get_int(session, settings_store.SOURCE_SEARCH_TIMEOUT)
+    # Released before the source is asked, which can take the whole timeout.
+    await session.close()
+
+    try:
+        listed = await asyncio.wait_for(source.list_chapters(source_url), timeout)
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504, detail=f"{source.site} did not answer in {timeout}s"
+        ) from exc
+    except Exception as exc:  # the source's own words are the answer
+        raise HTTPException(status_code=502, detail=f"{source.site}: {exc}"[:300]) from exc
+
+    offered = {chapter.number for chapter in listed}
+    held = {row.number: row.state for row in rows}
+    fetchable = ("known", "queued", "failed")
+    return {
+        "source_site": source.site,
+        "chapters": len(offered),
+        "last": float(max(offered)) if offered else None,
+        "current_last": float(max(held)) if held else None,
+        "progress": progress,
+        # A source that stops before where reading got to cannot carry on from
+        # there, which is the one thing a move is usually for.
+        "stops_before_progress": bool(offered) and max(offered) < progress,
+        "gained": len(offered - held.keys()),
+        "retried": sum(1 for n, s in held.items() if n in offered and s in ("failed", "skipped")),
+        "set_aside": sum(1 for n, s in held.items() if n not in offered and s in fetchable),
+        "downloaded": sum(1 for s in held.values() if s == "downloaded"),
     }
 
 
