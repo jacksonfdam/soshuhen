@@ -59,6 +59,26 @@ export interface MihonImport {
   items: MihonImportItem[]
 }
 
+/** One title as a source answered it. `series_id` is set when the library
+    already maps this exact URL. */
+export interface SourceResult {
+  source_site: string
+  source_url: string
+  title: string
+  cover_url: string | null
+  chapter_count: number | null
+  year: number | null
+  score: number
+  series_id: number | null
+}
+
+export interface SourceSearch {
+  query: string
+  searched: number
+  results: SourceResult[]
+  errors: { site: string; detail: string }[]
+}
+
 export interface Series {
   id: number
   title: string
@@ -1112,6 +1132,8 @@ export const api = {
     return request<SourcePage>(`/api/sources?${query}`)
   },
   updates: (days: number) => request<Updates>(`/api/updates?days=${days}`),
+  searchSources: (q: string) =>
+    request<SourceSearch>(`/api/sources/search?q=${encodeURIComponent(q)}`),
   setSourceEnabled: (key: string, enabled: boolean) =>
     request<Source>(`/api/sources/${key}`, {
       method: 'PUT',

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 import { api } from '../lib/api'
 import { settleQueuedProgress } from '../lib/queuedProgress'
@@ -9,6 +9,7 @@ import { useNotice } from '../lib/useNotice'
 import { syncLists } from '../lib/sync'
 import { Badge, Button, NoticeBar } from '../ui'
 import { Icon, type IconName } from '../ui/Icon'
+import { CommandPalette, type Command } from './CommandPalette'
 import { NotificationBell } from './NotificationBell'
 
 type Integration = { name: string; state: string; detail: string | null }
@@ -44,6 +45,7 @@ export function AppShell() {
   const [actionable, setActionable] = useState(0)
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const { notice, report, fail } = useNotice()
+  const navigate = useNavigate()
 
   // These three feed badges and the status strip, not the screen below. A
   // failure here degrades those to zero and to nothing, which the screens
@@ -86,6 +88,17 @@ export function AppShell() {
     else report('Sync queued for MyAnimeList and AniList')
   }
 
+  const commands: Command[] = [
+    ...NAV.map((item) => ({
+      id: `go-${item.to}`,
+      label: `Go to ${item.label}`,
+      icon: item.icon,
+      run: () => navigate(item.to),
+    })),
+    { id: 'sync-all', label: 'Sync all lists', icon: 'sync', run: () => void syncAll() },
+    { id: 'go-search', label: 'Go to Search sources', icon: 'search', run: () => navigate('/search') },
+  ]
+
   const badges: Record<string, number> = {
     discover: actionable,
     jobs: (counts.leased ?? 0) + (counts.pending ?? 0),
@@ -93,6 +106,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-background">
+      <CommandPalette commands={commands} />
       <header className="fixed inset-x-0 top-0 z-50 h-20 border-b border-white/5 bg-surface-container-lowest/80 backdrop-blur-xl">
         <div className="flex h-full items-center justify-between gap-space-md px-gutter">
           <div className="flex shrink-0 items-center gap-space-md">
@@ -158,6 +172,14 @@ export function AppShell() {
                 </span>
               ))}
             </div>
+            <Link
+              to="/search"
+              aria-label="Search sources (Ctrl+K)"
+              title="Search sources (Ctrl+K)"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+            >
+              <Icon name="search" className="h-5 w-5" />
+            </Link>
             <NotificationBell />
             <Button variant="surface" size="sm" icon="sync" className="shrink-0 whitespace-nowrap" onClick={syncAll}>
               Sync all
