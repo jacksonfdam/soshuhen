@@ -157,7 +157,13 @@ its archive. A chapter left half read for a week returns to `known`.
 ## Reading
 
 ### `reading_position`
-`series_id` (key), `chapter_id`, `page`, `updated_at`. One row per series.
+`series_id` (key), `chapter_id`, `volume_id`, `page`, `fraction`, `updated_at`. One row per series.
+
+Exactly one of `chapter_id` and `volume_id` is set: a light novel volume is a book with no chapter
+rows, so a place inside it names the volume. For prose, `page` is the EPUB's spine section and
+`fraction` how far through that section the reader had scrolled; comics leave `fraction` null.
+`GET /api/reader/series/{id}/resume` only ever answers a chapter, because clients decode its shape;
+novels resume through `/api/reader/prose/series/{id}/resume`.
 
 Where reading stands inside a chapter, kept by this installation only. Apart from
 `list_entry.user_progress_chapter` on purpose: that is a list's view of progress, every sync

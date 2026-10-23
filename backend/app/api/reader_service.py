@@ -309,39 +309,50 @@ async def position_in(session: AsyncSession, row: ChapterRow) -> int | None:
 async def save_position(
     session: AsyncSession,
     series_id: int,
-    chapter_id: int,
+    *,
+    chapter_id: int | None = None,
+    volume_id: int | None = None,
     page: int,
+    fraction: float | None = None,
     read_at: datetime | None = None,
 ) -> bool:
     """Store where reading stands. Returns whether the row was written.
+
+    A position names a chapter or, for a light novel volume that has no
+    chapters, a volume. Prose also sends `fraction`: `page` is then the section
+    and this how far through it.
 
     `read_at` comes from a client that read offline and is replaying it later.
     Given one, the write applies only if it is newer than what is stored, so a
     position from this morning's train cannot overwrite this evening's. Without
     one the write always applies, which is what the web reader relies on.
     """
+    table, book_id = ("chapter", chapter_id) if chapter_id is not None else ("volume", volume_id)
     owner = await session.execute(
-        text("select 1 from chapter where id = :c and series_id = :s"),
-        {"c": chapter_id, "s": series_id},
+        text(f"select 1 from {table} where id = :b and series_id = :s"),
+        {"b": book_id, "s": series_id},
     )
     if owner.first() is None:
-        raise ChapterMissing(f"chapter {chapter_id} is not part of series {series_id}")
+        raise ChapterMissing(f"{table} {book_id} is not part of series {series_id}")
     # Clamped to now(): a phone whose clock runs fast would otherwise win every
     # replay, including against reading done after it.
     newer_only = "where reading_position.updated_at < excluded.updated_at" if read_at else ""
     result = await session.execute(
         text(
             f"""
-            insert into reading_position (series_id, chapter_id, page, updated_at)
-            values (:s, :c, :p, least(coalesce(cast(:at as timestamptz), now()), now()))
+            insert into reading_position
+                   (series_id, chapter_id, volume_id, page, fraction, updated_at)
+            values (:s, :c, :v, :p, :f,
+                    least(coalesce(cast(:at as timestamptz), now()), now()))
             on conflict (series_id) do update
-               set chapter_id = excluded.chapter_id, page = excluded.page,
+               set chapter_id = excluded.chapter_id, volume_id = excluded.volume_id,
+                   page = excluded.page, fraction = excluded.fraction,
                    updated_at = excluded.updated_at
              {newer_only}
             returning 1
             """
         ),
-        {"s": series_id, "c": chapter_id, "p": page, "at": read_at},
+        {"s": series_id, "c": chapter_id, "v": volume_id, "p": page, "f": fraction, "at": read_at},
     )
     return result.first() is not None
 

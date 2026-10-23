@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import AwareDatetime, BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import reader_service as service
@@ -60,10 +60,20 @@ def _chapter_ref(row: service.ChapterRow) -> dict[str, Any]:
 
 
 class PositionIn(BaseModel):
-    chapter_id: int
+    # Exactly one: a light novel volume is a book with no chapter rows.
+    chapter_id: int | None = None
+    volume_id: int | None = None
     page: int = Field(ge=0)
+    # Prose: how far through the section `page` names.
+    fraction: float | None = Field(default=None, ge=0, le=1)
     # Sent by a client replaying reading done offline; the web reader sends none.
     read_at: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def one_book(self) -> "PositionIn":
+        if (self.chapter_id is None) == (self.volume_id is None):
+            raise ValueError("name exactly one of chapter_id and volume_id")
+        return self
 
 
 class CompleteIn(BaseModel):
@@ -114,7 +124,13 @@ async def page(chapter_id: int, index: int, session: Session) -> Response:
 async def save_position(series_id: int, body: PositionIn, session: Session) -> dict[str, bool]:
     with service_errors():
         applied = await service.save_position(
-            session, series_id, body.chapter_id, body.page, body.read_at
+            session,
+            series_id,
+            chapter_id=body.chapter_id,
+            volume_id=body.volume_id,
+            page=body.page,
+            fraction=body.fraction,
+            read_at=body.read_at,
         )
     await session.commit()
     return {"ok": True, "applied": applied}

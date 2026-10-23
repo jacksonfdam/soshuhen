@@ -5,7 +5,9 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -397,11 +399,23 @@ class ReadingPosition(Base):
     series_id: Mapped[int] = mapped_column(
         ForeignKey("series.id", ondelete="CASCADE"), primary_key=True
     )
-    chapter_id: Mapped[int] = mapped_column(
-        ForeignKey("chapter.id", ondelete="CASCADE"), nullable=False
+    # Exactly one of the two: a light novel volume is a book with no chapters.
+    chapter_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chapter.id", ondelete="CASCADE"), nullable=True
+    )
+    volume_id: Mapped[int | None] = mapped_column(
+        ForeignKey("volume.id", ondelete="CASCADE"), nullable=True
     )
     page: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Prose only: `page` is the section, and this is how far through it.
+    fraction: Mapped[float | None] = mapped_column(Float, nullable=True)
     updated_at: Mapped[datetime] = _now()
+
+    __table_args__ = (
+        CheckConstraint(
+            "(chapter_id is null) <> (volume_id is null)", name="reading_position_one_target"
+        ),
+    )
 
 
 class SeriesReaderPref(Base):
