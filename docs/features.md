@@ -59,6 +59,28 @@ and are written atomically — Komga never sees a half-finished download.
 Already own some chapters? Drop them into the library folder. Soshuhen sees them, counts them as
 present, and will not download them again.
 
+### Importing a novel you own as PDFs
+
+A prose series' page has an **Import files** tab. Drop the PDFs on it, or click to choose them.
+Soshuhen reads each file and shows what it found before anything is written: the volume, whether it
+is the web novel or the light novel, the chapters it holds, and the names the files will get in the
+library. Change a volume number or an edition there if it guessed wrong, tick **Replace** on
+anything the library already has, then press **Import**.
+
+- **A web novel volume** becomes one chapter per chapter bookmark, numbered as the web novel numbers
+  them across the whole work. Prologues sit before chapter 1 (0.1, 0.2…), and an unnumbered POV or
+  side chapter sits just after the chapter it follows (9.5, 9.6…). The cover, character pages and
+  maps go into the first chapter of the volume.
+- **A light novel volume** stays whole: one book per volume, read start to end. Its chapters restart
+  at 1 every volume, so they never become chapter numbers.
+- **Both editions of one volume** can sit side by side. Volume numbers always follow the light
+  novel, which is what MyAnimeList counts.
+- A file whose name starts `LN - ` or `WN - ` is taken at its word. Otherwise a book whose chapters
+  restart at 1 after the series already has later chapters reads as the light novel.
+
+The PDFs need bookmarks and real text. A scanned book, or a PDF without bookmarks, is shown as
+unreadable and left out. Importing never marks a chapter read; your lists stay where they were.
+
 ### Progress that follows you
 
 Finish a chapter in your reader and Soshuhen writes that progress back to your lists.

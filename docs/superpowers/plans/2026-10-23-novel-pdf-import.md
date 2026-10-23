@@ -16,7 +16,7 @@
 - `app/importer/` never touches the database, like `providers/`, `sources/` and `downloader/`.
 - Nothing is written to `/manga` or to `chapter`/`volume` until the user presses **Import**.
 - The import never marks anything read and never enqueues `progress_push`, `progress_write` or `list_write`.
-- `volume.number` is the light novel's volume number for both editions.
+- `volume.number` is the light novel's volume number for both editions, and `volume.edition` (`web`/`light`) tells them apart; one row per `(series_id, number, edition)`.
 - A light-novel PDF never produces `chapter` rows.
 - Prose series only. An import on a comic series is refused with 409.
 - File names come only from `downloader/paths.py` (`chapter_path`, `volume_path`), so normalisation and reconciliation agree.
@@ -99,7 +99,7 @@ Rules, from the spec:
 - `Prologue <k>` becomes `0.k`. An unnumbered `Prologue …` takes the next fraction after the last prologue.
 - An unnumbered side entry (`POV Chapter`, `Side Story`, `Interlude`, `Epilogue` with no number) takes the previous number plus `.5`, then `.6` for the next one, and so on.
 - `Cover`, `Characters` and `Map` (case-insensitive, prefix match) are front matter. Their entries join the next chapter's `entries`, and the first image of `Cover` becomes `cover`.
-- The edition is `light` when the first numbered chapter is 1 and `known_max` is greater than 1, or when `producer` starts with `calibre` and the numbers restart at 1. Otherwise it is `web`.
+- A file name starting `LN - ` is `light` and `WN - ` is `web`, whatever the content says. Otherwise the edition is `light` when the first numbered chapter is 1 and `known_max` is greater than 1, or when `producer` starts with `calibre` and the numbers restart at 1. Otherwise it is `web`.
 - The volume number comes from `_NN`, `Volume NN` or `Vol. NN` in the file name.
 
 - [ ] **Step 1: Write the failing tests:**
@@ -108,7 +108,8 @@ Rules, from the spec:
   - `test_chapter_title_is_the_text_after_the_number`: `"Chapter 213 Today Kuzunoha leaves"` gives `title == "Today Kuzunoha leaves"`.
   - `test_restart_at_one_after_higher_known_chapters_is_light`: `known_max=Decimal(295)` gives `edition == "light"`.
   - `test_first_volume_starting_at_one_is_web`: `known_max=None` gives `web`.
-  - `test_volume_from_filename` with a parametrised table: `"…Douchuu_01.pdf"` → 1, `"…_12_(v2).pdf"` → 12, `"…_15 (Chapter 213-231).pdf"` → 15, `"Tsukimichi Moonlit Fantasy - Volume 19.pdf"` → 19, `"notes.pdf"` → None.
+  - `test_filename_prefix_decides_the_edition`: `"LN - … - Volume 01.pdf"` is `light` even with `known_max=None`; `"WN - … - Volume 03.pdf"` is `web` even when it restarts at 1 after `known_max=295`.
+  - `test_volume_from_filename` with a parametrised table (add `"WN - Tsukimichi … - Volume 07.pdf"` → 7): `"…Douchuu_01.pdf"` → 1, `"…_12_(v2).pdf"` → 12, `"…_15 (Chapter 213-231).pdf"` → 15, `"Tsukimichi Moonlit Fantasy - Volume 19.pdf"` → 19, `"notes.pdf"` → None.
 - [ ] **Step 2:** Run `pytest tests/test_importer_numbering.py -q`. Expected: FAIL.
 - [ ] **Step 3:** Implement `number_book` and `volume_from_filename`.
 - [ ] **Step 4:** Run the tests. Expected: PASS.
@@ -147,18 +148,19 @@ Rules: XML-escape everything. A line on its own made only of digits, or matching
 **Interfaces:**
 - Consumes: `ReadVolume`, `NumberedChapter` (Task 3); `chapter_filename` and `volume_filename` from `app/downloader/paths.py`.
 - Produces:
-  - `@dataclass(frozen=True) class Existing: chapters: frozenset[Decimal]; volumes: frozenset[Decimal]`
+  - `@dataclass(frozen=True) class Existing: chapters: frozenset[Decimal]; volumes: frozenset[tuple[Decimal, Edition]]`
   - `@dataclass(frozen=True) class Override: volume: Decimal | None = None; edition: Edition | None = None; replace: bool = False`
   - `@dataclass class PlannedFile: name: str; sha256: str; volume: Decimal | None; edition: Edition; chapters: list[Decimal]; outputs: list[str]; status: Literal["ready", "exists", "conflict", "unreadable", "duplicate"]; reason: str | None`. `outputs` holds the file names it will write.
   - `plan_import(slug: str, files: list[tuple[str, str, ReadVolume | None]], existing: Existing, overrides: dict[str, Override]) -> list[PlannedFile]`. Each file is `(name, sha256, read)`, with `None` for an unreadable file.
 
-Rules: an override's `volume`/`edition` replaces what was read. A web volume's chapters, or a light volume's number, already in `existing` gives `exists` unless `replace`. Two files with the same sha256 or the same volume give `duplicate` for the second. A generated number that collides with a real chapter number in the same file gives `conflict` with the number in `reason`. A file with no volume number gives `conflict` with `reason="no volume number"`.
+Rules: an override's `volume`/`edition` replaces what was read. A web volume whose chapters or `(number, "web")` are already in `existing`, or a light volume whose `(number, "light")` is, gives `exists` unless `replace`. Two files with the same sha256, or the same volume *and edition*, give `duplicate` for the second. The same number in the other edition is fine. A generated number that collides with a real chapter number in the same file gives `conflict` with the number in `reason`. A file with no volume number gives `conflict` with `reason="no volume number"`.
 
 - [ ] **Step 1: Write the failing tests:**
   - `test_web_volume_lists_its_chapter_files`: the outputs equal `chapter_filename(slug, n, title, kind="prose")` for each chapter.
   - `test_light_volume_is_one_volume_file`: `outputs == [volume_filename(slug, Decimal(19), …)]` and `chapters == []`.
   - `test_existing_chapters_are_exists_unless_replaced`.
   - `test_same_file_twice_is_duplicate` and `test_two_files_claiming_one_volume_is_duplicate`.
+  - `test_both_editions_of_one_volume_are_both_ready`.
   - `test_generated_number_colliding_with_a_real_one_is_conflict`.
   - `test_override_flips_edition_and_volume`.
 - [ ] **Step 2:** Run `pytest tests/test_importer_plan.py -q`. Expected: FAIL.
@@ -209,6 +211,22 @@ Rules: an override's `volume`/`edition` replaces what was read. A web volume's c
 - [ ] **Step 4:** Run the tests. Expected: PASS.
 - [ ] **Step 5:** Commit: `feat(api): confirm an import onto the download lane`.
 
+### Task 7b: An edition on volume rows
+
+**Files:**
+- Create: `backend/alembic/versions/0028_volume_edition.py`
+- Modify: `backend/app/models.py` (`Volume.edition`, constraint), `backend/app/handlers/komga_scan.py` (`reconcile_volumes` reads only `edition = 'light'` rows: only they own a `Vol.` file), `backend/app/api/routes_series.py:456` (return `edition`)
+- Test: `backend/tests/test_volume_edition.py`
+
+**Interfaces:**
+- Produces: `volume.edition text not null default 'light'`, `CHECK (edition in ('web','light'))`, unique `volume_series_number_edition_key (series_id, number, edition)` replacing `volume_series_number_key`. J-Novel Club rows are `light` by default.
+
+- [ ] **Step 1: Write the failing tests:** `test_two_editions_of_one_number_coexist` (insert `web` and `light` volume 1 for one series, no error); `test_one_edition_twice_is_rejected` (`IntegrityError`); `test_reconcile_volumes_ignores_web_rows` (a `Vol.0001` book matches the `light` row, the `web` row's `komga_book_id` stays null).
+- [ ] **Step 2:** Run `pytest tests/test_volume_edition.py -q`. Expected: FAIL.
+- [ ] **Step 3:** Write the migration (downgrade deletes `web` rows before restoring the old key), the model, the `reconcile_volumes` filter and the route field.
+- [ ] **Step 4:** Run `pytest tests/test_volume_edition.py tests/test_komga_volumes.py tests/test_jnc_library_sync.py -q`. Expected: PASS.
+- [ ] **Step 5:** Commit: `feat(db): let a volume exist in both its web and light novel editions`.
+
 ### Task 8: The `import_files` handler
 
 **Files:**
@@ -223,7 +241,7 @@ Rules: an override's `volume`/`edition` replaces what was read. A web volume's c
 Behaviour:
 - Recompute the plan from staging and act only on `ready` files. A missing token raises `PermanentError("staged files are gone; upload again")`.
 - For each web chapter, write `chapter_path(..., kind="prose")` with `identifier=f"soshuhen:{series_id}:{number.normalize()}"`. Then upsert `chapter (series_id, number, title, state='downloaded', file_path, source_url=null)` `on conflict (series_id, number) do update` (only reached through `replace`).
-- For each file, upsert `volume (series_id, number, source_volume_id=f"import:{sha256}", status='owned', state='downloaded', first_part, last_part, title)` `on conflict (series_id, number) do update`. `first_part`/`last_part` are the min and max chapter numbers for web volumes and null for light ones. A light volume writes one `EpubChapter` with `number=volume`, the whole book as body and `file_path` on the volume row. Every EPUB of a file carries that file's `ReadVolume.cover`, falling back to `prose_download.cover_for`.
+- For each file, upsert `volume (series_id, number, edition, source_volume_id=f"import:{sha256}", status='owned', state='downloaded', first_part, last_part, title)` `on conflict (series_id, number, edition) do update`. `first_part`/`last_part` are the min and max chapter numbers for web volumes and null for light ones. A light volume writes one `EpubChapter` with `number=volume`, the whole book as body and `file_path` on the volume row. Every EPUB of a file carries that file's `ReadVolume.cover`, falling back to `prose_download.cover_for`.
 - When replacing, unlink the previous `file_path` only when it sits in the same series folder and reads back as the same number, as in `volume_download._download`.
 - Commit after each file. Call `ctx.log(f"imported volume {n}", pct=…)` after each one. Enqueue `KOMGA_SCAN` with `dedupe_key=f"komga_scan:{series_id}"` at the end, then call `discard(token)`.
 - Never enqueue any progress job.
@@ -246,6 +264,7 @@ Behaviour:
 **Files:**
 - Modify: `frontend/src/lib/api.ts` (types `ImportFile`, `ImportPreview`; functions `previewImport(seriesId: number, files: File[]): Promise<ImportPreview>` and `confirmImport(seriesId: number, token: string, overrides: Record<string, ImportOverride>): Promise<{ job_id: number }>`)
 - Create: `frontend/src/features/series/ImportPanel.tsx`
+- Modify: `frontend/src/features/series/VolumesPanel.tsx` (label each volume with its edition when the series holds both)
 - Modify: `frontend/src/features/series/SeriesDetailPage.tsx` (a fourth `Panel`, `'import'`, shown only when `detail.series.kind === 'prose'`)
 
 **Interfaces:**

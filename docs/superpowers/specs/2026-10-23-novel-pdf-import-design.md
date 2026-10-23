@@ -74,6 +74,11 @@ This is the first of three projects, in this order:
   the same as light novel volume 15), so a web-novel PDF takes the number of the light novel volume
   it corresponds to, and a volume pushed to a list means a light novel volume, which is what
   MyAnimeList counts. Web and light novel volumes therefore share one number space on purpose.
+- **Both editions of a volume live side by side.** The user owns light novel volumes 01–20 *and*
+  web novel volumes 01–18, and wants both. A `volume` row carries its `edition` (`web` or `light`),
+  and a series holds at most one row per number *per edition*. Web novel volumes are only a chapter
+  range (their chapters are the files); light novel volumes are one file each. Either edition's
+  volume N, once read, counts as volume N read.
 - **A review step** listing each file, what it was read as (volume, chapter range or whole volume,
   edition) and the names it will produce, then one Import button.
 
@@ -111,7 +116,8 @@ This is the first of three projects, in this order:
   previous chapter's number plus `.5`. A second one after the same chapter takes `.6`, and so on.
 - **Front matter** (`Cover`, `Characters`, `Map`) is not a chapter. Its pages go into the first
   chapter of that volume, and the cover image becomes that volume's cover.
-- **Edition**: a PDF is a light novel volume when its chapter numbers restart at 1 while the series
+- **Edition**: a file name starting `LN - ` or `WN - ` says which edition it is, and wins. Otherwise
+  a PDF is a light novel volume when its chapter numbers restart at 1 while the series
   already has chapters (or other files in the same drop) numbered higher. Otherwise it is a web
   novel volume. The review shows which way each file was read, and the user can flip it before
   importing.
@@ -133,9 +139,8 @@ For each dropped file it shows the file name, its volume number, its edition, wh
 - **Replacing** an existing chapter or volume keeps reading progress whole: after the scan, Komga's
   read state is re-applied from the lists, which `komga_scan.mark_read_up_to_lists` already does.
   The list is the record of what was read, so a new Komga book id loses nothing.
-- **A volume number the series already holds**, in either edition, is shown as existing and left out
-  unless replaced. Holding both editions of one volume number is not supported; a later light novel
-  edition of volumes 1–18 replaces the web novel volume row, not the chapters.
+- **A volume number the series already holds in the same edition** is shown as existing and left
+  out unless replaced. The other edition of the same number is a separate volume and imports.
 - **A generated side-chapter number that a real bookmark already holds** (a `.5` that exists as
   `Chapter 9.5`) is shown as a conflict for the user to settle, never renumbered silently.
 

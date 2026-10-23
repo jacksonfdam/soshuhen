@@ -411,7 +411,12 @@ async def reconcile_volumes(ctx: JobContext, client, series_id: int, books) -> i
     """
     rows = (
         await ctx.session.execute(
-            text("select id, number, last_part from volume where series_id = :s"),
+            # Only a light novel row owns a Vol. file; a web novel row of the
+            # same number is a chapter range and must not adopt that book.
+            text(
+                "select id, number, last_part from volume"
+                " where series_id = :s and edition = 'light'"
+            ),
             {"s": series_id},
         )
     ).all()

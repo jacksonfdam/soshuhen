@@ -288,6 +288,8 @@ export interface SeriesReadingFrequency {
 
 export interface SeriesVolume {
   number: number
+  /** `web` rows are a range of imported web novel chapters; only `light` rows own a file. */
+  edition: 'web' | 'light'
   title: string | null
   status: 'owned' | 'preorder'
   state: string
@@ -934,6 +936,30 @@ export interface NotificationPage {
   unread_count: number
 }
 
+export type ImportEdition = 'web' | 'light'
+
+export interface ImportFile {
+  name: string
+  sha256: string
+  volume: string | null
+  edition: ImportEdition
+  chapters: string[]
+  outputs: string[]
+  status: 'ready' | 'exists' | 'conflict' | 'unreadable' | 'duplicate'
+  reason: string | null
+}
+
+export interface ImportPreview {
+  token: string
+  files: ImportFile[]
+}
+
+export interface ImportOverride {
+  volume: string | null
+  edition: ImportEdition | null
+  replace: boolean
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
@@ -946,6 +972,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  /** Upload PDFs for review. The server writes nothing until confirmImport. */
+  previewImport: async (seriesId: number, files: File[]): Promise<ImportPreview> => {
+    const form = new FormData()
+    for (const file of files) form.append('files', file)
+    // No JSON Content-Type here: the browser sets the multipart boundary itself.
+    const response = await fetch(`/api/series/${seriesId}/import`, { method: 'POST', body: form })
+    if (!response.ok) {
+      throw new ApiError(sentenceOf(await response.text(), response), response.status)
+    }
+    return response.json() as Promise<ImportPreview>
+  },
+  confirmImport: (seriesId: number, token: string, overrides: Record<string, ImportOverride>) =>
+    request<{ job_id: number | null; files: ImportFile[] }>(
+      `/api/series/${seriesId}/import/${encodeURIComponent(token)}`,
+      { method: 'POST', body: JSON.stringify({ files: overrides }) },
+    ),
   dashboard: () => request<Dashboard>('/api/dashboard'),
   /** Apply one status to many series. One job per series; see routes_series. */
   batchStatus: (seriesIds: number[], status: ListStatus) =>
