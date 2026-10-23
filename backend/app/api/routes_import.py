@@ -87,10 +87,12 @@ async def preview(series_id: int, files: list[UploadFile], session: Session) -> 
     received: list[tuple[str, str, bytes]] = []
     total = 0
     for upload in files:
-        data = await upload.read()
-        total += len(data)
+        # Starlette has already spooled the file to disk and knows its size;
+        # checking first keeps an oversized drop out of this process's memory.
+        total += upload.size or 0
         if total > _MAX_DROP_BYTES:
             raise HTTPException(status_code=413, detail="the drop is over 200 MB")
+        data = await upload.read()
         if not data.startswith(b"%PDF-"):
             raise HTTPException(status_code=415, detail=f"{upload.filename} is not a PDF")
         received.append((upload.filename or "unnamed.pdf", sha256_of(data), data))
@@ -117,6 +119,17 @@ async def confirm(
     planned, _ = await asyncio.to_thread(build_plan, slug, received, existing, overrides)
     if not any(item.status == "ready" for item in planned):
         raise HTTPException(status_code=409, detail="nothing in this drop can be imported")
+    # Pin what the user reviewed. Unprefixed, a file's edition is guessed from the
+    # chapters the series holds, and a retry after the first volume landed would
+    # guess light for a web volume and write the wrong book.
+    overrides = {
+        item.sha256: Override(
+            volume=item.volume,
+            edition=item.edition,
+            replace=overrides.get(item.sha256, Override()).replace,
+        )
+        for item in planned
+    }
 
     job_id = await repo.enqueue(
         session,

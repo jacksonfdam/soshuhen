@@ -218,3 +218,50 @@ async def test_confirm_with_nothing_ready_is_409(client):
     response = await confirm(client, series_id, token)
 
     assert response.status_code == 409
+
+
+async def test_confirm_pins_every_files_reviewed_edition_and_volume(client):
+    # Without a LN/WN prefix the edition is a guess from what the library holds,
+    # and that changes once the first volume lands: a retry must not guess again.
+    series_id = await a_series()
+    body = (
+        await preview(
+            client,
+            series_id,
+            ("Tsukimichi_01.pdf", [("Chapter 1", ["a"]), ("Chapter 2", ["b"])]),
+            ("Tsukimichi_02.pdf", [("Chapter 3", ["c"]), ("Chapter 4", ["d"])]),
+        )
+    ).json()
+
+    await confirm(client, series_id, body["token"])
+
+    async with get_sessionmaker()() as session:
+        payload = (await session.execute(text("select payload from job"))).scalar_one()
+    pinned = payload["overrides"]
+    assert {f["sha256"] for f in body["files"]} == set(pinned)
+    assert {(v["edition"], v["volume"]) for v in pinned.values()} == {("web", "1"), ("web", "2")}
+
+
+async def test_an_oversized_drop_is_refused_before_it_is_read(client, monkeypatch):
+    from starlette.datastructures import UploadFile
+
+    from app.api import routes_import
+
+    reads = []
+    original = UploadFile.read
+
+    async def counting_read(self, *args, **kwargs):
+        reads.append(self.filename)
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(routes_import, "_MAX_DROP_BYTES", 100)
+    monkeypatch.setattr(UploadFile, "read", counting_read)
+    series_id = await a_series()
+
+    response = await client.post(
+        f"/api/series/{series_id}/import",
+        files=[("files", ("big.pdf", b"%PDF-" + b"x" * 500, "application/pdf"))],
+    )
+
+    assert response.status_code == 413
+    assert reads == []
