@@ -1,6 +1,7 @@
 package app.soshuhen.ui.theme
 
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlin.test.Test
@@ -21,5 +22,14 @@ class TypographyTest {
         assertEquals(16.sp, t.titleMedium.fontSize); assertEquals(FontWeight.SemiBold, t.titleMedium.fontWeight)
         assertEquals(14.sp, t.bodyMedium.fontSize); assertEquals(22.sp, t.bodyMedium.lineHeight)
         assertEquals(0.04.em, t.labelSmall.letterSpacing)
+    }
+
+    @Test fun everyStepIsLaidOutUnhinted() {
+        val t = soshuhenTypography()
+        listOf(
+            t.displayLarge, t.displayMedium, t.displaySmall, t.headlineLarge, t.headlineMedium, t.headlineSmall,
+            t.titleLarge, t.titleMedium, t.titleSmall, t.bodyLarge, t.bodyMedium, t.bodySmall,
+            t.labelLarge, t.labelMedium, t.labelSmall,
+        ).forEach { assertEquals(TextMotion.Animated, it.textMotion) }
     }
 }
