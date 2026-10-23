@@ -439,7 +439,8 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
     chapters = await session.execute(
         text(
             """
-            select id, number, title, state, file_path, komga_book_id, available_until
+            select id, number, title, state, file_path, komga_book_id, available_until,
+                   bookmarked
               from chapter where series_id = :id order by number
             """
         ),
@@ -494,6 +495,7 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
                 # and the row simply does not offer a link.
                 "komga_book_id": c.komga_book_id,
                 "available_until": c.available_until.isoformat() if c.available_until else None,
+                "bookmarked": c.bookmarked,
             }
             for c in chapters.all()
         ],
@@ -793,6 +795,36 @@ async def list_chapters(series_id: int, session: Session) -> list[dict[str, Any]
         }
         for row in result.all()
     ]
+
+
+class BookmarkIn(BaseModel):
+    bookmarked: bool
+
+
+@router.put("/{series_id}/chapters/{chapter_id}/bookmark")
+async def set_bookmark(
+    series_id: int, chapter_id: int, body: BookmarkIn, session: Session
+) -> dict[str, Any]:
+    """Mark a chapter to come back to, or clear the mark.
+
+    Read is derived from the lists and never stored here; a bookmark is the one
+    thing about a chapter only this installation knows, so it is the one mark
+    the chapter row keeps.
+    """
+    result = await session.execute(
+        text(
+            """
+            update chapter set bookmarked = :bookmarked
+             where id = :chapter_id and series_id = :series_id
+            returning id
+            """
+        ),
+        {"bookmarked": body.bookmarked, "chapter_id": chapter_id, "series_id": series_id},
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="chapter not found in this series")
+    await session.commit()
+    return {"ok": True, "bookmarked": body.bookmarked}
 
 
 @router.post("/{series_id}/search")

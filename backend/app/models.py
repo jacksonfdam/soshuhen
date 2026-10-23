@@ -163,6 +163,9 @@ class Chapter(Base):
     discovered_at: Mapped[datetime] = _now()
     # When the source stops serving this chapter; null means never.
     available_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bookmarked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     series: Mapped[Series] = relationship(back_populates="chapters")
 
