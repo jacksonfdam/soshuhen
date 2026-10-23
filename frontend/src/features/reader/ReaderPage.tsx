@@ -12,6 +12,7 @@ import { usePositionSaver } from './lib/usePositionSaver'
 import { usePreload } from './lib/usePreload'
 import { useReaderKeys } from './lib/useReaderKeys'
 import { PagedView, type Zone } from './PagedView'
+import { ProgressRail } from './ProgressRail'
 import { ReaderMessage } from './ReaderMessage'
 import { SettingsPanel } from './SettingsPanel'
 import { StripView } from './StripView'
@@ -230,6 +231,7 @@ function ReaderPage() {
 
   return (
     <main className={`min-h-screen w-full ${BACKGROUND[prefs.background]}`}>
+      {strip && <ProgressRail page={page} pageCount={manifest.page_count} />}
       {strip ? (
         <StripView
           chapterId={manifest.chapter.id}
