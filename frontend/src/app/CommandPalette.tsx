@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { api, type Series } from '../lib/api'
@@ -51,10 +51,14 @@ function Palette({ commands, onClose }: { commands: Command[]; onClose: () => vo
   const [series, setSeries] = useState<Series[]>([])
   const [active, setActive] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+  const dialog = useRef<HTMLDivElement>(null)
   useScrollLock(true)
 
+  // Before paint, so a key typed straight after Ctrl+K lands in the palette
+  // and not in whatever field the page had focused.
+  useLayoutEffect(() => input.current?.focus(), [])
+
   useEffect(() => {
-    input.current?.focus()
     // A failure leaves the screens and actions, which need nothing fetched.
     api.series().then(setSeries).catch(() => undefined)
   }, [])
@@ -91,20 +95,39 @@ function Palette({ commands, onClose }: { commands: Command[]; onClose: () => vo
     command.run()
   }
 
-  function onKeyDown(event: ReactKeyboardEvent) {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      setActive((index) => Math.min(index + 1, items.length - 1))
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      setActive((index) => Math.max(index - 1, 0))
-    } else if (event.key === 'Enter') {
-      event.preventDefault()
-      run(items[active])
-    } else if (event.key === 'Escape') {
-      onClose()
+  const latest = useRef({ items, active, run, onClose })
+  latest.current = { items, active, run, onClose }
+
+  // On the window and with focus held inside, not on the dialog alone: the
+  // search screen's own field took focus back as the palette opened over it,
+  // and every key then went to the page underneath, Escape included.
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const { items, active, run, onClose } = latest.current
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setActive(Math.min(active + 1, items.length - 1))
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setActive(Math.max(active - 1, 0))
+      } else if (event.key === 'Enter') {
+        event.preventDefault()
+        run(items[active])
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+      }
     }
-  }
+    function onFocus(event: FocusEvent) {
+      if (!dialog.current?.contains(event.target as Node)) input.current?.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    document.addEventListener('focusin', onFocus)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.removeEventListener('focusin', onFocus)
+    }
+  }, [])
 
   return (
     <>
@@ -117,7 +140,7 @@ function Palette({ commands, onClose }: { commands: Command[]; onClose: () => vo
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
-        onKeyDown={onKeyDown}
+        ref={dialog}
         className="fixed left-1/2 top-24 z-[70] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-xl bg-surface-container shadow-overlay"
       >
         <div className="flex items-center gap-space-sm border-b border-outline-variant px-space-md">
