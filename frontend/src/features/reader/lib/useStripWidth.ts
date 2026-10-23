@@ -59,6 +59,9 @@ export function useStripWidth(enabled: boolean, scale: ReaderScale): string | nu
     let travelled = 0
 
     function change(next: number | null) {
+      // Ahead of the render: a fast wheel delivers several notches before
+      // React gets to one, and each must step from the last, not the first.
+      current.current = next
       setStep(next)
       store(next)
     }
