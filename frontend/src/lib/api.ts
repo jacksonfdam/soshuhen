@@ -66,6 +66,8 @@ export interface SeriesChapter {
   komga_book_id: string | null
   /** When the source stops serving this chapter. Null means it never expires. */
   available_until: string | null
+  /** Marked to come back to. The one mark a chapter keeps here; read is derived from the lists. */
+  bookmarked: boolean
 }
 
 export type ReaderMode = 'paged_ltr' | 'paged_rtl' | 'long_strip' | 'double'
@@ -927,6 +929,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ source_url: sourceUrl }),
     }),
+  setBookmark: (seriesId: number, chapterId: number, bookmarked: boolean) =>
+    request<{ ok: boolean; bookmarked: boolean }>(
+      `/api/series/${seriesId}/chapters/${chapterId}/bookmark`,
+      { method: 'PUT', body: JSON.stringify({ bookmarked }) },
+    ),
   research: (id: number) =>
     request<{ ok: boolean }>(`/api/series/${id}/search`, { method: 'POST' }),
   setProgress: (id: number, chapter: number) =>

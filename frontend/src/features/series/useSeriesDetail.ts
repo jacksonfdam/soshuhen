@@ -166,8 +166,28 @@ export function useSeriesDetail(id: number) {
     [detail, queuedChapter],
   )
 
+  // Shown at once and put back by the reload a failure triggers: a mark that
+  // waits on the round trip reads as a button that did nothing.
+  const bookmark = useCallback(
+    (chapterId: number, bookmarked: boolean) => {
+      setData((current) =>
+        current === null
+          ? current
+          : {
+              ...current,
+              chapters: current.chapters.map((chapter) =>
+                chapter.id === chapterId ? { ...chapter, bookmarked } : chapter,
+              ),
+            },
+      )
+      api.setBookmark(id, chapterId, bookmarked).catch(() => reload())
+    },
+    [id, reload, setData],
+  )
+
   return {
     detail: shown,
+    bookmark,
     queuedChapter,
     refusal,
     notFound,

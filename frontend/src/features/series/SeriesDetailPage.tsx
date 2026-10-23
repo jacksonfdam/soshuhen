@@ -46,6 +46,7 @@ export function SeriesDetailPage() {
     setProgress,
     setListStatus,
     saveNotes,
+    bookmark,
   } = useSeriesDetail(seriesId)
   const [panel, setPanel] = useState<Panel>('chapters')
   // The screen that linked here says where "back" goes; the library stands in
@@ -159,6 +160,7 @@ export function SeriesDetailPage() {
                 komgaBaseUrl={detail.komga_public_url}
                 progress={series.progress}
                 prose={series.kind === 'prose'}
+                onBookmark={bookmark}
               />
             </div>
             <div hidden={panel !== 'notes'}>
