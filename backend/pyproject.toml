@@ -18,6 +18,10 @@ dependencies = [
     "apscheduler>=3.10",
     "sse-starlette>=2.1",
     "pillow>=11.0",
+    # Reads the bookmarks and page text of a novel PDF a user imports. BSD-3.
+    "pypdf>=5.1",
+    # FastAPI's form parser, for the import screen's file upload. Apache-2.0.
+    "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]
