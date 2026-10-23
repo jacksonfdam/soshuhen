@@ -98,6 +98,11 @@ def number_book(book: PdfBook, filename: str, *, known_max: Decimal | None) -> R
             title = entry.title.strip()
             last_main = last_prologue = number
             sides = 0
+        elif not chapters:
+            # Before anything numbered there is no chapter to follow: a contents
+            # page here would be 0.5 in every volume, and the second would clash.
+            pending.append(entry)
+            continue
         else:
             number = last_main + Decimal("0.5") + Decimal("0.1") * sides
             title = entry.title.strip()
