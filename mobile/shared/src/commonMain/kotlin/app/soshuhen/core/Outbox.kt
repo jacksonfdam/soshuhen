@@ -43,6 +43,17 @@ class Outbox(private val store: LocalStore, private val clock: () -> Instant) {
         )
     }
 
+    // The volume's id rides in chapter_id: one table keeps every event in the
+    // order it happened, and a volume completion needs no more than a chapter's.
+    suspend fun completeVolume(seriesId: Long, volumeId: Long) {
+        store.enqueue(
+            OutboxEntity(
+                kind = VOLUME_COMPLETE, seriesId = seriesId, chapterId = volumeId, page = null,
+                readAt = clock().toString(), body = null,
+            ),
+        )
+    }
+
     suspend fun prefs(seriesId: Long, prefs: ReaderPrefs) {
         store.dropQueued(seriesId, PREFS)
         store.enqueue(
@@ -85,6 +96,7 @@ class Outbox(private val store: LocalStore, private val clock: () -> Instant) {
         when (e.kind) {
             POSITION -> api.putPosition(e.seriesId, e.chapterId!!, e.page!!, Instant.parse(e.readAt!!))
             COMPLETE -> api.complete(e.chapterId!!, Instant.parse(e.readAt!!))
+            VOLUME_COMPLETE -> api.completeVolume(e.chapterId!!, Instant.parse(e.readAt!!))
             PREFS -> api.putPrefs(e.seriesId, SoshuhenJson.decodeFromString(ReaderPrefs.serializer(), e.body!!))
         }
     }
@@ -93,5 +105,6 @@ class Outbox(private val store: LocalStore, private val clock: () -> Instant) {
         const val POSITION = "position"
         const val COMPLETE = "complete"
         const val PREFS = "prefs"
+        const val VOLUME_COMPLETE = "volume_complete"
     }
 }

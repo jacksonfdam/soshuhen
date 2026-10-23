@@ -83,6 +83,17 @@ class SoshuhenApi(val baseUrl: String, private val client: HttpClient) {
         )
     }
 
+    // Finishing a light novel volume; the server marks it read in Komga and
+    // the lists follow from there.
+    suspend fun completeVolume(volumeId: Long, readAt: Instant) {
+        checked(
+            client.post("$baseUrl/api/reader/volumes/$volumeId/complete") {
+                contentType(ContentType.Application.Json)
+                setBody(CompleteBody(readAt.toString()))
+            },
+        )
+    }
+
     suspend fun prefs(seriesId: Long): ReaderPrefs =
         checked(client.get("$baseUrl/api/reader/series/$seriesId/prefs")).body()
 
@@ -111,8 +122,23 @@ class SoshuhenApi(val baseUrl: String, private val client: HttpClient) {
         from: Long,
         ifRange: String? = null,
         read: suspend (ArchiveDownload) -> T,
+    ): T = download("$baseUrl/api/chapters/$chapterId/archive", from, ifRange, read)
+
+    /** A light novel volume's EPUB, resumed exactly as a chapter's archive is. */
+    suspend fun <T> volumeArchive(
+        volumeId: Long,
+        from: Long,
+        ifRange: String? = null,
+        read: suspend (ArchiveDownload) -> T,
+    ): T = download("$baseUrl/api/volumes/$volumeId/archive", from, ifRange, read)
+
+    private suspend fun <T> download(
+        url: String,
+        from: Long,
+        ifRange: String?,
+        read: suspend (ArchiveDownload) -> T,
     ): T =
-        client.prepareGet("$baseUrl/api/chapters/$chapterId/archive") {
+        client.prepareGet(url) {
             if (from > 0) {
                 header(HttpHeaders.Range, "bytes=$from-")
                 ifRange?.let { header(HttpHeaders.IfRange, it) }

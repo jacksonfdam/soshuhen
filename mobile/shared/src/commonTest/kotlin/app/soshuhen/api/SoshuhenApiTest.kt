@@ -6,7 +6,11 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.http.HttpMethod
+import io.ktor.client.engine.mock.toByteArray
 import kotlinx.coroutines.test.runTest
+import kotlin.time.Instant
+import kotlin.test.assertTrue
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -94,6 +98,47 @@ class SoshuhenApiTest {
         val etag = recording(HttpStatusCode.OK, requests).archive(7, from = 0) { it.etag }
         assertNull(requests.single().headers[HttpHeaders.Range])
         assertEquals("\"abc\"", etag)
+    }
+
+    @Test
+    fun volumeArchiveAsksTheVolumeRouteForTheRemainder() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val etag = recording(HttpStatusCode.PartialContent, requests)
+            .volumeArchive(7, from = 10, ifRange = "\"old\"") { it.etag }
+        assertEquals("/api/volumes/7/archive", requests.single().url.encodedPath)
+        assertEquals("bytes=10-", requests.single().headers[HttpHeaders.Range])
+        assertEquals("\"old\"", requests.single().headers[HttpHeaders.IfRange])
+        assertEquals("\"abc\"", etag)
+    }
+
+    @Test
+    fun completeVolumePostsWhenItWasRead() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        recording(HttpStatusCode.OK, requests).completeVolume(7, Instant.parse("2026-10-24T08:00:00Z"))
+        assertEquals("/api/reader/volumes/7/complete", requests.single().url.encodedPath)
+        assertEquals(HttpMethod.Post, requests.single().method)
+        assertTrue(String(requests.single().body.toByteArray()).contains("\"read_at\":\"2026-10-24T08:00:00Z\""))
+    }
+
+    @Test
+    fun decodesVolumesWithTheFieldsTheAppCopiesBy() = runTest {
+        val detail = api(Fixtures.PROSE_DETAIL).seriesDetail(308)
+        val volume = detail.volumes.single()
+        assertEquals(41L, volume.id)
+        assertEquals("light", volume.edition)
+        assertEquals("/manga/tsuki/tsuki - Vol.0001.epub", volume.filePath)
+        assertEquals(true, volume.readable)
+        assertEquals(3, detail.entries.single().userProgressVolume)
+    }
+
+    // The shape main serves before the web session adds id and file_path.
+    @Test
+    fun decodesVolumesWithoutThem() = runTest {
+        val detail = api(Fixtures.PROSE_DETAIL_OLD).seriesDetail(308)
+        val volume = detail.volumes.single()
+        assertNull(volume.id)
+        assertNull(volume.filePath)
+        assertEquals(false, volume.readable)
     }
 
     @Test
