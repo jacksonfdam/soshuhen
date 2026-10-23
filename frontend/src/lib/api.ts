@@ -39,6 +39,26 @@ export interface MappingPreview {
   downloaded: number
 }
 
+/** One title of a Mihon backup, as read against the library. */
+export interface MihonImportItem {
+  title: string
+  series_id: number | null
+  /** map: takes the backup's source. same: already reads from it. kept: left as it is. unmatched: no series here. */
+  action: 'map' | 'same' | 'kept' | 'unmatched'
+  reason?: string
+  matched_by?: string
+  source_site?: string
+  source_url?: string
+  bookmarks?: number
+}
+
+export interface MihonImport {
+  applied: boolean
+  titles: number
+  counts: Partial<Record<MihonImportItem['action'], number>>
+  items: MihonImportItem[]
+}
+
 export interface Series {
   id: number
   title: string
@@ -978,6 +998,12 @@ export const api = {
     request<MappingPreview>(
       `/api/series/${id}/mapping/preview?source_url=${encodeURIComponent(sourceUrl)}`,
     ),
+  importMihon: (file: Blob, apply: boolean) =>
+    request<MihonImport>(`/api/backup/mihon${apply ? '?apply=true' : ''}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    }),
   research: (id: number) =>
     request<{ ok: boolean }>(`/api/series/${id}/search`, { method: 'POST' }),
   setProgress: (id: number, chapter: number) =>
