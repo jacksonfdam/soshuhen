@@ -450,10 +450,10 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
     volumes = await session.execute(
         text(
             """
-            select number, title, status, state, last_updated, komga_book_id,
+            select number, edition, title, status, state, last_updated, komga_book_id,
                    (downloaded_updated is not null and last_updated is not null
                     and downloaded_updated < last_updated) as revised
-              from volume where series_id = :id order by number
+              from volume where series_id = :id order by number, edition
             """
         ),
         {"id": series_id},
@@ -507,6 +507,7 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
         "volumes": [
             {
                 "number": float(v.number),
+                "edition": v.edition,
                 "title": v.title,
                 "status": v.status,
                 "state": v.state,

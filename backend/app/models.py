@@ -172,14 +172,16 @@ class Chapter(Base):
 
 
 class Volume(Base):
-    """A J-Novel Club volume the user owns or has pre-ordered.
+    """A volume the user owns: from J-Novel Club, or imported from their own PDFs.
 
-    Kept apart from Chapter on purpose; see migration 0023.
+    Kept apart from Chapter on purpose; see migration 0023. One number can hold
+    a web novel and a light novel row (0028); only a light novel row owns a file,
+    a web novel row is the range of chapters that make it up.
     """
 
     __tablename__ = "volume"
     __table_args__ = (
-        UniqueConstraint("series_id", "number", name="volume_series_number_key"),
+        UniqueConstraint("series_id", "number", "edition", name="volume_series_number_edition_key"),
         UniqueConstraint("series_id", "source_volume_id", name="volume_series_source_key"),
     )
 
@@ -188,6 +190,7 @@ class Volume(Base):
         BigInteger, ForeignKey("series.id", ondelete="CASCADE"), nullable=False
     )
     number: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    edition: Mapped[str] = mapped_column(Text, nullable=False, server_default="light")
     source_volume_id: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, nullable=False)
