@@ -255,6 +255,20 @@ again, whichever of the three it came from.
 
 ![The Discover screen](images/discover.webp)
 
+### Search sources
+
+Type a title and every enabled source is asked for it at once, the results ranked by how well each
+matches. A result the library already maps says so and opens that series; anything else opens on
+the site. A source that did not answer in time is named above the results, so a missing title is
+not mistaken for one nobody carries. Nothing is added, mapped or downloaded from here.
+
+It searches when you press Enter, not as you type, because every search is a request to every site.
+The last few searches sit under the field, in this browser only.
+
+Reach it from the magnifier in the header, or from anywhere with **Ctrl+K** (⌘K on a Mac): the
+palette jumps to any screen, opens a series by a word of its title, and offers a source search for
+whatever you typed.
+
 ### Downloads
 
 What is running right now, with live progress. What failed, with the actual error and a retry
@@ -317,6 +331,11 @@ them. Open any chapter from a series page, or **Continue** from Home to land whe
   page, with a page slider and a settings sheet at the bottom. On a desktop they stay on screen as a
   chapter pill and a tool bar, with the keyboard: arrows turn pages and follow the reading
   direction, space scrolls, `[` and `]` change chapter, `f` goes fullscreen.
+- **A long strip shows how far you are.** A thin rail along the top edge fills as you go down
+  the chapter, and covers none of the page.
+- **The strip is as wide as you want it.** Hold Ctrl and turn the wheel (or pinch on a trackpad)
+  to widen or narrow the column; Ctrl+0 puts it back to what the scale says. The width belongs to
+  this browser, not to the series, because the right one depends on the screen.
 
 Finishing a chapter moves your lists forward, never back, and marks the book read in Komga when
 Komga has it.
