@@ -143,6 +143,9 @@ open class LocalStore(
 
     fun allDeviceChapterIds(): Flow<Set<Long>> = db.deviceChapters().ids().map { it.toSet() }
 
+    /** Every series with at least one chapter copied to the device. */
+    fun seriesWithChapters(): Flow<Set<Long>> = db.deviceChapters().seriesIds().map { it.toSet() }
+
     suspend fun indexChapter(c: DeviceChapter) = db.deviceChapters().put(
         DeviceChapterEntity(
             c.chapterId, c.seriesId, c.number, c.fileName, c.uri, c.etag, c.size,

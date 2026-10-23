@@ -3,6 +3,7 @@ package app.soshuhen.library
 import app.soshuhen.api.Fixtures
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.soshuhenHttpClient
+import app.soshuhen.core.DeviceChapter
 import app.soshuhen.core.FailingStore
 import app.soshuhen.core.LocalStore
 import app.soshuhen.core.testDatabase
@@ -31,6 +32,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModelTest {
@@ -66,6 +68,19 @@ class LibraryViewModelTest {
             },
         )
         return SoshuhenApi("http://10.0.0.5:8080", soshuhenHttpClient(engine))
+    }
+
+    @Test fun onlyAMarkedSeriesWithArchivesHereIsOnDevice() = runTest(dispatcher) {
+        fun chapter(id: Long, series: Long) =
+            DeviceChapter(id, series, id.toDouble(), "c$id.cbz", "content://c$id", null, 3, Instant.fromEpochMilliseconds(1))
+        store.mark(1, "copied")
+        store.mark(2, "not-copied-yet")
+        store.indexChapter(chapter(10, 1))
+        // Left behind by a series since unmarked: archives, but no longer kept.
+        store.indexChapter(chapter(30, 3))
+        val vm = LibraryViewModel(MutableStateFlow(null), store, MutableStateFlow(true))
+        advanceUntilIdle()
+        assertEquals(setOf(1L), vm.onDevice.value)
     }
 
     @Test fun firstLoadFailureIsFailed() = runTest(dispatcher) {

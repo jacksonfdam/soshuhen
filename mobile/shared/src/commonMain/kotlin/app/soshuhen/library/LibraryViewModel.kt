@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -30,6 +31,14 @@ class LibraryViewModel(
 
     /** The series kept on this device. */
     val marked: StateFlow<Set<Long>> = local.markedIds()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    /**
+     * The marked series whose archives are here, the covers that carry the ⬇
+     * badge. Marked alone is not enough: until the first copy lands there is
+     * nothing on the device to read.
+     */
+    val onDevice: StateFlow<Set<Long>> = combine(local.markedIds(), local.seriesWithChapters()) { marked, copied -> marked intersect copied }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     private val _state = MutableStateFlow<LoadState<List<Series>>>(LoadState.Loading)
