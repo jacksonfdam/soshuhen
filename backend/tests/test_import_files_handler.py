@@ -224,3 +224,90 @@ async def test_staged_files_gone_is_permanent():
         series_id = await a_series(session)
         with pytest.raises(PermanentError):
             await run(session, series_id, "gone")
+
+
+def pinned(data: bytes, edition: str, volume: str, replace: bool = False) -> dict:
+    return {sha256_of(data): {"volume": volume, "edition": edition, "replace": replace}}
+
+
+async def test_an_unprefixed_web_volume_retried_after_a_crash_stays_web():
+    entries_1 = [("Chapter 1", ["a"]), ("Chapter 2", ["b"])]
+    entries_2 = [("Chapter 3", ["c"]), ("Chapter 4", ["d"])]
+    one, two = make_pdf(entries_1), make_pdf(entries_2)
+    overrides = {**pinned(one, "web", "1"), **pinned(two, "web", "2")}
+    async with get_sessionmaker()() as session:
+        series_id = await a_series(session)
+        files = [("Tsukimichi_01.pdf", sha256_of(one), one), ("Tsukimichi_02.pdf", sha256_of(two), two)]
+        await run(session, series_id, staging.stage(files), overrides)
+        await session.execute(text("delete from chapter where number >= 3"))
+        await session.execute(text("delete from volume where number = 2"))
+        await session.commit()
+
+        await run(session, series_id, staging.stage(files), overrides)
+
+        volumes = await rows(session, "select number, edition from volume order by number")
+
+    assert [(v.number, v.edition) for v in volumes] == [(Decimal(1), "web"), (Decimal(2), "web")]
+
+
+async def test_replacing_with_another_edition_adds_that_edition():
+    data = make_pdf([("Chapter 1", ["a"]), ("Chapter 2", ["b"])])
+    files = [("Tsukimichi_01.pdf", sha256_of(data), data)]
+    async with get_sessionmaker()() as session:
+        series_id = await a_series(session)
+        await run(session, series_id, staging.stage(files), pinned(data, "web", "1"))
+
+        await run(session, series_id, staging.stage(files), pinned(data, "light", "1", replace=True))
+
+        editions = await rows(session, "select edition from volume order by edition")
+
+    assert [v.edition for v in editions] == ["light", "web"]
+
+
+async def test_replacing_a_jnovelclub_volume_keeps_its_source_id():
+    # jnc_library_sync finds its rows by source_volume_id; losing it would make the
+    # next sync insert a second light volume 1 and fail on the number key forever.
+    data = make_pdf(LIGHT_1[1])
+    async with get_sessionmaker()() as session:
+        series_id = await a_series(session)
+        await session.execute(
+            text(
+                "insert into volume (series_id, number, source_volume_id, status)"
+                " values (:s, 1, 'JNC-VOL-1', 'owned')"
+            ),
+            {"s": series_id},
+        )
+        await session.commit()
+
+        await run(
+            session,
+            series_id,
+            staging.stage([(LIGHT_1[0], sha256_of(data), data)]),
+            pinned(data, "light", "1", replace=True),
+        )
+
+        source = (await rows(session, "select source_volume_id from volume"))[0].source_volume_id
+
+    assert source == "JNC-VOL-1"
+
+
+async def test_scratch_files_a_killed_worker_left_are_swept_but_fresh_ones_kept():
+    import os
+    import time
+
+    folder = library() / SLUG
+    folder.mkdir()
+    stale = folder / "tmpabc123.epub.part"
+    stale.write_bytes(b"half")
+    two_hours_ago = time.time() - 7200
+    os.utime(stale, (two_hours_ago, two_hours_ago))
+    # A download of this same series may be mid-write in the same lane.
+    fresh = folder / "tmpdef456.epub.part"
+    fresh.write_bytes(b"in flight")
+    async with get_sessionmaker()() as session:
+        series_id = await a_series(session)
+
+        await run(session, series_id, stage(WEB_2))
+
+    assert not stale.exists()
+    assert fresh.exists()

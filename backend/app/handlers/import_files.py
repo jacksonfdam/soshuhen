@@ -7,6 +7,7 @@ available, and reading progress belongs to the lists.
 """
 
 import asyncio
+import time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,23 @@ from app.importer.pdf import PdfEntry
 from app.importer.plan import Existing, Override, PlannedFile
 from app.importer.reading import build_plan
 from app.importer.xhtml import entries_to_body
+
+# write_epub's scratch name is random, so a worker killed mid-write leaves a
+# .part no retry will ever reuse. Older than this, nothing is still writing it;
+# a download of the same series in the same lane may be writing a newer one.
+_STALE_SCRATCH_SECONDS = 3600
+
+
+def _sweep_scratch(folder: Path) -> None:
+    if not folder.is_dir():
+        return
+    cutoff = time.time() - _STALE_SCRATCH_SECONDS
+    for scratch in folder.glob("*.part"):
+        try:
+            if scratch.stat().st_mtime < cutoff:
+                scratch.unlink()
+        except OSError:
+            continue
 
 
 def _usable(image: bytes) -> bool:
@@ -173,7 +191,9 @@ async def _upsert_volume(
                                     state, first_part, last_part, file_path)
                 values (:s, :n, :e, :src, :t, 'owned', 'downloaded', :first, :last, :p)
                 on conflict (series_id, number, edition) do update
-                   set source_volume_id = excluded.source_volume_id, state = 'downloaded',
+                   -- source_volume_id stays: a J-Novel Club row is found by it on
+                   -- the next library sync, and a replaced import keeps its own.
+                   set state = 'downloaded',
                        first_part = excluded.first_part, last_part = excluded.last_part,
                        file_path = excluded.file_path, komga_book_id = null
                 returning (select file_path from volume v
@@ -184,7 +204,9 @@ async def _upsert_volume(
                 "s": series_id,
                 "n": item.volume,
                 "e": item.edition,
-                "src": f"import:{item.sha256}",
+                # One PDF can become a volume of either edition, so the file's
+                # hash alone would collide when the user flips the edition.
+                "src": f"import:{item.sha256}:{item.edition}:{item.volume}",
                 "t": f"Volume {item.volume}" if item.edition == "light" else None,
                 "first": first,
                 "last": last,
@@ -220,6 +242,7 @@ async def handle(ctx: JobContext) -> None:
          "title": None, "source_url": None},
     )
     library = Path(get_settings().library_path)
+    await asyncio.to_thread(_sweep_scratch, library / series.slug)
 
     for index, item in enumerate(ready, start=1):
         volume = read[item.sha256]
