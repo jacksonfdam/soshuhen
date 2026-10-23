@@ -38,9 +38,10 @@ import app.soshuhen.ui.relativeTime
 import app.soshuhen.ui.theme.Tokens
 
 /**
- * What the background copy brought in, newest first, a card per day. The
- * rows are the web's notification panel (app/NotificationBell.tsx) and the
- * page around them is SettingsPage's section style.
+ * What the background copy brought in, newest first, a card per day and a
+ * row per series in it. The rows are the web's notification panel
+ * (app/NotificationBell.tsx) and the page around them is SettingsPage's
+ * section style.
  */
 @Composable
 fun UpdatesScreen(
@@ -73,7 +74,7 @@ fun UpdatesScreen(
 
 /** The notification panel's card: a title-md header over its rows. */
 @Composable
-private fun DayCard(day: String, rows: List<ImportLogRow>, coverUrl: (Long) -> String, onOpen: (Long) -> Unit) {
+private fun DayCard(day: String, rows: List<UpdateGroup>, coverUrl: (Long) -> String, onOpen: (Long) -> Unit) {
     val shape = RoundedCornerShape(Tokens.radius.xl)
     Column(
         Modifier.fillMaxWidth()
@@ -94,8 +95,8 @@ private fun DayCard(day: String, rows: List<ImportLogRow>, coverUrl: (Long) -> S
 }
 
 @Composable
-private fun UpdateRow(row: ImportLogRow, coverUrl: String, onOpen: (Long) -> Unit) {
-    val (title, text) = newChaptersText(row.seriesTitle, listOf(row.number))
+private fun UpdateRow(row: UpdateGroup, coverUrl: String, onOpen: (Long) -> Unit) {
+    val (title, text) = newChaptersText(row.seriesTitle, row.numbers)
     Row(
         Modifier.fillMaxWidth().clickable { onOpen(row.seriesId) }
             .padding(horizontal = Tokens.space.lg, vertical = Tokens.space.sm),
@@ -106,7 +107,7 @@ private fun UpdateRow(row: ImportLogRow, coverUrl: String, onOpen: (Long) -> Uni
         Column(Modifier.weight(1f)) {
             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = Tokens.onSurface)
             Text(text, color = Tokens.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-            MonoLabel(relativeTime(row.importedAt))
+            MonoLabel(relativeTime(row.latestAt))
         }
     }
 }
