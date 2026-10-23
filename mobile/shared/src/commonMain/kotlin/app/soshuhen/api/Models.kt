@@ -48,6 +48,32 @@ data class SeriesChapter(
     @SerialName("file_path") val filePath: String? = null,
 )
 
+/**
+ * A volume of a novel. A `light` one owns one EPUB; a `web` one is only the
+ * range of chapters that make it up. Every field past [edition] defaults, so a
+ * server from before volumes carried them still decodes.
+ */
+@Serializable
+data class SeriesVolume(
+    val id: Long? = null,
+    val number: Double,
+    val edition: String,
+    val title: String? = null,
+    val state: String? = null,
+    @SerialName("file_path") val filePath: String? = null,
+    @SerialName("first_part") val firstPart: Double? = null,
+    @SerialName("last_part") val lastPart: Double? = null,
+    // The file is on disk inside the library, which is what the archive route serves.
+    val readable: Boolean = false,
+)
+
+/** A list's own record of the series; only the volume count is read, for light novel volumes. */
+@Serializable
+data class SeriesEntry(
+    val provider: String,
+    @SerialName("user_progress_volume") val userProgressVolume: Int? = null,
+)
+
 @Serializable
 data class Credit(val role: String, val name: String)
 
@@ -75,6 +101,8 @@ data class SeriesMetadata(
 data class SeriesDetail(
     val series: Series,
     val chapters: List<SeriesChapter>,
+    val volumes: List<SeriesVolume> = emptyList(),
+    val entries: List<SeriesEntry> = emptyList(),
     val metadata: SeriesMetadata = SeriesMetadata(),
     @SerialName("reading_minutes_per_chapter") val readingMinutesPerChapter: Int? = null,
 )

@@ -32,6 +32,29 @@ object Fixtures {
       ]
     }"""
 
+    const val PROSE_DETAIL = """{
+      "series": {"id": 308, "title": "Tsukimichi", "slug": "tsuki", "kind": "prose",
+                 "status": "reading", "progress": 0, "state": "local"},
+      "metadata": {}, "mapping": null, "chapters": [],
+      "volumes": [
+        {"id": 41, "number": 1.0, "edition": "light", "title": null, "status": "owned",
+         "state": "downloaded", "last_updated": null, "revised": false, "komga_book_id": "k1",
+         "file_path": "/manga/tsuki/tsuki - Vol.0001.epub", "first_part": null, "last_part": null,
+         "readable": true}
+      ],
+      "entries": [{"provider": "mal", "provider_media_id": "1", "status": "reading",
+                   "user_progress_chapter": 2, "user_progress_volume": 3, "updated_at": null}]
+    }"""
+
+    const val PROSE_DETAIL_OLD = """{
+      "series": {"id": 308, "title": "Tsukimichi", "slug": "tsuki", "kind": "prose"},
+      "metadata": {}, "mapping": null, "chapters": [], "entries": [],
+      "volumes": [
+        {"number": 1.0, "edition": "light", "title": null, "status": "owned",
+         "state": "downloaded", "last_updated": null, "revised": false, "komga_book_id": "k1"}
+      ]
+    }"""
+
     const val IDENTITY = """{"app": "soshuhen", "name": "Soshuhen", "version": "0.1.0",
       "instance_id": "8c0e1b9a-5f2e-4c1d-9a7b-3f6e2d1c0b9a"}"""
 }
