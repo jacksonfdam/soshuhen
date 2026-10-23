@@ -260,6 +260,17 @@ again, whichever of the three it came from.
 
 ![The Discover screen](images/discover.webp)
 
+### New chapters
+
+Every chapter found at a source after its series was already being followed, grouped by the day it
+turned up and then by series, for the last week, month or three months. A chapter opens straight
+in the reader. A series' back catalogue never appears here: the chapters a first discovery lists,
+including the first discovery after a change of source, are history rather than news.
+
+The bell says that something arrived and forgets what it said a month after you read it; this
+screen lists the chapters themselves for as long as they are in the period. Open it from **By day**
+in the bell.
+
 ### Downloads
 
 What is running right now, with live progress. What failed, with the actual error and a retry
