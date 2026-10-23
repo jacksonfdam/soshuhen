@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import rhythm, settings_store
+from app.api import reader_service
 from app.api.deps import db_session
 from app.api.library_content import HOLDS_FILES
 from app.api.list_raw import display_fields, metadata_of
@@ -465,7 +466,8 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
     volumes = await session.execute(
         text(
             """
-            select number, edition, title, status, state, last_updated, komga_book_id,
+            select id, number, edition, title, status, state, last_updated, komga_book_id,
+                   file_path, first_part, last_part,
                    (downloaded_updated is not null and last_updated is not null
                     and downloaded_updated < last_updated) as revised
               from volume where series_id = :id order by number, edition
@@ -516,11 +518,15 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
                 "komga_book_id": c.komga_book_id,
                 "available_until": c.available_until.isoformat() if c.available_until else None,
                 "bookmarked": c.bookmarked,
+                # Whether the api can open the file, so no screen offers to read
+                # one a row names but the disk no longer holds.
+                "readable": reader_service.readable(c.file_path),
             }
             for c in chapters.all()
         ],
         "volumes": [
             {
+                "id": v.id,
                 "number": float(v.number),
                 "edition": v.edition,
                 "title": v.title,
@@ -529,6 +535,10 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
                 "last_updated": v.last_updated.isoformat() if v.last_updated else None,
                 "revised": bool(v.revised),
                 "komga_book_id": v.komga_book_id,
+                "file_path": v.file_path,
+                "first_part": float(v.first_part) if v.first_part is not None else None,
+                "last_part": float(v.last_part) if v.last_part is not None else None,
+                "readable": reader_service.readable(v.file_path),
             }
             for v in volumes.all()
         ],

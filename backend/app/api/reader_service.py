@@ -107,13 +107,22 @@ async def chapter(session: AsyncSession, chapter_id: int) -> ChapterRow:
     return found
 
 
-def archive_of(row: ChapterRow) -> Path | None:
-    if row.file_path is None:
+def library_file(file_path: str | None) -> Path | None:
+    """The stored path when it names a real file inside the library, else None."""
+    if file_path is None:
         return None
-    path = Path(row.file_path)
+    path = Path(file_path)
     if not path.is_file() or not archive.inside(path, get_settings().library_path):
         return None
     return path
+
+
+def readable(file_path: str | None) -> bool:
+    return library_file(file_path) is not None
+
+
+def archive_of(row: ChapterRow) -> Path | None:
+    return library_file(row.file_path)
 
 
 async def page_count(
