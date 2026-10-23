@@ -6,6 +6,7 @@ import { Button, EmptyState, ErrorState, Icon, NoticeBar, Skeleton, Tabs } from 
 import { ChapterTable } from './ChapterTable'
 import { CharacterGrid } from './CharacterGrid'
 import { DownloadControls } from './DownloadControls'
+import { ImportPanel } from './ImportPanel'
 import { KindControl } from './KindControl'
 import { MappingPanel } from './MappingPanel'
 import { NotesPanel } from './NotesPanel'
@@ -19,7 +20,7 @@ import { VolumesPanel } from './VolumesPanel'
 import { SyncTargets } from './SyncTargets'
 import { totalChapters, useSeriesDetail } from './useSeriesDetail'
 
-type Panel = 'chapters' | 'notes' | 'characters'
+type Panel = 'chapters' | 'notes' | 'characters' | 'import'
 
 // The mockup's own geometry: a twelve-column hero with the cover on three,
 // then a two-column body. Three things the mockup shows are deliberately absent
@@ -152,6 +153,8 @@ export function SeriesDetailPage() {
                   label: 'Characters',
                   count: metadata.characters.length || null,
                 },
+                // Only a prose series takes files: the import writes prose EPUBs.
+                ...(series.kind === 'prose' ? [{ value: 'import' as const, label: 'Import files' }] : []),
               ]}
               value={panel}
               onChange={setPanel}
@@ -171,6 +174,13 @@ export function SeriesDetailPage() {
                   click — the same loss the draft-preservation flag exists to prevent. */}
               <NotesPanel metadata={metadata} onSave={saveNotes} />
             </div>
+            {series.kind === 'prose' && (
+              // Mounted while hidden, like NotesPanel: a tab click must not lose a
+              // review in progress or the import it is following.
+              <div hidden={panel !== 'import'}>
+                <ImportPanel seriesId={series.id} />
+              </div>
+            )}
             <div hidden={panel !== 'characters'}>
               <CharacterGrid
                 characters={metadata.characters}
