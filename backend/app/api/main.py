@@ -24,6 +24,7 @@ from app.api import (
     routes_sources,
     routes_stats,
     routes_updates,
+    routes_volumes,
 )
 from app.api.events import broker, event_stream
 from app.db import get_sessionmaker
@@ -64,6 +65,7 @@ app.include_router(routes_stats.router)
 app.include_router(routes_sources.router)
 app.include_router(routes_reader.router)
 app.include_router(routes_chapters.router)
+app.include_router(routes_volumes.router)
 app.include_router(routes_updates.router)
 app.include_router(routes_backup.router)
 
