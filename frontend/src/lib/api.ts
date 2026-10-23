@@ -2,6 +2,25 @@ import type { ListStatus } from './format'
 
 export type SeriesState = 'mapped' | 'needs_review' | 'downloading' | 'failed'
 
+/** A chapter found after its series was already followed. */
+export interface UpdateChapter {
+  id: number
+  number: number
+  title: string | null
+  state: string
+  discovered_at: string
+  series_id: number
+  series_title: string
+  prose: boolean
+}
+
+export interface Updates {
+  days: number
+  /** More chapters fell in the period than the API returns at once. */
+  truncated: boolean
+  chapters: UpdateChapter[]
+}
+
 export interface Series {
   id: number
   title: string
@@ -1041,6 +1060,7 @@ export const api = {
     query.set('page', String(params.page ?? 1))
     return request<SourcePage>(`/api/sources?${query}`)
   },
+  updates: (days: number) => request<Updates>(`/api/updates?days=${days}`),
   setSourceEnabled: (key: string, enabled: boolean) =>
     request<Source>(`/api/sources/${key}`, {
       method: 'PUT',

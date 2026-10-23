@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import type { AppNotification } from '../lib/api'
 import * as desktop from '../lib/desktopNotifications'
@@ -79,6 +79,11 @@ export function NotificationBell() {
         >
           <div className="flex items-center justify-between gap-space-sm border-b border-white/5 px-space-md py-space-sm">
             <h2 className="text-title-md text-on-surface">Notifications</h2>
+            {/* The bell holds a range per run and forgets read ones after a
+                month; the updates screen lists the chapters themselves. */}
+            <Link to="/updates" className="ml-auto text-label-md text-primary hover:underline">
+              By day
+            </Link>
             <button
               type="button"
               disabled={unread === 0}

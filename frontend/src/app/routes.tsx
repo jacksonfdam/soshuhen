@@ -9,6 +9,7 @@ import { ResumePage } from '../features/reader/ResumePage'
 import { SeriesDetailPage } from '../features/series/SeriesDetailPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { StatsPage } from '../features/stats/StatsPage'
+import { UpdatesPage } from '../features/updates/UpdatesPage'
 import { AppShell } from './AppShell'
 
 // Home is the index now. It was designed as its own section and `/` stood in
@@ -41,6 +42,7 @@ export function AppRoutes() {
         <Route path="discovery" element={<Navigate to="/discover" replace />} />
         <Route path="unmatched" element={<Navigate to="/discover" replace />} />
         <Route path="review" element={<Navigate to="/discover" replace />} />
+        <Route path="updates" element={<UpdatesPage />} />
         <Route path="downloads" element={<DownloadsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
