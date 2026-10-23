@@ -5,13 +5,14 @@ import contextlib
 import logging
 import os
 import signal
+from datetime import UTC, datetime
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import text
 
-from app import settings_store
+from app import rhythm, settings_store
 from app.catalogue.loader import load_catalogue
 from app.config import get_settings
 from app.cron import CRON_JOBS
@@ -96,6 +97,15 @@ async def enqueue_chapter_discover() -> None:
             )
         )
         series_ids = [row[0] for row in result.all()]
+        skipped = 0
+        # Only the schedule consults the rhythm. A discovery someone asks for,
+        # from the series page or a confirmed mapping, always reaches the source.
+        if await settings_store.get_bool(session, settings_store.DISCOVER_BY_RHYTHM):
+            days = await rhythm.release_days(session)
+            today = datetime.now(UTC).date()
+            due = [i for i in series_ids if rhythm.is_due(days.get(i, []), today)]
+            skipped = len(series_ids) - len(due)
+            series_ids = due
         for series_id in series_ids:
             await repo.enqueue(
                 session,
@@ -105,7 +115,11 @@ async def enqueue_chapter_discover() -> None:
                 dedupe_key=f"chapter_discover:{series_id}",
             )
         await session.commit()
-    log.info("cron: queued chapter discovery for %d series", len(series_ids))
+    log.info(
+        "cron: queued chapter discovery for %d series, %d not due by their rhythm",
+        len(series_ids),
+        skipped,
+    )
 
 
 async def enqueue_progress_push() -> None:

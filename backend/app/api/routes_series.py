@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import settings_store
+from app import rhythm, settings_store
 from app.api.deps import db_session
 from app.api.list_raw import display_fields, metadata_of
 from app.api.progress_queue import progress_bounds, queue_progress_write
@@ -477,8 +477,12 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
     entry_rows = entries.all()
     enrichment = (row.meta or {}).get("enrichment")
 
+    days = await rhythm.release_days(session, [series_id])
     result = {
         "series": _row_to_series(row),
+        # Observed, not stated: how often chapters have turned up here. None
+        # until enough have, which is most series for their first month.
+        "rhythm_days": rhythm.rhythm_days(days.get(series_id, [])),
         "metadata": metadata_of([entry.raw for entry in entry_rows], enrichment),
         "mapping": {"source_site": row.source_site, "source_url": row.source_url}
         if row.source_url
