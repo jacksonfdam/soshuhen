@@ -210,6 +210,11 @@ Three panels are worth knowing about before you need them:
 the search turned up underneath it, each with how well it matched. If the mapping is wrong, the right
 one is usually already on that list; re-running the search asks the sites again.
 
+**The chapter list** shows newest first or oldest first, and narrows to the unread, the
+downloaded or the bookmarked. The star on a row bookmarks a chapter to come back to. Read is never
+marked here — it follows how far your lists say you got — so a bookmark is the only mark a chapter
+keeps.
+
 **Sync targets** shows, list by list, exactly what MyAnimeList, AniList and MangaBaka each record
 right now — status, chapter and when it last moved. Three lists that disagree is a thing you can see
 rather than a thing you deduce.
