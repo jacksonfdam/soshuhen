@@ -52,6 +52,18 @@ export function StorageFields({
           </p>
         </div>
         <div className="flex flex-col gap-space-xs rounded-lg bg-surface-container-low p-space-md">
+          <Toggle
+            checked={draft.discover_by_rhythm === 'true'}
+            onChange={(checked) => onChange('discover_by_rhythm', checked ? 'true' : 'false')}
+            label="Check series only when a chapter is due"
+          />
+          <p className="text-body-sm text-on-surface-variant">
+            Scheduled discovery skips a series until the day before its next chapter is expected,
+            judged by how often chapters have arrived. A series late by many releases is checked
+            every four weeks. Discovery started any other way always asks the source.
+          </p>
+        </div>
+        <div className="flex flex-col gap-space-xs rounded-lg bg-surface-container-low p-space-md">
           <span className="text-title-md text-on-surface">Progress push schedule</span>
           <p className="text-body-sm text-on-surface-variant">
             How often confirmed reading progress is pushed back to MyAnimeList and AniList (

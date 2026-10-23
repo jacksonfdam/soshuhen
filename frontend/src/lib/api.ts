@@ -251,6 +251,9 @@ export interface SeriesDetail {
   /** Where Komga is served to a browser. Empty until it is configured. */
   komga_public_url: string
   reading_frequency: SeriesReadingFrequency
+  /** How often chapters have turned up here, in days. Observed, not stated by
+      any source; null until enough new chapters have been seen. */
+  rhythm_days: number | null
 }
 
 export interface ReviewPayload {

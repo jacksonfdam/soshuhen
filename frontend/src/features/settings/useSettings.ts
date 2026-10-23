@@ -18,6 +18,7 @@ const DEFAULT_VALUES: Record<string, string> = {
   source_search_timeout: '20',
   download_batch_size: '20',
   auto_download_new: 'true',
+  discover_by_rhythm: 'false',
   comick_url: '',
   comick_enabled: 'false',
 }
