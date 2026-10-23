@@ -26,6 +26,7 @@ from app.handlers import (  # noqa: F401
     chapter_discover,
     download_batch,
     download_chapter,
+    import_files,
     jnc_library_sync,
     komga_read_progress,
     komga_scan,
