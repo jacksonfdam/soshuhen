@@ -5,6 +5,7 @@ listing that returned all of it would be the one request on this screen that
 gets slower every time the generator runs.
 """
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -17,9 +18,10 @@ from app import settings_store
 from app.api.deps import db_session
 from app.config import get_settings
 from app.enums import JobType
+from app.handlers.match_search import source_priorities
 from app.queue import repo
 from app.sources import jnovel_auth, registry
-from app.sources.base import get_prose_source
+from app.sources.base import Candidate, SiteSource, all_sources, get_prose_source
 from app.sources.jnovelclub import API_BASE as JNC_API_BASE
 from app.sources.jnovelclub import SITE as JNC_SITE
 from app.sources.jnovelclub import JNovelClubSource
@@ -128,6 +130,76 @@ async def list_sources(
     )
 
     return {"items": [_item(row) for row in rows], "total": total, "page": page, "size": size}
+
+
+@router.get("/search")
+async def search_sources(session: Session, q: str, kind: str | None = None) -> dict[str, Any]:
+    """Every enabled source asked for one title, at once. Persists nothing.
+
+    The same fan-out match_search runs for a series, minus the series: a title
+    typed by hand rather than read off a list. Nothing is stored and no mapping
+    is made, so the one network request a click costs is the search itself.
+    """
+    query = q.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="nothing to search for")
+    if kind not in (None, "comic", "prose"):
+        raise HTTPException(status_code=400, detail=f"unknown kind: {kind}")
+
+    concurrency = await settings_store.get_int(session, settings_store.SOURCE_SEARCH_CONCURRENCY)
+    timeout = await settings_store.get_int(session, settings_store.SOURCE_SEARCH_TIMEOUT)
+    priorities = await source_priorities(session)
+    sources = all_sources(kind=kind)
+    gate = asyncio.Semaphore(max(1, concurrency))
+    errors: list[dict[str, str]] = []
+
+    async def one(source: SiteSource) -> list[Candidate]:
+        async with gate:
+            try:
+                return await asyncio.wait_for(source.search([query]), timeout)
+            except TimeoutError:
+                errors.append({"site": source.site, "detail": f"no answer in {timeout}s"})
+            except Exception as exc:  # noqa: BLE001 - one dead source is not an empty search
+                # Reported rather than swallowed: a result list missing a site
+                # that looks complete is how a title gets judged unavailable.
+                errors.append({"site": source.site, "detail": str(exc)[:300]})
+            return []
+
+    found = [c for results in await asyncio.gather(*map(one, sources)) for c in results]
+    found.sort(key=lambda c: (-c.score, priorities.get(c.source_site, 100)))
+
+    # A result the library already maps leads to that series, not back out to
+    # the site: the user is a click from reading it, not a mapping away.
+    mapped = dict(
+        (
+            await session.execute(
+                text(
+                    "select source_url, series_id from source_mapping"
+                    " where active and source_url = any(cast(:urls as text[]))"
+                ),
+                {"urls": [c.source_url for c in found]},
+            )
+        ).all()
+    )
+
+    return {
+        "query": query,
+        "searched": len(sources),
+        "results": [
+            {
+                "source_site": c.source_site,
+                "source_url": c.source_url,
+                "title": c.title,
+                "cover_url": c.cover_url,
+                "chapter_count": c.chapter_count,
+                "year": c.year,
+                "score": c.score,
+                "series_id": mapped.get(c.source_url),
+            }
+            for c in found
+        ],
+        "errors": sorted(errors, key=lambda error: error["site"]),
+    }
 
 
 class JncSignIn(BaseModel):
