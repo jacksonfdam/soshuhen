@@ -21,6 +21,24 @@ export interface Updates {
   chapters: UpdateChapter[]
 }
 
+/** What moving a series to another source would do. Nothing is changed by asking. */
+export interface MappingPreview {
+  source_site: string
+  chapters: number
+  last: number | null
+  current_last: number | null
+  progress: number
+  stops_before_progress: boolean
+  /** Chapters the new source has that nothing here does. */
+  gained: number
+  /** Failed or skipped here, listed there: tried again from the new source. */
+  retried: number
+  /** Not in the library and not listed there: set aside rather than fetched from the old site. */
+  set_aside: number
+  /** In the library already, and left as they are. */
+  downloaded: number
+}
+
 export interface Series {
   id: number
   title: string
@@ -955,6 +973,10 @@ export const api = {
     request<{ ok: boolean; bookmarked: boolean }>(
       `/api/series/${seriesId}/chapters/${chapterId}/bookmark`,
       { method: 'PUT', body: JSON.stringify({ bookmarked }) },
+    ),
+  previewMapping: (id: number, sourceUrl: string) =>
+    request<MappingPreview>(
+      `/api/series/${id}/mapping/preview?source_url=${encodeURIComponent(sourceUrl)}`,
     ),
   research: (id: number) =>
     request<{ ok: boolean }>(`/api/series/${id}/search`, { method: 'POST' }),

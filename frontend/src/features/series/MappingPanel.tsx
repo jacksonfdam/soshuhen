@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { Button, CandidateList, Card, Icon, Skeleton, type SourceChoice } from '../../ui'
-import { api, messageOf } from '../../lib/api'
+import { api, messageOf, type MappingPreview } from '../../lib/api'
+import { formatChapter } from '../../lib/format'
 import { useJobEvents } from '../../lib/useEvents'
 import { PROVIDER_LABEL } from '../../lib/format'
 
@@ -28,6 +29,13 @@ export function MappingPanel({
   const [draft, setDraft] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [candidates, setCandidates] = useState<SourceChoice[] | null>(null)
+  // A move away from a mapped source is compared before it is made. The first
+  // mapping has nothing to compare with and is confirmed straight away.
+  const [move, setMove] = useState<{
+    url: string
+    preview: MappingPreview | null
+    error: string | null
+  } | null>(null)
 
   const loadCandidates = useCallback(() => {
     api
@@ -58,11 +66,29 @@ export function MappingPanel({
     if (event.event !== 'job.progress') loadCandidates()
   })
 
+  const compare = (url: string) => {
+    setMove({ url, preview: null, error: null })
+    setError(null)
+    api
+      .previewMapping(seriesId, url)
+      .then((preview) => setMove((current) => (current?.url === url ? { ...current, preview } : current)))
+      .catch((failure: unknown) =>
+        setMove((current) =>
+          current?.url === url ? { ...current, error: messageOf(failure) } : current,
+        ),
+      )
+  }
+
   const save = async () => {
     if (draft === null) return
     const url = draft.trim()
     if (!url || url === mapping?.source_url) {
       setDraft(null)
+      return
+    }
+    if (mapping) {
+      setDraft(null)
+      compare(url)
       return
     }
     setSaving(true)
@@ -87,6 +113,7 @@ export function MappingPanel({
     setError(null)
     try {
       await onRemap(url)
+      setMove(null)
     } catch (err) {
       setError(messageOf(err))
     } finally {
@@ -181,11 +208,23 @@ export function MappingPanel({
           <CandidateList
             candidates={candidates.filter((c) => c.url !== mapping?.source_url)}
             busy={saving}
-            onChoose={(candidate) => void confirm(candidate.url)}
+            onChoose={(candidate) =>
+              mapping ? compare(candidate.url) : void confirm(candidate.url)
+            }
           />
         </div>
       ) : null}
-      {draft === null && (
+      {move && (
+        <MoveComparison
+          url={move.url}
+          preview={move.preview}
+          error={move.error}
+          busy={saving}
+          onConfirm={() => void confirm(move.url)}
+          onCancel={() => setMove(null)}
+        />
+      )}
+      {draft === null && move === null && (
         <div className="flex flex-wrap items-center gap-space-xs">
           <Button
             variant="surface"
@@ -213,5 +252,75 @@ export function MappingPanel({
       )}
       {error && <p className="font-mono text-label-sm text-error">{error}</p>}
     </Card>
+  )
+}
+
+function MoveComparison({
+  url,
+  preview,
+  error,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  url: string
+  preview: MappingPreview | null
+  error: string | null
+  busy: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const lines = preview
+    ? [
+        `${preview.chapters} chapters there${preview.last !== null ? `, up to ${formatChapter(preview.last)}` : ''}${
+          preview.current_last !== null ? ` (here: up to ${formatChapter(preview.current_last)})` : ''
+        }.`,
+        preview.gained > 0 ? `${preview.gained} chapters not known here yet.` : null,
+        preview.retried > 0 ? `${preview.retried} that failed here will be tried again from it.` : null,
+        preview.set_aside > 0
+          ? `${preview.set_aside} not downloaded and not listed there will be set aside.`
+          : null,
+        preview.downloaded > 0 ? `${preview.downloaded} already in the library stay as they are.` : null,
+        'Reading progress and list entries stay as they are: they count chapters by number.',
+      ].filter((line): line is string => line !== null)
+    : []
+
+  return (
+    <div className="flex flex-col gap-space-sm rounded-lg bg-surface-container-low p-space-md">
+      <span className="font-mono text-label-sm uppercase tracking-wide text-outline">
+        Move to {preview?.source_site ?? 'another source'}
+      </span>
+      <span className="truncate font-mono text-label-sm text-on-surface-variant">{url}</span>
+      {error ? (
+        <p className="text-body-sm text-error">{error}</p>
+      ) : !preview ? (
+        <Skeleton className="h-16 w-full" />
+      ) : (
+        <>
+          {preview.stops_before_progress && (
+            // The one outcome that defeats the usual reason for moving.
+            <p className="rounded-lg bg-warning-container/30 px-space-sm py-space-xs text-body-sm text-on-surface">
+              It stops at chapter {formatChapter(preview.last ?? 0)}, before chapter{' '}
+              {formatChapter(preview.progress)}, where your reading got to.
+            </p>
+          )}
+          <ul className="flex flex-col gap-space-xs">
+            {lines.map((line) => (
+              <li key={line} className="text-body-sm text-on-surface-variant">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <div className="flex items-center gap-space-xs">
+        <Button variant="primary" size="sm" disabled={busy || !preview} onClick={onConfirm}>
+          {busy ? 'Moving…' : 'Move'}
+        </Button>
+        <Button variant="surface" size="sm" disabled={busy} onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
   )
 }
