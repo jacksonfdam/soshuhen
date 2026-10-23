@@ -63,6 +63,14 @@ function Palette({ commands, onClose }: { commands: Command[]; onClose: () => vo
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
     const shown = commands.filter((command) => matches(command.label, words))
     if (words.length === 0) return shown
+    const title = query.trim()
+    // Last, because it is the one item that sends requests to every site.
+    const searchSources: Command = {
+      id: 'search-sources',
+      label: `Search sources for “${title}”`,
+      icon: 'search',
+      run: () => navigate(`/search?q=${encodeURIComponent(title)}`),
+    }
     const found = series
       .filter((entry) => matches(entry.title, words))
       .slice(0, SERIES_SHOWN)
@@ -72,7 +80,7 @@ function Palette({ commands, onClose }: { commands: Command[]; onClose: () => vo
         icon: 'book',
         run: () => navigate(`/series/${entry.id}`),
       }))
-    return [...shown, ...found]
+    return [...shown, ...found, searchSources]
   }, [commands, series, query, navigate])
 
   useEffect(() => setActive(0), [query])
