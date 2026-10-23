@@ -210,6 +210,13 @@ Three panels are worth knowing about before you need them:
 the search turned up underneath it, each with how well it matched. If the mapping is wrong, the right
 one is usually already on that list; re-running the search asks the sites again.
 
+Moving a mapped series to another source shows what the move does before it is made: how far the
+new source goes against what is held here, how many chapters it adds, how many that failed here it
+will try again, and how many it does not list. It warns when the new source stops before where your
+reading got to. Progress and list entries are untouched by a move, since they count chapters by
+number. After the move, chapters already in the library stay as they are, and chapters the new
+source does not list are set aside as skipped rather than fetched from the site you left.
+
 **The chapter list** shows newest first or oldest first, and narrows to the unread, the
 downloaded or the bookmarked. The star on a row bookmarks a chapter to come back to. Read is never
 marked here — it follows how far your lists say you got — so a bookmark is the only mark a chapter
