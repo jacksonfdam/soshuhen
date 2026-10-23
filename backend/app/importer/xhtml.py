@@ -57,7 +57,7 @@ def _paragraphs(pages: list[str]) -> list[str]:
 
 def _text(value: str) -> str:
     # A literal {{img:N}} in the prose would be taken for an image reference.
-    return escape(value.replace("{{", "{​{"))
+    return escape(value.replace("{{", "{\u200b{"))
 
 
 def entries_to_body(entries: list[PdfEntry], *, own_heading: bool = True) -> tuple[str, list[bytes]]:
