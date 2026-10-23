@@ -4,7 +4,7 @@ import io
 from dataclasses import dataclass
 
 from pypdf import PdfReader
-from pypdf.errors import PdfReadError
+from pypdf.errors import DependencyError, PyPdfError
 
 
 class UnreadablePdf(Exception):
@@ -53,10 +53,12 @@ def _images(page) -> list[bytes]:
 
 
 def read_pdf(data: bytes) -> PdfBook:
+    # Any pypdf failure - a damaged file, a password, a missing crypto
+    # provider - is a file the import cannot use, never a server error.
     try:
         reader = PdfReader(io.BytesIO(data))
         outline = reader.outline
-    except (PdfReadError, ValueError, OSError) as exc:
+    except (PyPdfError, DependencyError, ValueError, OSError) as exc:
         raise UnreadablePdf(f"not a readable PDF: {exc}") from exc
 
     marks = sorted(_flatten(reader, outline), key=lambda mark: mark[1])
@@ -68,7 +70,10 @@ def read_pdf(data: bytes) -> PdfBook:
     if not starts:
         raise UnreadablePdf("the PDF has no bookmarks to split chapters by")
 
-    texts = [page.extract_text() or "" for page in reader.pages]
+    try:
+        texts = [page.extract_text() or "" for page in reader.pages]
+    except (PyPdfError, DependencyError, ValueError, OSError) as exc:
+        raise UnreadablePdf(f"the PDF's text cannot be read: {exc}") from exc
     if not any(text.strip() for text in texts):
         raise UnreadablePdf("the PDF has no text; a scanned book cannot be imported")
 
