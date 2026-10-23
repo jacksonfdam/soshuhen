@@ -86,3 +86,47 @@ def test_producer_is_read():
     data = make_pdf([("Chapter 1", ["a"])], producer="calibre 3.48.0")
 
     assert read_pdf(data).producer.startswith("calibre")
+
+
+def test_an_encrypted_pdf_that_opens_without_a_password_reads():
+    # Publishers' and Calibre's exports often carry AES copy protection with an
+    # empty open password; pypdf needs the cryptography package to read them.
+    from io import BytesIO
+
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter(clone_from=PdfReader(BytesIO(make_pdf([("Chapter 1", ["Locked text."])]))))
+    writer.encrypt(user_password="", owner_password="owner", algorithm="AES-256")
+    out = BytesIO()
+    writer.write(out)
+
+    book = read_pdf(out.getvalue())
+
+    assert "Locked text." in book.entries[0].pages[0]
+
+
+def test_a_pdf_pypdf_cannot_decode_is_unreadable_not_a_crash(monkeypatch):
+    # A missing crypto provider surfaced as a 500 on the preview; any pypdf
+    # failure is a file the import cannot use, reported as such.
+    from pypdf.errors import DependencyError
+
+    import app.importer.pdf as pdf_module
+
+    def broken(*args, **kwargs):
+        raise DependencyError("cryptography>=3.1 is required for AES algorithm")
+
+    monkeypatch.setattr(pdf_module, "PdfReader", broken)
+
+    with pytest.raises(UnreadablePdf):
+        read_pdf(make_pdf([("Chapter 1", ["a"])]))
+
+
+def test_cryptography_is_a_runtime_dependency():
+    # The dev venv pulls cryptography in through the mcp extra, which hid its
+    # absence from the image until a real encrypted book reached the api.
+    import tomllib
+    from pathlib import Path
+
+    project = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())["project"]
+
+    assert any(dep.startswith("cryptography") for dep in project["dependencies"])

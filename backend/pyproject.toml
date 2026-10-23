@@ -20,6 +20,9 @@ dependencies = [
     "pillow>=11.0",
     # Reads the bookmarks and page text of a novel PDF a user imports. BSD-3.
     "pypdf>=5.1",
+    # pypdf's AES provider: most exported books carry copy protection that opens
+    # without a password but cannot be read without it. Apache-2.0/BSD.
+    "cryptography>=43",
     # FastAPI's form parser, for the import screen's file upload. Apache-2.0.
     "python-multipart>=0.0.20",
 ]
