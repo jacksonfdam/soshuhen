@@ -180,6 +180,8 @@ async def complete(
     no list, must not interrupt the reader; it only moves nothing.
     """
     with service_errors():
+        # Prose too: a novel's chapter finished in the novel reader is the
+        # same statement as a comic's, and goes to the lists the same way.
         row = await service.chapter(session, chapter_id)
 
     # Lists count whole chapters. 23.5 finished means 23 is, and 24 is not.
@@ -215,6 +217,34 @@ async def complete(
 
     await session.commit()
     return {"progress_queued": progress_queued, "komga_queued": komga_queued}
+
+
+@router.post("/volumes/{volume_id}/complete")
+async def complete_volume(
+    volume_id: int, session: Session, body: CompleteIn | None = None
+) -> dict[str, bool]:
+    """A light novel volume finished in the novel reader.
+
+    It reaches the lists the way a volume read in Komga does: marked read
+    there, then progress_push works out the furthest volume read and pushes it
+    only forward. `read_at` is accepted for clients replaying offline reading
+    and has nothing to date: the push is dated when it runs.
+    """
+    del body
+    with service_errors():
+        book = await service.prose_volume_row(session, volume_id)
+    if book.komga_book_id is None:
+        # Nothing Komga knows, so nothing progress_push could ever read back.
+        return {"progress_queued": False, "komga_queued": False}
+    await repo.enqueue(
+        session,
+        JobType.KOMGA_READ_PROGRESS,
+        {"book_id": book.komga_book_id, "push_series_id": book.series_id},
+        series_id=book.series_id,
+        dedupe_key=f"komga_read_progress:{book.komga_book_id}",
+    )
+    await session.commit()
+    return {"progress_queued": True, "komga_queued": True}
 
 
 # --- Prose -------------------------------------------------------------------

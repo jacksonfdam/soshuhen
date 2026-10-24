@@ -506,6 +506,22 @@ async def prose_book(session: AsyncSession, kind: ProseKind, book_id: int) -> Pr
     )
 
 
+async def prose_volume_row(session: AsyncSession, volume_id: int) -> Any:
+    """A light volume to mark read. Unlike opening it, finishing it needs no
+    file: the Android app reads its own copy and only reports the end."""
+    row = (
+        await session.execute(
+            text("select id, series_id, edition, komga_book_id from volume where id = :id"),
+            {"id": volume_id},
+        )
+    ).first()
+    if row is None:
+        raise ChapterMissing(f"volume {volume_id} not found")
+    if row.edition == "web":
+        raise WrongKind(f"volume {volume_id} is a web novel volume; finish its chapters")
+    return row
+
+
 def _book_ref(kind: ProseKind, row: Any) -> dict[str, Any]:
     return {"kind": kind, "id": row.id, "number": float(row.number), "title": row.title}
 
