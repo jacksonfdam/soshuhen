@@ -1,6 +1,7 @@
 import type { ListStatus } from './format'
 
-export type SeriesState = 'mapped' | 'needs_review' | 'downloading' | 'failed'
+/** `local`: no source to download from, but the library already holds some of it. */
+export type SeriesState = 'mapped' | 'needs_review' | 'local' | 'downloading' | 'failed'
 
 /** A chapter found after its series was already followed. */
 export interface UpdateChapter {
@@ -145,11 +146,58 @@ export interface SeriesChapter {
   available_until: string | null
   /** Marked to come back to. The one mark a chapter keeps here; read is derived from the lists. */
   bookmarked: boolean
+  /** Its file is on disk inside the library, so a reader can open it. */
+  readable: boolean
 }
 
 export type ReaderMode = 'paged_ltr' | 'paged_rtl' | 'long_strip' | 'double'
 export type ReaderScale = 'fit_width' | 'fit_height' | 'fit_screen'
 export type ReaderBackground = 'black' | 'gray' | 'white'
+
+export type ProseKind = 'chapter' | 'volume'
+export type ProseTheme = 'light' | 'sepia' | 'dark'
+
+export interface ProsePrefs {
+  /** A step from 1 to 7 on the reading type scale. */
+  font_size: number
+  theme: ProseTheme
+}
+
+export interface ProseBookRef {
+  kind: ProseKind
+  id: number
+  number: number
+  title: string | null
+}
+
+export interface ProseManifest {
+  kind: ProseKind
+  id: number
+  series: { id: number; title: string }
+  title: string | null
+  number: number
+  edition: 'web' | 'light' | null
+  sections: { index: number; title: string | null }[]
+  previous: ProseBookRef | null
+  next: ProseBookRef | null
+  /** Where reading stopped in this book: a section and how far through it. */
+  position: { section: number; fraction: number } | null
+  prefs: ProsePrefs
+}
+
+export interface ProseSection {
+  index: number
+  title: string | null
+  /** Sanitised by the api to an allowlist; images point back at the api. */
+  html: string
+}
+
+export interface ProseResume {
+  kind: ProseKind
+  id: number
+  section: number
+  fraction: number
+}
 
 export interface ReaderPrefs {
   mode: ReaderMode
@@ -287,6 +335,7 @@ export interface SeriesReadingFrequency {
 }
 
 export interface SeriesVolume {
+  id: number
   number: number
   /** `web` rows are a range of imported web novel chapters; only `light` rows own a file. */
   edition: 'web' | 'light'
@@ -297,6 +346,11 @@ export interface SeriesVolume {
   /** A newer edition exists than the file on disk; it is downloading again. */
   revised: boolean
   komga_book_id: string | null
+  file_path: string | null
+  /** A web volume's chapter range. Null for a light volume, which is one file. */
+  first_part: number | null
+  last_part: number | null
+  readable: boolean
 }
 
 export interface SeriesDetail {
@@ -304,7 +358,7 @@ export interface SeriesDetail {
   metadata: SeriesMetadata
   mapping: { source_site: string; source_url: string } | null
   chapters: SeriesChapter[]
-  /** Volumes owned on J-Novel Club. Empty for every other series. */
+  /** Volumes owned on J-Novel Club or imported from the user's own files. */
   volumes: SeriesVolume[]
   entries: SeriesEntry[]
   reading_minutes_per_chapter: number
@@ -1018,6 +1072,39 @@ export const api = {
       `/api/reader/chapters/${chapterId}/complete`,
       { method: 'POST' },
     ),
+  completeVolume: (volumeId: number) =>
+    request<{ progress_queued: boolean; komga_queued: boolean }>(
+      `/api/reader/volumes/${volumeId}/complete`,
+      { method: 'POST' },
+    ),
+  proseManifest: (kind: ProseKind, id: number) =>
+    request<ProseManifest>(`/api/reader/prose/${kind}/${id}`),
+  proseSection: (kind: ProseKind, id: number, index: number) =>
+    request<ProseSection>(`/api/reader/prose/${kind}/${id}/sections/${index}`),
+  proseResume: (seriesId: number) =>
+    request<ProseResume>(`/api/reader/prose/series/${seriesId}/resume`),
+  saveProsePrefs: (prefs: ProsePrefs) =>
+    request<ProsePrefs>('/api/reader/prose/prefs', {
+      method: 'PUT',
+      body: JSON.stringify(prefs),
+    }),
+  saveProsePosition: (
+    seriesId: number,
+    book: { kind: ProseKind; id: number },
+    section: number,
+    fraction: number,
+  ) =>
+    request<{ ok: boolean }>(`/api/reader/series/${seriesId}/position`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        [book.kind === 'chapter' ? 'chapter_id' : 'volume_id']: book.id,
+        page: section,
+        fraction,
+      }),
+      // Saved on the way out too, when the page may be gone before the
+      // response arrives.
+      keepalive: true,
+    }),
   saveReaderPrefs: (seriesId: number, prefs: Omit<ReaderPrefs, 'custom'>) =>
     request<ReaderPrefs>(`/api/reader/series/${seriesId}/prefs`, {
       method: 'PUT',

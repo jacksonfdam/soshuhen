@@ -166,7 +166,7 @@ export function CoverCard({
 // never a made-up "not downloaded yet" filler when there is nothing to report.
 function pipelineNote(
   series: Series,
-): { text: string; icon: 'warning' | 'download' | 'check' | 'sync'; tone: string } | null {
+): { text: string; icon: 'warning' | 'download' | 'check' | 'sync' | 'book'; tone: string } | null {
   // First: a part that expires before it is downloaded is gone for good, which
   // outranks anything else this line could say.
   if (series.expiring) {
@@ -178,6 +178,10 @@ function pipelineNote(
   }
   if (series.state === 'needs_review') {
     return { text: 'Needs a source mapping', icon: 'warning', tone: 'text-error' }
+  }
+  // Nothing to download from, and nothing missing: the files are already here.
+  if (series.state === 'local') {
+    return { text: 'In your library', icon: 'book', tone: 'text-outline' }
   }
   if (series.auto_download) {
     return { text: 'Auto-download active', icon: 'download', tone: 'text-secondary' }

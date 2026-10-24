@@ -192,7 +192,13 @@ export function SeriesDetailPage() {
         </div>
 
         <aside className="flex flex-col gap-space-md">
-          <MappingPanel seriesId={series.id} mapping={mapping} onResearch={research} onRemap={remap} />
+          <MappingPanel
+            seriesId={series.id}
+            mapping={mapping}
+            local={series.state === 'local'}
+            onResearch={research}
+            onRemap={remap}
+          />
           <VolumesPanel volumes={detail.volumes} komgaBaseUrl={detail.komga_public_url} />
           <SyncTargets entries={entries} />
           <KindControl kind={series.kind} onChange={setKind} />

@@ -76,6 +76,7 @@ export function SeriesHeader({
         {format && <Badge tone="tertiary">{format}</Badge>}
         {series.status && <StatusPill status={series.status} />}
         {series.state === 'needs_review' && <Badge tone="error">Needs review</Badge>}
+        {series.state === 'local' && <Badge tone="tertiary">Local</Badge>}
         {series.auto_download && <Badge tone="secondary">Auto-download active</Badge>}
         {/* A provider format that already says novel would repeat it. */}
         {series.kind === 'prose' && !format?.toLowerCase().includes('novel') && (

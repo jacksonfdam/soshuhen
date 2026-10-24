@@ -27,6 +27,7 @@ const PENDING = 'bg-tertiary/20 text-tertiary'
 const STATE_LABEL: Record<SeriesState, string> = {
   mapped: 'Mapped',
   needs_review: 'Needs review',
+  local: 'Local',
   downloading: 'Downloading',
   failed: 'Failed',
 }
@@ -35,6 +36,8 @@ const STATE_LABEL: Record<SeriesState, string> = {
 const STATE_TINT: Record<SeriesState, string> = {
   mapped: 'bg-secondary/[0.12] text-secondary',
   needs_review: 'bg-warning/[0.12] text-warning',
+  // Neutral: nothing is wrong and nothing is waiting.
+  local: 'bg-surface-container-high text-on-surface-variant',
   downloading: 'bg-tertiary/[0.12] text-tertiary',
   failed: 'bg-error/[0.12] text-error',
 }
