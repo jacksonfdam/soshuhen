@@ -45,3 +45,51 @@
     overscroll-behavior: none;
   }
 }
+
+/* The novel reader's text is HTML from the book itself, sanitised by the api
+   to plain structural tags. It cannot carry classes, so it is styled from the
+   column that holds it, with the same tokens as everything else. */
+@layer components {
+  .prose-text p {
+    @apply mb-space-md;
+  }
+  .prose-text h1,
+  .prose-text h2,
+  .prose-text h3,
+  .prose-text h4 {
+    @apply mt-space-xl mb-space-md text-center font-bold;
+  }
+  .prose-text img {
+    @apply mx-auto my-space-md block h-auto max-w-full;
+  }
+  .prose-text figure {
+    @apply my-space-lg;
+  }
+  .prose-text figcaption {
+    @apply text-center italic opacity-70;
+  }
+  .prose-text blockquote {
+    @apply my-space-md border-l-2 border-current/30 pl-space-md italic;
+  }
+  .prose-text ul,
+  .prose-text ol {
+    @apply mb-space-md pl-space-lg;
+  }
+  .prose-text ul {
+    @apply list-disc;
+  }
+  .prose-text ol {
+    @apply list-decimal;
+  }
+  .prose-text hr {
+    @apply my-space-xl border-current/30;
+  }
+  .prose-text em,
+  .prose-text i {
+    @apply italic;
+  }
+  .prose-text b,
+  .prose-text strong {
+    @apply font-bold;
+  }
+}
