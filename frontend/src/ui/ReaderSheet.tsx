@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
-import { Icon } from '../../ui'
-import { useScrollLock } from '../../ui/useScrollLock'
+import { Icon } from './Icon'
+import { useScrollLock } from './useScrollLock'
 
 /** A bottom sheet below xl, where a thumb reaches it; a centred panel above. */
 export function ReaderSheet({

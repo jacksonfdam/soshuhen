@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import type { ReaderBackground, ReaderMode, ReaderPrefs, ReaderScale } from '../../lib/api'
 import { Button, Tabs } from '../../ui'
-import { ReaderSheet } from './ReaderSheet'
+import { ReaderSheet } from '../../ui/ReaderSheet'
 
 type Display = Omit<ReaderPrefs, 'custom'>
 

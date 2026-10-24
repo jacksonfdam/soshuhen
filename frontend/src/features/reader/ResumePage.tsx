@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import { api } from '../../lib/api'
 import { useAsyncData } from '../../lib/useAsyncData'
-import { ReaderMessage } from './ReaderMessage'
+import { ReaderMessage } from '../../ui/ReaderMessage'
 
 /** Continue reading: the server knows where, this only goes there. */
 export function ResumePage() {

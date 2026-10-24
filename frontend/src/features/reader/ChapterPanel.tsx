@@ -4,7 +4,7 @@ import { api } from '../../lib/api'
 import { formatChapter } from '../../lib/format'
 import { useAsyncData } from '../../lib/useAsyncData'
 import { Button } from '../../ui'
-import { ReaderSheet } from './ReaderSheet'
+import { ReaderSheet } from '../../ui/ReaderSheet'
 
 export function ChapterPanel({
   seriesId,

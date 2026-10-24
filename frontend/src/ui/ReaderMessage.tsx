@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 
-import { buttonClass } from '../../ui'
+import { buttonClass } from './Button'
 
 /** Every state the reader shows before it has a page to show. */
 export function ReaderMessage({
