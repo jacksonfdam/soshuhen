@@ -4,7 +4,9 @@ import app.soshuhen.api.Fixtures
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.soshuhenHttpClient
 import app.soshuhen.core.FailingStore
+import app.soshuhen.core.Availability
 import app.soshuhen.core.DeviceLibrary
+import app.soshuhen.core.DeviceVolume
 import app.soshuhen.core.FakeChapterFolder
 import app.soshuhen.core.LocalStore
 import app.soshuhen.core.Outbox
@@ -58,6 +60,7 @@ class SeriesDetailViewModelTest {
     private fun api(
         resume: () -> HttpStatusCode = { HttpStatusCode.NotFound },
         resumeBody: String = "",
+        detail: String = Fixtures.DETAIL,
         detailOk: () -> Boolean,
     ): SoshuhenApi {
         val json = headersOf(HttpHeaders.ContentType, "application/json")
@@ -69,7 +72,7 @@ class SeriesDetailViewModelTest {
                         request.url.encodedPath.endsWith("/resume") -> resume().let { status ->
                             if (status == HttpStatusCode.OK) respond(resumeBody, status, json) else respondError(status)
                         }
-                        detailOk() -> respond(Fixtures.DETAIL, HttpStatusCode.OK, json)
+                        detailOk() -> respond(detail, HttpStatusCode.OK, json)
                         else -> respondError(HttpStatusCode.InternalServerError)
                     }
                 }
@@ -84,6 +87,30 @@ class SeriesDetailViewModelTest {
         val ui = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value).data
         assertEquals(listOf(2.5, 2.0, 1.0), ui.rows.map { it.number })
         assertEquals(13L, ui.continueWith?.id)
+    }
+
+    @Test fun aNovelListsItsVolumesAndCountsThemOnTheDevice() = runTest(dispatcher) {
+        val folder = FakeChapterFolder()
+        store.indexVolume(DeviceVolume(41, 308, 1.0, "v.epub", folder.put("tsuki", "v.epub"), "\"e\"", 1, Instant.fromEpochMilliseconds(0)))
+        store.raiseVolumeProgress(308, 1)
+        val vm = SeriesDetailViewModel(308, MutableStateFlow(api(detail = Fixtures.PROSE_DETAIL) { true }), home, store, DeviceLibrary(store, folder))
+        advanceUntilIdle()
+        val ui = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value).data
+        val prose = assertNotNull(ui.prose)
+        assertEquals(listOf(41L), prose.light.map { it.id })
+        assertEquals(Availability.OnDevice, prose.light.single().availability)
+        assertEquals(1, ui.deviceChapters)
+        assertEquals(1, ui.readOnDevice)
+        assertEquals("light", vm.edition.value)
+        vm.deleteVolume(41)
+        advanceUntilIdle()
+        assertNull(store.deviceVolume(41))
+    }
+
+    @Test fun aComicHasNoProseRows() = runTest(dispatcher) {
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), home, store, DeviceLibrary(store, FakeChapterFolder()))
+        advanceUntilIdle()
+        assertNull(assertIs<LoadState.Loaded<DetailUi>>(vm.state.value).data.prose)
     }
 
     @Test fun detailRefreshFailureKeepsLoadedRows() = runTest(dispatcher) {
