@@ -31,6 +31,8 @@ class AppGraph(
     // reader share one extraction cache and one lock on it.
     val pages: PageExtractor,
     epubCheck: EpubCheck,
+    // The same object as epubCheck on Android, beside pages for the same reason.
+    val books: BookExtractor,
 ) {
     val store: ServerStore = InstanceGuard(servers, local)
     val probe = identityProbe(client)
