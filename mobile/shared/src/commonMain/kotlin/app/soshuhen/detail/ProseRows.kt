@@ -54,10 +54,12 @@ fun proseRows(
     val ranges = detail.volumes
         .filter { it.edition == WEB && it.firstPart != null && it.lastPart != null }
         .sortedBy { it.number }
+    // First range wins: two volumes sharing a boundary chapter would otherwise
+    // list it twice, and the list keys its rows by chapter id.
+    val covered = mutableSetOf<Long>()
     val grouped = ranges.map { v ->
-        WebGroup(v.number, chapters.filter { it.number >= v.firstPart!! && it.number <= v.lastPart!! })
+        WebGroup(v.number, chapters.filter { it.number >= v.firstPart!! && it.number <= v.lastPart!! && covered.add(it.id) })
     }
-    val covered = grouped.flatMap { it.rows }.map { it.id }.toSet()
     val others = chapters.filter { it.id !in covered }
     val web = (grouped + if (others.isNotEmpty()) listOf(WebGroup(null, others)) else emptyList())
         .filter { it.rows.isNotEmpty() }

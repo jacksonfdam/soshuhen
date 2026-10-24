@@ -83,4 +83,14 @@ class ProseRowsTest {
         val rows = proseRows(detail, emptySet(), emptySet(), null)
         assertEquals(3L, continueVolume(rows)?.id)
     }
+
+    // Two ranges sharing a boundary must not list the chapter twice: the list keys rows by id.
+    @Test fun aChapterInTwoRangesGoesUnderTheFirst() {
+        val detail = SeriesDetail(
+            novel, (9..11).map { chapter(it.toLong(), it.toDouble()) },
+            volumes = listOf(web(10, 1.0, 1.0, 10.0), web(11, 2.0, 10.0, 20.0)),
+        )
+        val rows = proseRows(detail, emptySet(), emptySet(), null)
+        assertEquals(listOf(listOf(9.0, 10.0), listOf(11.0)), rows.web.map { g -> g.rows.map { it.number } })
+    }
 }
