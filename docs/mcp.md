@@ -20,7 +20,7 @@ It also runs no inference of its own. The MCP client *is* the model.
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `list_series` | `state`, `limit` | Series with their state and chapter counts. `state` is `needs_review`, `mapped`, `downloading` or `failed` |
+| `list_series` | `state`, `limit` | Series with their state and chapter counts. `state` is `needs_review`, `local` (no source, but files in the library), `mapped`, `downloading` or `failed` |
 | `review_queue` | `series_id`, `refresh`, `limit` | The mapping queue, or one series' source candidates. `refresh` re-runs the source search |
 | `jobs_status` | `failures` | Queue counts, worker state and recent failures with their error |
 | `confirm_mapping` | `series_id`, `source_url` | Confirm which source URL a series is |

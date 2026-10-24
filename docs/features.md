@@ -120,9 +120,9 @@ searched on the prose sources, LoLoBun, Novelight and EmpireNovel, never on imag
 confirm the match on Discover like any other series.
 
 Each chapter downloads as an EPUB, not a CBZ, with the series, chapter number, title and cover
-embedded, and lands in the same Komga library. Komga reads it in its own web reader; on a prose
-series a chapter shows **Read in Komga** rather than opening Soshuhen's image reader. Finishing a
-chapter there moves your lists forward the same way it does for manga.
+embedded, and lands in the same Komga library. Soshuhen reads it in its own novel reader (see
+[Reading novels](#reading-novels)), and Komga still reads it too. Finishing a chapter in either
+moves your lists forward the same way it does for manga.
 
 LoLoBun locks most of its chapters to its own app. Those cannot be fetched and show as skipped,
 rather than retrying. EmpireNovel sits behind a Cloudflare challenge and needs the `flaresolverr`
@@ -238,6 +238,15 @@ will try again, and how many it does not list. It warns when the new source stop
 reading got to. Progress and list entries are untouched by a move, since they count chapters by
 number. After the move, chapters already in the library stay as they are, and chapters the new
 source does not list are set aside as skipped rather than fetched from the site you left.
+
+**On a light novel, Contents** replaces the chapter list. It lists volumes, with the light novel and
+the web novel apart when you have both. A light novel volume is one book with its own **Read**; a web
+novel volume opens to the chapters it covers, each with its own. A volume or chapter shows as read
+once your lists say so. One whose file is not in the library says that instead of offering to read.
+
+A series with no source but with files already in the library — a novel imported from your own
+PDFs, say — is **Local**. Nothing asks it for a source mapping, and it stays off the review queue;
+**Find a source** on its mapping panel is there if you ever want to download more of it.
 
 **The chapter list** shows newest first or oldest first, and narrows to the unread, the
 downloaded or the bookmarked. The star on a row bookmarks a chapter to come back to. Read is never
@@ -414,6 +423,20 @@ them. Open any chapter from a series page, or **Continue** from Home to land whe
 
 Finishing a chapter moves your lists forward, never back, and marks the book read in Komga when
 Komga has it.
+
+### Reading novels
+
+A light novel opens in a reader made for text rather than pages: the book's own words in one
+column, scrolled like an e-reader, with its illustrations in place.
+
+- **Text size and background are yours.** Seven text sizes, and a light, sepia or dark page. The
+  choice holds for every novel, on every device that opens the same Soshuhen.
+- **Your place is kept.** Where you stopped is saved as you scroll and comes back when you open the
+  book again, or when you press **Continue**.
+- **Contents** jumps to a chapter of a volume when the book has a table of contents.
+- **At the end**, mark the volume or chapter read, or go straight on to the next one, which marks
+  this one read on the way. A light novel volume reaches your lists as a volume read; a web novel
+  chapter as a chapter. Either only ever moves them forward.
 
 Komga and any Komga-compatible app on iOS or Android remain readers of the same library. Progress
 meets in your lists: what you read in Komga reaches them through `progress_push`, what you read

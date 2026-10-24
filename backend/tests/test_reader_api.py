@@ -451,7 +451,7 @@ async def test_a_page_that_is_not_an_image_is_a_page_failure_not_a_crash(client,
     assert response.status_code == 502
 
 
-async def test_a_prose_chapter_is_refused_with_a_pointer_to_komga(client):
+async def test_a_prose_chapter_is_refused_with_a_pointer_to_the_novel_reader(client):
     async with get_sessionmaker()() as session:
         series_id = (
             await session.execute(
@@ -474,4 +474,4 @@ async def test_a_prose_chapter_is_refused_with_a_pointer_to_komga(client):
 
     response = await client.get(f"/api/reader/chapters/{chapter_id}")
     assert response.status_code == 409
-    assert "Komga" in response.json()["detail"]
+    assert "novel reader" in response.json()["detail"]

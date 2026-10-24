@@ -61,10 +61,21 @@ export default {
         'reader-black': '#000000',
         'reader-gray': '#2b2b2b',
         'reader-white': '#ffffff',
+        // The novel reader's pages: a page of text, not a scanned image, so
+        // the colours are an e-reader's — warm paper, sepia, and a dark page
+        // that is not pure black, with ink matched to each.
+        'prose-light': '#faf8f3',
+        'on-prose-light': '#1f1d1a',
+        'prose-sepia': '#f4ecd8',
+        'on-prose-sepia': '#3b2f22',
+        'prose-dark': '#121212',
+        'on-prose-dark': '#d6d3cc',
       },
       fontFamily: {
         sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+        // Long-form reading: a book face the reader's system already has.
+        reading: ['Iowan Old Style', 'Charter', 'Georgia', 'serif'],
       },
       fontSize: {
         'display-lg': ['3rem', { lineHeight: '3.5rem', letterSpacing: '-0.03em', fontWeight: '800' }],
@@ -78,6 +89,15 @@ export default {
         'body-sm': ['0.75rem', { lineHeight: '1.125rem', fontWeight: '400' }],
         'label-md': ['0.8125rem', { lineHeight: '1.125rem', letterSpacing: '0.02em', fontWeight: '500' }],
         'label-sm': ['0.6875rem', { lineHeight: '0.9375rem', letterSpacing: '0.04em', fontWeight: '600' }],
+        // The novel reader's seven steps, picked by the reader. Line height is
+        // relative so every step keeps the same airy measure.
+        'prose-1': ['0.875rem', { lineHeight: '1.7' }],
+        'prose-2': ['1rem', { lineHeight: '1.7' }],
+        'prose-3': ['1.125rem', { lineHeight: '1.7' }],
+        'prose-4': ['1.25rem', { lineHeight: '1.7' }],
+        'prose-5': ['1.375rem', { lineHeight: '1.7' }],
+        'prose-6': ['1.5rem', { lineHeight: '1.7' }],
+        'prose-7': ['1.625rem', { lineHeight: '1.7' }],
       },
       borderRadius: {
         sm: '0.25rem',
@@ -94,6 +114,9 @@ export default {
         // and the nav were built by different tasks, neither knew about the
         // other, and the Save button ended up 26px behind it on a phone.
         'nav-clearance': '4.5rem',
+        // The novel reader's top bar plus a gutter, so the first line of a
+        // book does not open underneath it.
+        'prose-bar': '4.5rem',
         margin: '2rem',
         'space-xs': '0.25rem',
         'space-sm': '0.5rem',
@@ -101,7 +124,8 @@ export default {
         'space-lg': '1.5rem',
         'space-xl': '2.5rem',
       },
-      maxWidth: { canvas: '1440px' },
+      // prose-column: about seventy characters a line, the measure books use.
+      maxWidth: { canvas: '1440px', 'prose-column': '40rem' },
       boxShadow: {
         card: '0 8px 24px -4px rgba(0, 0, 0, 0.45)',
         overlay: '0 20px 40px -12px rgba(208, 188, 255, 0.12)',

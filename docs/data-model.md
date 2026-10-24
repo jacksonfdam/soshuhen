@@ -26,6 +26,9 @@ The canonical work.
 - **`auto_download` is opt-in and defaults false.** Only a followed series has its missing chapters
   queued by discovery. Confirming a mapping does not imply fetching a backlog; before this existed,
   forty-five confirmations queued tens of thousands of chapters.
+- **The state a screen shows is derived, not stored.** No active mapping reads `needs_review`, unless
+  a chapter or volume of the series is already `downloaded`: then it is `local`, and nothing asks it
+  for a mapping (`app/api/library_content.py`). Ongoing downloads and failures win over both.
 - **`meta.aliases`** holds normalised titles, widened as each provider contributes spellings.
 - **`meta.cross_refs`** holds identifiers with their provenance. See
   [`providers.md`](providers.md#identity-and-hearsay).
@@ -154,7 +157,13 @@ its archive. A chapter left half read for a week returns to `known`.
 ## Reading
 
 ### `reading_position`
-`series_id` (key), `chapter_id`, `page`, `updated_at`. One row per series.
+`series_id` (key), `chapter_id`, `volume_id`, `page`, `fraction`, `updated_at`. One row per series.
+
+Exactly one of `chapter_id` and `volume_id` is set: a light novel volume is a book with no chapter
+rows, so a place inside it names the volume. For prose, `page` is the EPUB's spine section and
+`fraction` how far through that section the reader had scrolled; comics leave `fraction` null.
+`GET /api/reader/series/{id}/resume` only ever answers a chapter, because clients decode its shape;
+novels resume through `/api/reader/prose/series/{id}/resume`.
 
 Where reading stands inside a chapter, kept by this installation only. Apart from
 `list_entry.user_progress_chapter` on purpose: that is a list's view of progress, every sync

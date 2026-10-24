@@ -38,6 +38,10 @@ JNC_TOKEN_EXPIRES_AT = "jnc_token_expires_at"
 READER_DEFAULT_MODE = "reader_default_mode"
 READER_DEFAULT_SCALE = "reader_default_scale"
 READER_DEFAULT_BACKGROUND = "reader_default_background"
+# The novel reader's, one pair for every novel: type size and page colour are
+# about the reader's eyes, not about the book.
+READER_PROSE_FONT_SIZE = "reader_prose_font_size"
+READER_PROSE_THEME = "reader_prose_theme"
 # Who this installation is, for a client that finds it on the LAN and must
 # recognise it again after DHCP moves it. An identity, not a knob, so it is
 # absent from all_settings().
@@ -85,6 +89,8 @@ class Defaults:
     reader_default_mode: str = "paged_rtl"
     reader_default_scale: str = "fit_screen"
     reader_default_background: str = "black"
+    reader_prose_font_size: int = 3
+    reader_prose_theme: str = "dark"
 
 
 DEFAULTS = Defaults()
@@ -137,6 +143,10 @@ def _fallback(key: str) -> str:
             return DEFAULTS.reader_default_scale
         case k if k == READER_DEFAULT_BACKGROUND:
             return DEFAULTS.reader_default_background
+        case k if k == READER_PROSE_FONT_SIZE:
+            return str(DEFAULTS.reader_prose_font_size)
+        case k if k == READER_PROSE_THEME:
+            return DEFAULTS.reader_prose_theme
         case _:
             return ""
 

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import routes_health
 from app.api.deps import db_session
+from app.api.library_content import HOLDS_FILES
 from app.api.reading_recency import LAST_READ_AT
 from app.api.routes_jobs import JOB_COLUMNS, job_row
 from app.api.routes_series import writable_providers
@@ -118,7 +119,7 @@ select count(*) filter (where j.state = 'leased') as in_flight,
 
 # A series with no active mapping cannot be discovered, downloaded or handed to
 # Komga, which is why this number belongs on the front page at all.
-MAPPINGS_SQL = """
+MAPPINGS_SQL = f"""
 select count(*) as pending,
        count(*) filter (where exists (
            select 1 from series_candidate c where c.series_id = s.id
@@ -127,6 +128,7 @@ select count(*) as pending,
  where not exists (
      select 1 from source_mapping m where m.series_id = s.id and m.active
  )
+   and not {HOLDS_FILES}
 """
 
 DISCOVERY_SQL = """

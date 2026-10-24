@@ -15,11 +15,14 @@ import { PROVIDER_LABEL } from '../../lib/format'
 export function MappingPanel({
   seriesId,
   mapping,
+  local = false,
   onResearch,
   onRemap,
 }: {
   seriesId: number
   mapping: { source_site: string; source_url: string } | null
+  /** Already in the library with no source: a mapping is optional, not awaited. */
+  local?: boolean
   onResearch: () => Promise<unknown>
   /** Supersede the mapping with a URL typed by hand. */
   onRemap: (sourceUrl: string) => Promise<unknown>
@@ -29,6 +32,10 @@ export function MappingPanel({
   const [draft, setDraft] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [candidates, setCandidates] = useState<SourceChoice[] | null>(null)
+  // A local series reads fine as it is. Candidates parked by an old search stay
+  // stored, but are shown only once the reader asks to look for a source.
+  const [looking, setLooking] = useState(false)
+  const quiet = local && !mapping && !looking
   // A move away from a mapped source is compared before it is made. The first
   // mapping has nothing to compare with and is confirmed straight away.
   const [move, setMove] = useState<{
@@ -188,17 +195,32 @@ export function MappingPanel({
             {mapping.source_url}
           </a>
         </div>
+      ) : local ? (
+        <p className="text-body-sm text-on-surface-variant">
+          Reads from files already in your library. A source is only needed to download more.
+        </p>
       ) : (
         <p className="text-body-sm text-on-surface-variant">
           No source mapped yet — downloads cannot start until one is confirmed.
         </p>
+      )}
+      {quiet && draft === null && (
+        <Button
+          variant="surface"
+          size="sm"
+          icon="sync"
+          onClick={() => setLooking(true)}
+          className="w-fit"
+        >
+          Find a source
+        </Button>
       )}
 
       {/* Shown whether or not a mapping exists: re-running the search on a
           mapped series is how a wrong mapping gets corrected, and parking the
           results somewhere the reader cannot see them is what made that
           impossible. */}
-      {candidates === null ? (
+      {quiet ? null : candidates === null ? (
         <Skeleton className="h-12 w-full" />
       ) : candidates.length > 0 ? (
         <div className="flex flex-col gap-space-xs">
@@ -224,7 +246,7 @@ export function MappingPanel({
           onCancel={() => setMove(null)}
         />
       )}
-      {draft === null && move === null && (
+      {!quiet && draft === null && move === null && (
         <div className="flex flex-wrap items-center gap-space-xs">
           <Button
             variant="surface"

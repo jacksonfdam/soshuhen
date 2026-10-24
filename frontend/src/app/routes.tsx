@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { DiscoverPage } from '../features/discover/DiscoverPage'
 import { DownloadsPage } from '../features/downloads/DownloadsPage'
 import { HomePage } from '../features/home/HomePage'
+import { ProseReaderRoute } from '../features/prose-reader/ProseReaderPage'
 import { LibraryPage } from '../features/library/LibraryPage'
 import { ReaderRoute } from '../features/reader/ReaderPage'
 import { ResumePage } from '../features/reader/ResumePage'
@@ -30,6 +31,7 @@ export function AppRoutes() {
       {/* Outside the shell: the reader is the whole screen, and the header and
           bottom navigation would sit on top of the page being read. */}
       <Route path="read/series/:seriesId" element={<ResumePage />} />
+      <Route path="read/prose/:kind/:id" element={<ProseReaderRoute />} />
       <Route path="read/:chapterId" element={<ReaderRoute />} />
       <Route element={<AppShell />}>
         <Route index element={<HomePage />} />
