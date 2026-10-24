@@ -50,8 +50,7 @@ class PageFailed(RuntimeError):
 
 
 class ProseChapter(RuntimeError):
-    """A light novel chapter. This reader draws page images, and an EPUB opened
-    as a zip would show its embedded illustrations as if they were the pages."""
+    """A light novel chapter asked of the page routes, which only draw images."""
 
 
 @dataclass(frozen=True)
@@ -101,10 +100,15 @@ async def chapter(session: AsyncSession, chapter_id: int) -> ChapterRow:
     row = result.first()
     if row is None:
         raise ChapterMissing(f"chapter {chapter_id} not found")
-    found = ChapterRow(**row._mapping)
-    if found.series_kind == "prose":
-        raise ProseChapter(f"chapter {chapter_id} belongs to a light novel")
-    return found
+    return ChapterRow(**row._mapping)
+
+
+def comic_only(row: ChapterRow) -> ChapterRow:
+    """The page routes draw images, and an EPUB opened as a zip would show its
+    embedded illustrations as if they were the pages."""
+    if row.series_kind == "prose":
+        raise ProseChapter(f"chapter {row.id} belongs to a light novel")
+    return row
 
 
 def library_file(file_path: str | None) -> Path | None:
@@ -435,3 +439,188 @@ async def resume(session: AsyncSession, series_id: int) -> dict[str, int]:
     if chapter_id is None:
         raise ChapterMissing(f"series {series_id} has no chapters")
     return {"chapter_id": chapter_id, "page": 0}
+
+
+# --- Prose -----------------------------------------------------------------
+#
+# A novel is read from the EPUB already on disk: one per chapter for web novel
+# chapters, one per volume for a light novel volume. Nothing streams; a book
+# that is not downloaded is not offered.
+
+ProseKind = Literal["chapter", "volume"]
+
+
+class WrongKind(RuntimeError):
+    """The row exists but is not a book this reader opens: a comic chapter, or
+    a web novel volume, which is only a range of chapters with no file."""
+
+
+@dataclass(frozen=True)
+class ProseBook:
+    kind: ProseKind
+    id: int
+    series_id: int
+    series_title: str
+    title: str | None
+    number: Decimal
+    edition: str | None
+    path: Path
+    komga_book_id: str | None
+
+
+async def prose_book(session: AsyncSession, kind: ProseKind, book_id: int) -> ProseBook:
+    if kind == "chapter":
+        query = """
+            select c.id, c.series_id, s.canonical_title as series_title, c.title, c.number,
+                   null as edition, c.file_path, c.komga_book_id, s.kind
+              from chapter c join series s on s.id = c.series_id
+             where c.id = :id
+        """
+    else:
+        query = """
+            select v.id, v.series_id, s.canonical_title as series_title, v.title, v.number,
+                   v.edition, v.file_path, v.komga_book_id, s.kind
+              from volume v join series s on s.id = v.series_id
+             where v.id = :id
+        """
+    row = (await session.execute(text(query), {"id": book_id})).first()
+    if row is None:
+        raise ChapterMissing(f"{kind} {book_id} not found")
+    if kind == "chapter" and row.kind != "prose":
+        raise WrongKind(f"chapter {book_id} is a comic chapter")
+    if kind == "volume" and row.edition == "web":
+        raise WrongKind(f"volume {book_id} is a web novel volume; read its chapters")
+    path = library_file(row.file_path)
+    if path is None:
+        raise ChapterMissing(f"{kind} {book_id} has no file in the library")
+    return ProseBook(
+        kind=kind,
+        id=row.id,
+        series_id=row.series_id,
+        series_title=row.series_title,
+        title=row.title,
+        number=row.number,
+        edition=row.edition,
+        path=path,
+        komga_book_id=row.komga_book_id,
+    )
+
+
+def _book_ref(kind: ProseKind, row: Any) -> dict[str, Any]:
+    return {"kind": kind, "id": row.id, "number": float(row.number), "title": row.title}
+
+
+async def _readable_rows(session: AsyncSession, book: ProseBook) -> list[Any]:
+    if book.kind == "chapter":
+        query = "select id, number, title, file_path from chapter where series_id = :s"
+        params: dict[str, Any] = {"s": book.series_id}
+    else:
+        query = (
+            "select id, number, title, file_path from volume"
+            " where series_id = :s and edition = :e"
+        )
+        params = {"s": book.series_id, "e": book.edition}
+    rows = (await session.execute(text(query + " order by number"), params)).all()
+    # Readable only: "next" that opens onto a missing file is a dead end.
+    return [row for row in rows if row.id == book.id or readable(row.file_path)]
+
+
+async def prose_neighbours(
+    session: AsyncSession, book: ProseBook
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    rows = await _readable_rows(session, book)
+    at = next(i for i, row in enumerate(rows) if row.id == book.id)
+    previous = _book_ref(book.kind, rows[at - 1]) if at > 0 else None
+    following = _book_ref(book.kind, rows[at + 1]) if at + 1 < len(rows) else None
+    return previous, following
+
+
+async def prose_position(session: AsyncSession, book: ProseBook) -> dict[str, Any] | None:
+    column = "chapter_id" if book.kind == "chapter" else "volume_id"
+    row = (
+        await session.execute(
+            text(f"select page, fraction from reading_position where series_id = :s and {column} = :b"),
+            {"s": book.series_id, "b": book.id},
+        )
+    ).first()
+    if row is None:
+        return None
+    return {"section": row.page, "fraction": row.fraction or 0.0}
+
+
+async def prose_prefs(session: AsyncSession) -> dict[str, Any]:
+    return {
+        "font_size": await settings_store.get_int(session, settings_store.READER_PROSE_FONT_SIZE),
+        "theme": await settings_store.get(session, settings_store.READER_PROSE_THEME),
+    }
+
+
+async def save_prose_prefs(session: AsyncSession, font_size: int, theme: str) -> None:
+    await settings_store.set_value(session, settings_store.READER_PROSE_FONT_SIZE, str(font_size))
+    await settings_store.set_value(session, settings_store.READER_PROSE_THEME, theme)
+
+
+async def prose_resume(session: AsyncSession, series_id: int) -> dict[str, Any]:
+    """Where to open a novel: the saved place, else the first book not yet read."""
+    saved = (
+        await session.execute(
+            text(
+                "select chapter_id, volume_id, page, fraction from reading_position"
+                " where series_id = :s"
+            ),
+            {"s": series_id},
+        )
+    ).first()
+    if saved is not None:
+        kind: ProseKind = "chapter" if saved.chapter_id is not None else "volume"
+        try:
+            await prose_book(session, kind, saved.chapter_id or saved.volume_id)
+        except (ChapterMissing, WrongKind):
+            pass
+        else:
+            return {
+                "kind": kind,
+                "id": saved.chapter_id or saved.volume_id,
+                "section": saved.page,
+                "fraction": saved.fraction or 0.0,
+            }
+
+    volume_read = (
+        await session.execute(
+            text(
+                "select coalesce(max(user_progress_volume), 0) from list_entry"
+                " where series_id = :s"
+            ),
+            {"s": series_id},
+        )
+    ).scalar_one()
+    chapter_read = await progress_events.furthest_read(session, series_id)
+    volumes = (
+        await session.execute(
+            text(
+                "select id, number, file_path from volume"
+                " where series_id = :s and edition = 'light' order by number"
+            ),
+            {"s": series_id},
+        )
+    ).all()
+    chapters = (
+        await session.execute(
+            text(
+                "select c.id, c.number, c.file_path from chapter c"
+                " join series s on s.id = c.series_id and s.kind = 'prose'"
+                " where c.series_id = :s order by c.number"
+            ),
+            {"s": series_id},
+        )
+    ).all()
+    candidates: list[tuple[ProseKind, Any]] = [
+        *(("volume", v) for v in volumes if v.number > volume_read),
+        *(("chapter", c) for c in chapters if c.number > chapter_read),
+        *(("volume", v) for v in volumes),
+        *(("chapter", c) for c in chapters),
+    ]
+    for kind, row in candidates:
+        if readable(row.file_path):
+            return {"kind": kind, "id": row.id, "section": 0, "fraction": 0.0}
+    raise ChapterMissing(f"series {series_id} has nothing readable in the library")

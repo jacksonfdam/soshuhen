@@ -4,6 +4,7 @@ import math
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import AwareDatetime, BaseModel, Field, model_validator
@@ -15,6 +16,7 @@ from app.api.progress_queue import progress_bounds, queue_progress_write
 from app.enums import JobType, ProgressSource
 from app.handlers.progress_write import forward_only
 from app.queue import repo
+from app.reader import epub_text
 
 router = APIRouter(prefix="/api/reader", tags=["reader"])
 
@@ -43,8 +45,13 @@ def service_errors() -> Iterator[None]:
         raise HTTPException(status_code=404, detail="no such page") from exc
     except service.ProseChapter as exc:
         raise HTTPException(
-            status_code=409, detail="this is a light novel chapter; read it in Komga"
+            status_code=409,
+            detail="this is a light novel chapter; open it in the novel reader",
         ) from exc
+    except service.WrongKind as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except epub_text.EpubBroken as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except service.NoMapping as exc:
         raise HTTPException(
             status_code=409, detail="this series has no confirmed source yet"
@@ -90,7 +97,7 @@ class PrefsIn(BaseModel):
 @router.get("/chapters/{chapter_id}")
 async def manifest(chapter_id: int, session: Session) -> dict[str, Any]:
     with service_errors():
-        row = await service.chapter(session, chapter_id)
+        row = service.comic_only(await service.chapter(session, chapter_id))
         origin, count = await service.page_count(session, row)
     previous, following = await service.neighbours(session, row)
     body = {
@@ -110,7 +117,7 @@ async def manifest(chapter_id: int, session: Session) -> dict[str, Any]:
 @router.get("/chapters/{chapter_id}/pages/{index}")
 async def page(chapter_id: int, index: int, session: Session) -> Response:
     with service_errors():
-        row = await service.chapter(session, chapter_id)
+        row = service.comic_only(await service.chapter(session, chapter_id))
         data, extension = await service.serve_page(session, row, index)
     await session.commit()
     return Response(
@@ -208,3 +215,81 @@ async def complete(
 
     await session.commit()
     return {"progress_queued": progress_queued, "komga_queued": komga_queued}
+
+
+# --- Prose -------------------------------------------------------------------
+
+ProseKind = Literal["chapter", "volume"]
+
+
+class ProsePrefsIn(BaseModel):
+    font_size: int = Field(ge=1, le=7)
+    theme: Literal["light", "sepia", "dark"]
+
+
+def _resource_url(kind: str, book_id: int) -> Any:
+    def url(href: str) -> str:
+        return f"/api/reader/prose/{kind}/{book_id}/resources/{quote(href)}"
+
+    return url
+
+
+@router.get("/prose/prefs")
+async def prose_prefs(session: Session) -> dict[str, Any]:
+    return await service.prose_prefs(session)
+
+
+@router.put("/prose/prefs")
+async def save_prose_prefs(body: ProsePrefsIn, session: Session) -> dict[str, Any]:
+    await service.save_prose_prefs(session, body.font_size, body.theme)
+    await session.commit()
+    return await service.prose_prefs(session)
+
+
+@router.get("/prose/series/{series_id}/resume")
+async def prose_resume(series_id: int, session: Session) -> dict[str, Any]:
+    with service_errors():
+        return await service.prose_resume(session, series_id)
+
+
+@router.get("/prose/{kind}/{book_id}")
+async def prose_manifest(kind: ProseKind, book_id: int, session: Session) -> dict[str, Any]:
+    with service_errors():
+        book = await service.prose_book(session, kind, book_id)
+        sections = epub_text.sections(book.path)
+    previous, following = await service.prose_neighbours(session, book)
+    return {
+        "kind": book.kind,
+        "id": book.id,
+        "series": {"id": book.series_id, "title": book.series_title},
+        "title": book.title,
+        "number": float(book.number),
+        "edition": book.edition,
+        "sections": [{"index": s.index, "title": s.title} for s in sections],
+        "previous": previous,
+        "next": following,
+        "position": await service.prose_position(session, book),
+        "prefs": await service.prose_prefs(session),
+    }
+
+
+@router.get("/prose/{kind}/{book_id}/sections/{index}")
+async def prose_section(
+    kind: ProseKind, book_id: int, index: int, session: Session
+) -> dict[str, Any]:
+    with service_errors():
+        book = await service.prose_book(session, kind, book_id)
+        sections = epub_text.sections(book.path)
+        html = epub_text.section_html(book.path, index, _resource_url(kind, book_id))
+    return {"index": index, "title": sections[index].title, "html": html}
+
+
+@router.get("/prose/{kind}/{book_id}/resources/{href:path}")
+async def prose_resource(kind: ProseKind, book_id: int, href: str, session: Session) -> Response:
+    with service_errors():
+        book = await service.prose_book(session, kind, book_id)
+    try:
+        data, media_type = epub_text.resource(book.path, href)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="no such image in this book") from exc
+    return Response(content=data, media_type=media_type, headers={"Cache-Control": IMMUTABLE})
