@@ -54,9 +54,14 @@ class Notifier(private val context: Context, private val smallIcon: Int) {
 
     @SuppressLint("MissingPermission")
     fun newChapters(report: ImportReport) {
-        if (report.imported.isEmpty()) return
-        for ((seriesId, numbers) in report.imported) {
-            val (title, text) = newChaptersText(report.seriesTitles.getValue(seriesId), numbers)
+        val series = report.imported.keys + report.importedVolumes.keys
+        if (series.isEmpty()) return
+        for (seriesId in series) {
+            val (title, text) = newBooksText(
+                report.seriesTitles.getValue(seriesId),
+                report.imported[seriesId].orEmpty(),
+                report.importedVolumes[seriesId].orEmpty(),
+            )
             val notification = NotificationCompat.Builder(context, NEW_CHAPTERS)
                 .setSmallIcon(smallIcon)
                 .setContentTitle(title)
@@ -69,11 +74,11 @@ class Notifier(private val context: Context, private val smallIcon: Int) {
             // about the same series replaces it rather than stacking.
             manager.notify(NOTIFICATION_BASE + seriesId.toInt(), notification)
         }
-        if (report.imported.size > 1) {
+        if (series.size > 1) {
             val summary = NotificationCompat.Builder(context, NEW_CHAPTERS)
                 .setSmallIcon(smallIcon)
                 .setContentTitle("New chapters")
-                .setContentText("${report.imported.size} series have new chapters")
+                .setContentText("${series.size} series have new chapters")
                 .setGroup(GROUP)
                 .setGroupSummary(true)
                 .setAutoCancel(true)

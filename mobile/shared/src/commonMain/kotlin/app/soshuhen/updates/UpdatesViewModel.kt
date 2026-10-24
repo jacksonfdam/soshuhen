@@ -2,6 +2,7 @@ package app.soshuhen.updates
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.soshuhen.core.BookKind
 import app.soshuhen.core.LocalStore
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +24,7 @@ data class UpdateGroup(
     val numbers: List<Double>,
     val latestAt: Instant,
     val day: String,
+    val volumes: List<Double> = emptyList(),
 )
 
 class UpdatesViewModel(
@@ -40,7 +42,11 @@ class UpdatesViewModel(
             log.groupBy { label(Instant.fromEpochMilliseconds(it.importedAt).toLocalDateTime(zone).date, today) to it.seriesId }
                 .map { (key, chapters) ->
                     val newest = chapters.first()
-                    UpdateGroup(newest.seriesId, newest.seriesTitle, chapters.map { it.number }, Instant.fromEpochMilliseconds(newest.importedAt), key.first)
+                    val (volumes, rest) = chapters.partition { it.kind == BookKind.Volume.key }
+                    UpdateGroup(
+                        newest.seriesId, newest.seriesTitle, rest.map { it.number },
+                        Instant.fromEpochMilliseconds(newest.importedAt), key.first, volumes.map { it.number },
+                    )
                 }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
