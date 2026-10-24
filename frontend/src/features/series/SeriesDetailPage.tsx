@@ -10,6 +10,7 @@ import { ImportPanel } from './ImportPanel'
 import { KindControl } from './KindControl'
 import { MappingPanel } from './MappingPanel'
 import { NotesPanel } from './NotesPanel'
+import { ProseContents } from './ProseContents'
 import { ProgressManager } from './ProgressManager'
 import { ReadingFrequency } from './ReadingFrequency'
 import { ScoreStrip } from './ScoreStrip'
@@ -88,6 +89,8 @@ export function SeriesDetailPage() {
 
   const { series, metadata, mapping, chapters, entries } = detail
   const total = totalChapters(detail)
+  const prose = series.kind === 'prose'
+  const volumeProgress = Math.max(0, ...entries.map((entry) => entry.user_progress_volume ?? 0))
 
   return (
     <div className="flex flex-col gap-space-xl">
@@ -144,7 +147,10 @@ export function SeriesDetailPage() {
           <section className="flex flex-col gap-space-md">
             <Tabs
               options={[
-                { value: 'chapters', label: 'Chapters', count: chapters.length },
+                // A novel is read by the volume, so its tab lists both.
+                prose
+                  ? { value: 'chapters', label: 'Contents', count: null }
+                  : { value: 'chapters', label: 'Chapters', count: chapters.length },
                 { value: 'notes', label: 'Your note' },
                 // A count only when the enrichment has landed; "(0)" while it
                 // is still queued would read as "this manga has no characters".
@@ -160,13 +166,23 @@ export function SeriesDetailPage() {
               onChange={setPanel}
             />
             <div hidden={panel !== 'chapters'}>
-              <ChapterTable
-                chapters={chapters}
-                komgaBaseUrl={detail.komga_public_url}
-                progress={series.progress}
-                prose={series.kind === 'prose'}
-                onBookmark={bookmark}
-              />
+              {prose ? (
+                <ProseContents
+                  volumes={detail.volumes}
+                  chapters={chapters}
+                  progress={series.progress}
+                  volumeProgress={volumeProgress}
+                  onBookmark={bookmark}
+                />
+              ) : (
+                <ChapterTable
+                  chapters={chapters}
+                  komgaBaseUrl={detail.komga_public_url}
+                  progress={series.progress}
+                  prose={false}
+                  onBookmark={bookmark}
+                />
+              )}
             </div>
             <div hidden={panel !== 'notes'}>
               {/* Mounted even while hidden: NotesPanel holds an unsaved draft in local
@@ -199,7 +215,10 @@ export function SeriesDetailPage() {
             onResearch={research}
             onRemap={remap}
           />
-          <VolumesPanel volumes={detail.volumes} komgaBaseUrl={detail.komga_public_url} />
+          {/* A novel's volumes are its contents, listed in the main column. */}
+          {!prose && (
+            <VolumesPanel volumes={detail.volumes} komgaBaseUrl={detail.komga_public_url} />
+          )}
           <SyncTargets entries={entries} />
           <KindControl kind={series.kind} onChange={setKind} />
           <DownloadControls
