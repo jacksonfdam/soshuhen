@@ -1,5 +1,6 @@
 """The reader: pages, where reading stands, and how a series is shown."""
 
+import asyncio
 import math
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -248,6 +249,10 @@ async def complete_volume(
 
 
 # --- Prose -------------------------------------------------------------------
+#
+# Reading an EPUB is zip and parser work with no await in it, so it runs in a
+# thread: on the loop, a long volume opening would stall every other request
+# and the event stream with it.
 
 ProseKind = Literal["chapter", "volume"]
 
@@ -286,7 +291,7 @@ async def prose_resume(series_id: int, session: Session) -> dict[str, Any]:
 async def prose_manifest(kind: ProseKind, book_id: int, session: Session) -> dict[str, Any]:
     with service_errors():
         book = await service.prose_book(session, kind, book_id)
-        sections = epub_text.sections(book.path)
+        sections = await asyncio.to_thread(epub_text.sections, book.path)
     previous, following = await service.prose_neighbours(session, book)
     return {
         "kind": book.kind,
@@ -309,8 +314,10 @@ async def prose_section(
 ) -> dict[str, Any]:
     with service_errors():
         book = await service.prose_book(session, kind, book_id)
-        sections = epub_text.sections(book.path)
-        html = epub_text.section_html(book.path, index, _resource_url(kind, book_id))
+        sections = await asyncio.to_thread(epub_text.sections, book.path)
+        html = await asyncio.to_thread(
+            epub_text.section_html, book.path, index, _resource_url(kind, book_id)
+        )
     return {"index": index, "title": sections[index].title, "html": html}
 
 
@@ -318,8 +325,8 @@ async def prose_section(
 async def prose_resource(kind: ProseKind, book_id: int, href: str, session: Session) -> Response:
     with service_errors():
         book = await service.prose_book(session, kind, book_id)
-    try:
-        data, media_type = epub_text.resource(book.path, href)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="no such image in this book") from exc
+        try:
+            data, media_type = await asyncio.to_thread(epub_text.resource, book.path, href)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="no such image in this book") from exc
     return Response(content=data, media_type=media_type, headers={"Cache-Control": IMMUTABLE})

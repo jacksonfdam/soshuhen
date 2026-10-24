@@ -21,6 +21,7 @@ import { scrollToPlace, useProsePosition } from './useProsePosition'
 // place is measured on the page as it will finally sit; short enough that a
 // slow image never keeps the reader at the top.
 const IMAGE_WAIT_MS = 3000
+const SECTIONS_AT_ONCE = 4
 
 /** A fresh reader per book: nothing of the last one's place may leak in. */
 export function ProseReaderRoute() {
@@ -69,15 +70,31 @@ function ProseReaderPage({ kind, id }: { kind: ProseKind; id: number }) {
   const [progress, setProgress] = useState(0)
   const lastY = useRef(0)
 
-  // Every section at once: a volume is a few hundred kilobytes of text, and a
-  // single document is what lets the browser scroll it, find in it and keep
-  // its place without this screen paging anything.
+  // The whole book as one document: a volume is a few hundred kilobytes of
+  // text, and a single page is what lets the browser scroll it, find in it and
+  // keep its place without this screen paging anything. Fetched a few
+  // sections at a time, so a book of hundreds does not open hundreds of
+  // requests against the api at once.
   useEffect(() => {
     if (!manifest) return
     setPrefs(manifest.prefs)
-    Promise.all(manifest.sections.map((section) => api.proseSection(kind, id, section.index)))
-      .then(setSections)
-      .catch((failure: unknown) => setSectionsError(messageOf(failure)))
+    let cancelled = false
+    void (async () => {
+      const loaded: ProseSection[] = []
+      for (let start = 0; start < manifest.sections.length; start += SECTIONS_AT_ONCE) {
+        const batch = manifest.sections.slice(start, start + SECTIONS_AT_ONCE)
+        loaded.push(
+          ...(await Promise.all(batch.map((section) => api.proseSection(kind, id, section.index)))),
+        )
+        if (cancelled) return
+      }
+      setSections(loaded)
+    })().catch((failure: unknown) => {
+      if (!cancelled) setSectionsError(messageOf(failure))
+    })
+    return () => {
+      cancelled = true
+    }
   }, [manifest, kind, id])
 
   // Restored once, after the text and its illustrations have laid out.
