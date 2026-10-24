@@ -119,10 +119,10 @@ internal fun ReaderChrome(
 }
 
 // A tap on a bar's empty part belongs to the bar, not to the page beneath it.
-private fun Modifier.swallowTaps() = pointerInput(Unit) { detectTapGestures { } }
+internal fun Modifier.swallowTaps() = pointerInput(Unit) { detectTapGestures { } }
 
 @Composable
-private fun GlyphButton(glyph: String, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun GlyphButton(glyph: String, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         Modifier.clip(RoundedCornerShape(Tokens.radius.lg)).clickable(onClick = onClick)
             .semantics { contentDescription = label }.then(modifier),
@@ -133,7 +133,7 @@ private fun GlyphButton(glyph: String, label: String, onClick: () -> Unit, modif
 }
 
 @Composable
-private fun RoundButton(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {
+internal fun RoundButton(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
         Modifier.size(Tokens.reader.control).clip(CircleShape).background(Tokens.surfaceContainerHighest)
             .clickable(enabled = enabled, onClick = onClick).semantics { contentDescription = label }
@@ -184,7 +184,7 @@ private fun PageSlider(page: Int, pageCount: Int, rtl: Boolean, onSeek: (Int) ->
 /** The web's ReaderSheet below xl: a bottom sheet, where a thumb reaches it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReaderSheet(title: String, onClose: () -> Unit, content: @Composable () -> Unit) {
+internal fun ReaderSheet(title: String, onClose: () -> Unit, content: @Composable () -> Unit) {
     val window = LocalWindowInfo.current.containerSize
     val tallest = with(LocalDensity.current) { window.height.toDp() } * Tokens.reader.sheetMaxHeight
     ModalBottomSheet(
@@ -248,7 +248,7 @@ internal fun SettingsSheet(prefs: ReaderPrefs, onChange: (ReaderPrefs) -> Unit, 
 }
 
 @Composable
-private fun Tabs(options: List<Pair<String, String>>, value: String, onChange: (String) -> Unit) {
+internal fun Tabs(options: List<Pair<String, String>>, value: String, onChange: (String) -> Unit) {
     Column {
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.space.xs)) {
             options.forEach { (key, label) ->
@@ -278,7 +278,7 @@ private fun Tabs(options: List<Pair<String, String>>, value: String, onChange: (
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun OptionGroup(label: String, options: List<Pair<String, String>>, value: String, onChange: (String) -> Unit) {
+internal fun OptionGroup(label: String, options: List<Pair<String, String>>, value: String, onChange: (String) -> Unit) {
     Column(Modifier.padding(top = Tokens.space.md)) {
         Text(
             label, Modifier.padding(bottom = Tokens.space.sm),

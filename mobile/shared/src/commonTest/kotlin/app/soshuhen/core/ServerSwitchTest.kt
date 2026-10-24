@@ -40,7 +40,7 @@ class ServerSwitchTest {
         val uri = folder.put("frieren", "c.cbz")
         store.indexChapter(DeviceChapter(11, 1, 1.0, "c.cbz", uri, "\"e\"", 3, Instant.fromEpochMilliseconds(1_000)))
         Outbox(store) { Instant.fromEpochMilliseconds(2_000) }.complete(1, 11)
-        store.savePartEtag(13, "\"p\"")
+        store.savePartEtag(BookRef(BookKind.Chapter, 13), "\"p\"")
         store.setProblem("Device full: free some space or delete read chapters")
         store.logImport(ImportLogEntity(11, 1, "Frieren", 1.0, 1_000))
     }
@@ -58,7 +58,7 @@ class ServerSwitchTest {
         assertFalse(store.isMarked(1).first())
         assertNull(store.deviceChapter(11))
         assertTrue(store.outbox().isEmpty())
-        assertNull(store.partEtag(13))
+        assertNull(store.partEtag(BookRef(BookKind.Chapter, 13)))
         assertNull(store.problem().first())
         // Its series ids are the old server's: sending them to this one would
         // move unrelated list progress. The files themselves are the user's.

@@ -64,6 +64,11 @@ object Tokens {
     val readerBlack = Color(0xFF000000)
     val readerGray = Color(0xFF2B2B2B)
     val readerWhite = Color(0xFFFFFFFF)
+    // A novel is text, not a scan: sepia is the paper colour e-readers offer,
+    // and the dark ink pairs with both it and white, where onSurface would vanish.
+    val readerSepia = Color(0xFFF4ECD8)
+    val proseInkDark = Color(0xFF1C1B1F)
+    val proseInkSepia = Color(0xFF433422)
 
     // Tailwind's numeric steps (1, 2, 3, 4, 6), which is what most web classes
     // use; the web's own named steps are below them under their web names.
@@ -203,6 +208,19 @@ object Tokens {
         // EndOfChapter's min-h-[60vh] and a strip page's min-h-[50vh] before it loads.
         const val endMinHeight = 0.6f
         const val pageMinHeight = 0.5f
+    }
+
+    // The prose reader's page: margins a thumb does not cover, and the leading
+    // and paragraph spacing of a printed paperback.
+    object prose {
+        val marginHorizontal = 24.dp
+        val marginVertical = 40.dp
+        val paragraphGap = 12.dp
+        val doubleGutter = 48.dp
+        const val lineHeight = 1.5f
+        const val headingScale = 1.4f
+        // A drag this far, as a share of the page's width, turns the page.
+        const val swipe = 0.15f
     }
 }
 

@@ -107,12 +107,34 @@ async def test_an_unknown_chapter_is_404(client):
     assert (await client.get("/api/chapters/999999/archive")).status_code == 404
 
 
-async def test_a_prose_chapter_is_409(client, tmp_path):
+async def test_a_prose_chapter_is_served_as_epub(client, tmp_path):
     path = tmp_path / "manga" / "teto" / "c1.epub"
     path.parent.mkdir(parents=True)
-    path.write_bytes(b"PK")
+    path.write_bytes(b"PK-epub-bytes")
     chapter_id = await _chapter(str(path), kind="prose")
-    assert (await client.get(f"/api/chapters/{chapter_id}/archive")).status_code == 409
+    response = await client.get(f"/api/chapters/{chapter_id}/archive")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/epub+zip"
+    assert response.content == path.read_bytes()
+
+
+async def test_a_prose_chapter_resumes_with_range(client, tmp_path):
+    path = tmp_path / "manga" / "teto" / "c1.epub"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"PK-epub-bytes")
+    chapter_id = await _chapter(str(path), kind="prose")
+    response = await client.get(
+        f"/api/chapters/{chapter_id}/archive", headers={"Range": "bytes=2-"}
+    )
+    assert response.status_code == 206
+    assert response.content == b"-epub-bytes"
+
+
+async def test_a_comic_archive_is_still_a_cbz(client, tmp_path):
+    path = _cbz(tmp_path / "manga" / "teto" / "c1.cbz", [JPEG])
+    chapter_id = await _chapter(str(path))
+    response = await client.get(f"/api/chapters/{chapter_id}/archive")
+    assert response.headers["content-type"] == "application/vnd.comicbook+zip"
 
 
 async def test_no_database_connection_is_held_while_the_file_streams(client, tmp_path, monkeypatch):

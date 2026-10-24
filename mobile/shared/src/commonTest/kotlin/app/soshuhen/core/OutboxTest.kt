@@ -85,6 +85,32 @@ class OutboxTest {
         assertTrue(sent[1].body.contains("2026-10-21T09:00:00Z"))
     }
 
+    @Test fun volumeCompletionsAreSentInOrderWithEverythingElse() = runTest {
+        outbox.position(1, 10, 3)
+        outbox.complete(1, 10)
+        outbox.completeVolume(1, 7)
+        val sent = mutableListOf<Sent>()
+        outbox.drain(apiAnswering(sent) { _, _ -> HttpStatusCode.OK })
+        assertEquals(
+            listOf(
+                "/api/reader/series/1/position",
+                "/api/reader/chapters/10/complete",
+                "/api/reader/volumes/7/complete",
+            ),
+            sent.map { it.path },
+        )
+        assertTrue(sent[2].body.contains("2026-10-21T08:10:00Z"))
+        assertEquals(HttpMethod.Post, sent[2].method)
+    }
+
+    // A web edition volume is read through its chapters, and the server says
+    // so with a 409; retried, it would hold the queue forever.
+    @Test fun aRefusedVolumeCompletionIsDropped() = runTest {
+        outbox.completeVolume(1, 7)
+        val result = outbox.drain(apiAnswering(mutableListOf()) { _, _ -> HttpStatusCode.Conflict })
+        assertEquals(DrainResult(sent = 0, dropped = 1, remaining = 0), result)
+    }
+
     @Test fun a404DropsThatEventAndContinues() = runTest {
         outbox.complete(1, 10)
         outbox.complete(1, 11)

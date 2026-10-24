@@ -11,6 +11,7 @@ import app.soshuhen.core.LocalStore
 import app.soshuhen.core.Notifier
 import app.soshuhen.core.SafChapterFolder
 import app.soshuhen.db.databaseBuilder
+import app.soshuhen.reader.EpubFiles
 import app.soshuhen.reader.ZipPages
 import okio.Path.Companion.toPath
 import kotlinx.coroutines.MainScope
@@ -26,6 +27,7 @@ class SoshuhenApplication : Application(), ImportEnvironment {
         val servers = DataStoreServerStore(this)
         val scope = MainScope()
         val zip = ZipPages(cacheDir.absolutePath.toPath())
+        val epubs = EpubFiles(cacheDir.absolutePath.toPath())
         // Read once before anything asks: started at null, the folder said it
         // was unavailable for the moment DataStore took, and a worker or the
         // first-run check that asked then sent the user back to the picker.
@@ -40,6 +42,8 @@ class SoshuhenApplication : Application(), ImportEnvironment {
             cacheDir.absolutePath.toPath(),
             zip,
             zip,
+            epubs,
+            epubs,
         )
     }
 

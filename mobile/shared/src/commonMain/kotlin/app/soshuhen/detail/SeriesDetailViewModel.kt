@@ -12,6 +12,8 @@ import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.SoshuhenJson
 import app.soshuhen.core.DeviceChapter
 import app.soshuhen.core.DeviceLibrary
+import app.soshuhen.core.DeviceVolume
+import app.soshuhen.core.volumesRead
 import app.soshuhen.core.FolderUnavailable
 import app.soshuhen.core.LocalStore
 import app.soshuhen.ui.FAILED_FIRST
@@ -44,10 +46,15 @@ data class DetailUi(
     // Read straight through from the server for the header and progress card.
     val metadata: SeriesMetadata = SeriesMetadata(),
     val minutesPerChapter: Int? = null,
+    // A novel's volumes and web chapters by edition; null for a comic.
+    val prose: ProseRows? = null,
+    val continueVolume: VolumeRow? = null,
 )
 
 /** What the server said, before the device's own state is laid over it. */
-private class Remote(val detail: SeriesDetail, val resume: Resume?)
+private class Remote(val detail: SeriesDetail, val resume: Resume?, val volumeProgress: Int?)
+
+const val VOLUME_UNNAMED = "The server does not name its volumes yet. Update Soshuhen on the server to read them here."
 
 const val FOLDER_GONE = "The chapters folder is not available. Pick it again in Settings."
 
@@ -63,14 +70,23 @@ class SeriesDetailViewModel(
     // Marking and the device's files change under a loaded screen, so they are
     // laid over what the server said instead of being baked into it.
     val state: StateFlow<LoadState<DetailUi>> = combine(
-        remote, local.isMarked(seriesId), local.deviceChapters(seriesId),
-    ) { loaded, marked, onDevice ->
+        remote, local.isMarked(seriesId), local.deviceChapters(seriesId), local.deviceVolumes(seriesId),
+    ) { loaded, marked, onDevice, volumes ->
         when (loaded) {
             LoadState.Loading -> LoadState.Loading
             is LoadState.Failed -> loaded
-            is LoadState.Loaded -> LoadState.Loaded(ui(loaded.data, marked, onDevice), loaded.refreshFailed)
+            is LoadState.Loaded -> LoadState.Loaded(ui(loaded.data, marked, onDevice, volumes), loaded.refreshFailed)
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LoadState.Loading)
+
+    private val chosenEdition = MutableStateFlow<String?>(null)
+
+    /** Which of a novel's editions the list shows: the user's pick, else the default for the series. */
+    val edition: StateFlow<String> = combine(chosenEdition, state) { chosen, loaded ->
+        chosen ?: (loaded as? LoadState.Loaded)?.data?.prose?.let(::defaultEdition) ?: LIGHT
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, LIGHT)
+
+    fun setEdition(edition: String) { chosenEdition.value = edition }
 
     private val _unmarkPrompt = MutableStateFlow<Int?>(null)
 
@@ -83,15 +99,24 @@ class SeriesDetailViewModel(
     private var loading: Job? = null
     private var lastDetail: SeriesDetail? = null
 
-    private fun ui(remote: Remote, marked: Boolean, onDevice: List<DeviceChapter>): DetailUi {
+    private fun ui(remote: Remote, marked: Boolean, onDevice: List<DeviceChapter>, volumes: List<DeviceVolume>): DetailUi {
         val ids = onDevice.map { it.chapterId }.toSet()
         val series = remote.detail.series
         val next = continueChapter(remote.detail, remote.resume, ids)
+        val prose = if (series.kind == "prose") {
+            proseRows(remote.detail, ids, volumes.map { it.volumeId }.toSet(), remote.volumeProgress)
+        } else {
+            null
+        }
+        val volumesRead = volumesRead(remote.detail, remote.volumeProgress)
         return DetailUi(
             series, chapterRows(remote.detail, ids), next,
             remote.resume?.takeIf { it.chapterId == next?.id }?.page,
-            marked, onDevice.size, onDevice.count { floor(it.number) <= series.progress },
+            marked,
+            onDevice.size + volumes.size,
+            onDevice.count { floor(it.number) <= series.progress } + volumes.count { floor(it.number) <= volumesRead },
             remote.detail.metadata, remote.detail.readingMinutesPerChapter,
+            prose, prose?.let(::continueVolume),
         )
     }
 
@@ -117,12 +142,19 @@ class SeriesDetailViewModel(
 
     fun deleteChapter(chapterId: Long) = attempt { library.deleteChapter(chapterId) }
 
+    fun deleteVolume(volumeId: Long) = attempt { library.deleteVolume(volumeId) }
+
     fun deleteRead() {
         val detail = lastDetail ?: return
         attempt { library.deleteRead(detail) }
     }
 
     fun dismissNotice() { _notice.value = null }
+
+    /** A volume the server listed without an id: nothing can fetch it, so say why instead of doing nothing. */
+    fun cannotOpen(row: VolumeRow) {
+        if (row.id == null) _notice.value = VOLUME_UNNAMED
+    }
 
     private fun attempt(action: suspend () -> Unit) {
         viewModelScope.launch {
@@ -158,14 +190,14 @@ class SeriesDetailViewModel(
                 val detail = SoshuhenJson.decodeFromString<SeriesDetail>(json)
                 keep { local.saveDetail(seriesId, json) }
                 lastDetail = detail
-                LoadState.Loaded(Remote(detail, local.queuedPosition(seriesId) ?: serverResume(client)))
+                LoadState.Loaded(Remote(detail, local.queuedPosition(seriesId) ?: serverResume(client), local.volumeProgress(seriesId)))
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 if (previous is LoadState.Loaded) previous.copy(refreshFailed = refreshFailure())
                 else local.detailSnapshot(seriesId)?.let {
                     lastDetail = it
-                    LoadState.Loaded(Remote(it, local.resume(seriesId)), refreshFailed = OFFLINE)
+                    LoadState.Loaded(Remote(it, local.resume(seriesId), local.volumeProgress(seriesId)), refreshFailed = OFFLINE)
                 }
                     ?: LoadState.Failed(FAILED_FIRST)
             }

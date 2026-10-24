@@ -35,11 +35,15 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import app.soshuhen.core.AppGraph
+import app.soshuhen.core.BookKind
+import app.soshuhen.core.BookRef
 import app.soshuhen.core.Platform
 import app.soshuhen.detail.SeriesDetailScreen
 import app.soshuhen.detail.SeriesDetailViewModel
 import app.soshuhen.library.LibraryScreen
 import app.soshuhen.library.LibraryViewModel
+import app.soshuhen.reader.ProseReaderScreen
+import app.soshuhen.reader.ProseReaderViewModel
 import app.soshuhen.reader.ReaderScreen
 import app.soshuhen.reader.ReaderViewModel
 import app.soshuhen.settings.SettingsScreen
@@ -67,6 +71,11 @@ import kotlinx.serialization.Serializable
 
 /** [page] is [SAVED_PLACE] when the reader should find the chapter's own saved place. */
 @Serializable data class ReaderRoute(val seriesId: Long, val chapterId: Long, val page: Int, val title: String)
+
+/** A novel's chapter or light volume; [kind] is a BookKind's key. */
+@Serializable data class ProseRoute(val seriesId: Long, val kind: String, val id: Long, val title: String)
+
+private typealias ReadBook = (seriesId: Long, kind: BookKind, id: Long, title: String) -> Unit
 
 // Navigation arguments cannot be a nullable Int.
 private const val SAVED_PLACE = -1
@@ -98,9 +107,26 @@ fun MainShell(
     }
     NavHost(root, startDestination = ShellRoute) {
         composable<ShellRoute> {
-            Shell(graph, platform, appVersion, importNow, opening, { opening = it }) { seriesId, chapterId, page, title ->
+            Shell(
+                graph, platform, appVersion, importNow, opening, { opening = it },
+                onReadBook = { seriesId, kind, id, title -> root.navigate(ProseRoute(seriesId, kind.key, id, title)) },
+            ) { seriesId, chapterId, page, title ->
                 root.navigate(ReaderRoute(seriesId, chapterId, page ?: SAVED_PLACE, title))
             }
+        }
+        composable<ProseRoute> { entry ->
+            val route = entry.toRoute<ProseRoute>()
+            val ref = BookRef(BookKind.entries.first { it.key == route.kind }, route.id)
+            ProseReaderScreen(
+                viewModel {
+                    ProseReaderViewModel(
+                        route.seriesId, ref, graph.session.api, graph.session.atHome, graph.local, graph.folder,
+                        graph.books, graph.outbox, graph.cacheDir,
+                    )
+                },
+                route.title,
+                onBack = { root.popBackStack() },
+            )
         }
         composable<ReaderRoute> { entry ->
             val route = entry.toRoute<ReaderRoute>()
@@ -133,6 +159,7 @@ private fun Shell(
     importNow: () -> Unit,
     opening: Long?,
     setOpening: (Long?) -> Unit,
+    onReadBook: ReadBook,
     onRead: (seriesId: Long, chapterId: Long, page: Int?, title: String) -> Unit,
 ) {
     val nav = rememberNavController()
@@ -197,7 +224,7 @@ private fun Shell(
         },
     ) {
         NavHost(nav, startDestination = LibraryRoute) {
-            composable<LibraryRoute> { LibraryPanes(graph, opening, { setOpening(null) }, importNow, onRead) }
+            composable<LibraryRoute> { LibraryPanes(graph, opening, { setOpening(null) }, importNow, onRead, onReadBook) }
             composable<UpdatesRoute> {
                 val api by graph.session.api.collectAsStateWithLifecycle()
                 UpdatesScreen(
@@ -222,6 +249,7 @@ private fun LibraryPanes(
     onOpened: () -> Unit,
     importNow: () -> Unit,
     onRead: (seriesId: Long, chapterId: Long, page: Int?, title: String) -> Unit,
+    onReadBook: ReadBook,
 ) {
     val navigator = rememberListDetailPaneScaffoldNavigator<Long>()
     val scope = rememberCoroutineScope()
@@ -273,6 +301,7 @@ private fun LibraryPanes(
                         coverUrl(id),
                         home = atHome && api != null,
                         onRead = { chapterId, page, title -> onRead(id, chapterId, page, title) },
+                        onReadBook = { kind, bookId, title -> onReadBook(id, kind, bookId, title) },
                     )
                 }
             }

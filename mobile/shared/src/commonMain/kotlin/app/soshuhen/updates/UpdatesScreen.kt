@@ -26,7 +26,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.soshuhen.core.LocalStore
-import app.soshuhen.core.newChaptersText
+import app.soshuhen.core.newBooksText
 import app.soshuhen.ui.CoverImage
 import app.soshuhen.ui.Divider
 import app.soshuhen.ui.EmptyState
@@ -96,7 +96,7 @@ private fun DayCard(day: String, rows: List<UpdateGroup>, coverUrl: (Long) -> St
 
 @Composable
 private fun UpdateRow(row: UpdateGroup, coverUrl: String, onOpen: (Long) -> Unit) {
-    val (title, text) = newChaptersText(row.seriesTitle, row.numbers)
+    val (title, text) = newBooksText(row.seriesTitle, row.numbers, row.volumes)
     Row(
         Modifier.fillMaxWidth().clickable { onOpen(row.seriesId) }
             .padding(horizontal = Tokens.space.lg, vertical = Tokens.space.sm),

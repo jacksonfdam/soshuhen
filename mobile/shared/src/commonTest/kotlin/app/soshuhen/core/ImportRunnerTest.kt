@@ -4,6 +4,7 @@ import app.soshuhen.api.Identity
 import app.soshuhen.api.Series
 import app.soshuhen.api.SeriesChapter
 import app.soshuhen.api.SeriesDetail
+import app.soshuhen.api.SeriesVolume
 import app.soshuhen.api.SoshuhenJson
 import app.soshuhen.api.soshuhenHttpClient
 import app.soshuhen.db.SoshuhenDatabase
@@ -60,6 +61,9 @@ class ImportRunnerTest {
     private val series = mutableListOf<Series>()
     private val chapters = mutableMapOf<Long, List<SeriesChapter>>()
     private val archives = mutableMapOf<Long, Pair<ByteArray, String>>()
+    private val volumes = mutableMapOf<Long, List<SeriesVolume>>()
+    private val volumeArchives = mutableMapOf<Long, Pair<ByteArray, String>>()
+    private val epubChecked = mutableListOf<String>()
     private var copyTime: Duration = Duration.ZERO
     private var archiveStatus: HttpStatusCode? = null
     private var declaredLength: Long? = null
@@ -70,6 +74,13 @@ class ImportRunnerTest {
     private val check = ArchiveCheck { source ->
         val text = source.use { okio.Buffer().apply { writeAll(it) }.readUtf8() }
         if (text.startsWith("BAD")) 0 else 1
+    }
+
+    // An EPUB has no pages to count; its own check is the one that must be asked.
+    private val epubCheck = EpubCheck { source ->
+        val text = source.use { okio.Buffer().apply { writeAll(it) }.readUtf8() }
+        epubChecked += text.take(12)
+        !text.startsWith("BAD")
     }
 
     @BeforeTest fun setUp() {
@@ -110,13 +121,16 @@ class ImportRunnerTest {
                         path.startsWith("/api/series/") -> {
                             val id = path.removePrefix("/api/series/").toLong()
                             val s = series.first { it.id == id }
-                            respond(SoshuhenJson.encodeToString(SeriesDetail(s, chapters.getValue(id))), HttpStatusCode.OK, json)
+                            val detail = SeriesDetail(s, chapters.getValue(id), volumes = volumes[id].orEmpty())
+                            respond(SoshuhenJson.encodeToString(detail), HttpStatusCode.OK, json)
                         }
-                        path.startsWith("/api/chapters/") -> {
+                        path.startsWith("/api/chapters/") || path.startsWith("/api/volumes/") -> {
                             archiveStatus?.let { return@addHandler respond("", it) }
-                            val id = path.removePrefix("/api/chapters/").removeSuffix("/archive").toLong()
-                            onArchive(id)
-                            val (bytes, etag) = archives[id] ?: return@addHandler respond("", HttpStatusCode.NotFound)
+                            val volume = path.startsWith("/api/volumes/")
+                            val id = path.substringAfter("/api/").substringAfter('/').removeSuffix("/archive").toLong()
+                            if (!volume) onArchive(id)
+                            val (bytes, etag) = (if (volume) volumeArchives else archives)[id]
+                                ?: return@addHandler respond("", HttpStatusCode.NotFound)
                             // As Starlette: an If-Range that no longer matches gets the whole file.
                             val start = range?.removePrefix("bytes=")?.removeSuffix("-")?.toLong()
                                 ?.takeIf { ifRange == null || ifRange == etag }
@@ -160,12 +174,100 @@ class ImportRunnerTest {
             soshuhenHttpClient(engine), backgroundScope,
         )
         runCurrent()
-        return ImportRunner(session, store, folder, Outbox(store, clock), check, clock)
+        return ImportRunner(session, store, folder, Outbox(store, clock), check, epubCheck, clock)
     }
 
     private suspend fun indexed(chapterId: Long) = store.deviceChapter(chapterId)
 
     private fun archiveRequests() = log.filter { it.startsWith("GET /api/chapters/") }
+
+    private fun addNovel(id: Long, slug: String, chapterList: List<SeriesChapter>, volumeList: List<SeriesVolume>) {
+        series += Series(id = id, title = "Novel $id", slug = slug, kind = "prose")
+        chapters[id] = chapterList
+        volumes[id] = volumeList
+    }
+
+    private fun light(id: Long, number: Double, readable: Boolean = true) = SeriesVolume(
+        id = id, number = number, edition = "light", state = "downloaded",
+        filePath = "/manga/n/n - Vol.${number.toInt()}.epub", readable = readable,
+    )
+
+    private fun serveVolume(id: Long, text: String = "PK volume $id ".repeat(20), etag: String = "\"v$id\"") {
+        volumeArchives[id] = text.encodeToByteArray() to etag
+    }
+
+    private fun volumeRequests() = log.filter { it.startsWith("GET /api/volumes/") }
+
+    @Test fun copiesTheLightVolumesOfANovel() = runTest {
+        addNovel(308, "tsuki", emptyList(), listOf(light(41, 1.0), light(42, 2.0)))
+        serveVolume(41); serveVolume(42)
+        store.mark(308, "tsuki")
+        val report = runner().run()
+        assertEquals(listOf("GET /api/volumes/41/archive", "GET /api/volumes/42/archive"), volumeRequests())
+        assertEquals(mapOf(308L to listOf(1.0, 2.0)), report.importedVolumes)
+        assertTrue(report.imported.isEmpty())
+        val row = store.deviceVolume(41)!!
+        assertEquals("n - Vol.1.epub", row.fileName)
+        assertEquals("\"v41\"", row.etag)
+        assertContentEquals(volumeArchives.getValue(41).first, folder.files[folder.uri("tsuki", "n - Vol.1.epub")])
+        assertEquals(listOf("volume", "volume"), store.importLog().first().map { it.kind })
+        assertEquals(2, epubChecked.size)
+    }
+
+    @Test fun aProseChapterIsCheckedAsAnEpub() = runTest {
+        val chapter = SeriesChapter(10, 1.0, state = "downloaded", filePath = "/manga/n/n - Ch.0001.EPUB")
+        addNovel(5, "n", listOf(chapter), emptyList())
+        serve(10)
+        store.mark(5, "n")
+        runner().run()
+        assertEquals(1, epubChecked.size)
+        assertEquals("n - Ch.0001.EPUB", store.deviceChapter(10)?.fileName)
+    }
+
+    @Test fun aVolumeTheServerCannotServeIsNotAsked() = runTest {
+        addNovel(
+            308, "tsuki", emptyList(),
+            listOf(
+                light(41, 1.0, readable = false),
+                SeriesVolume(id = null, number = 2.0, edition = "light", filePath = "/x.epub", readable = true),
+                SeriesVolume(id = 43, number = 3.0, edition = "web", readable = true),
+            ),
+        )
+        store.mark(308, "tsuki")
+        runner().run()
+        assertTrue(volumeRequests().isEmpty())
+    }
+
+    @Test fun aCutOffVolumeResumesOntoItsOwnPart() = runTest {
+        addNovel(308, "tsuki", emptyList(), listOf(light(7, 1.0)))
+        serveVolume(7)
+        // Chapter 7 of another series left a part ETag that must not be taken for the volume's.
+        store.savePartEtag(BookRef(BookKind.Chapter, 7), "\"chapter\"")
+        store.mark(308, "tsuki")
+        declaredLength = 10_000
+        val first = runner().run()
+        assertEquals(1, first.pending)
+        assertEquals("\"v7\"", store.partEtag(BookRef(BookKind.Volume, 7)))
+        assertEquals("\"chapter\"", store.partEtag(BookRef(BookKind.Chapter, 7)))
+        declaredLength = null
+        log.clear()
+        runner().run()
+        // The whole file arrived; asking past its end is refused, and its length and ETag adopt it.
+        assertTrue(volumeRequests().first().contains("if-range \"v7\""), volumeRequests().toString())
+        assertNull(store.partEtag(BookRef(BookKind.Volume, 7)))
+        assertContentEquals(volumeArchives.getValue(7).first, folder.files[folder.uri("tsuki", "n - Vol.1.epub")])
+    }
+
+    @Test fun anUnchangedVolumeCostsOneByte() = runTest {
+        addNovel(308, "tsuki", emptyList(), listOf(light(41, 1.0)))
+        serveVolume(41)
+        store.mark(308, "tsuki")
+        runner().run()
+        log.clear()
+        val report = runner().run()
+        assertTrue(volumeRequests().single().contains("bytes="), volumeRequests().toString())
+        assertTrue(report.importedVolumes.isEmpty())
+    }
 
     @Test fun awayFromHomeDoesNothing() = runTest {
         home = false
@@ -271,7 +373,7 @@ class ImportRunnerTest {
         store.mark(1, "one")
         val original = archives.getValue(10).first
         folder.files[file("one", 1.0) + ".part"] = original.copyOfRange(0, 100)
-        store.savePartEtag(10, "\"e10\"")
+        store.savePartEtag(BookRef(BookKind.Chapter, 10), "\"e10\"")
         runner().run()
         assertEquals(listOf("GET /api/chapters/10/archive bytes=100- if-range \"e10\""), archiveRequests())
         assertContentEquals(original, folder.files[file("one", 1.0)])
@@ -284,7 +386,7 @@ class ImportRunnerTest {
         store.mark(1, "one")
         val original = archives.getValue(10).first
         folder.files[file("one", 1.0) + ".part"] = original
-        store.savePartEtag(10, "\"e10\"")
+        store.savePartEtag(BookRef(BookKind.Chapter, 10), "\"e10\"")
         val report = runner().run()
         assertNull(report.problem)
         assertContentEquals(original, folder.files[file("one", 1.0)])
@@ -353,7 +455,7 @@ class ImportRunnerTest {
         store.mark(1, "one")
         val part = file("one", 1.0) + ".part"
         folder.files[part] = archives.getValue(10).first.copyOfRange(0, 100)
-        store.savePartEtag(10, "\"e10\"")
+        store.savePartEtag(BookRef(BookKind.Chapter, 10), "\"e10\"")
         archiveStatus = HttpStatusCode.BadGateway
         val report = runner().run()
         val message = "Lost the server while copying; will continue next time"
@@ -448,14 +550,14 @@ class ImportRunnerTest {
         serve(10, text = "PK version A ".repeat(30), etag = "\"A\"")
         store.mark(1, "one")
         folder.files[file("one", 1.0) + ".part"] = archives.getValue(10).first.copyOfRange(0, 100)
-        store.savePartEtag(10, "\"A\"")
+        store.savePartEtag(BookRef(BookKind.Chapter, 10), "\"A\"")
         serve(10, text = "PK version B, rebuilt ".repeat(30), etag = "\"B\"")
         val report = runner().run()
         assertNull(report.problem)
         assertEquals(listOf("GET /api/chapters/10/archive bytes=100- if-range \"A\""), archiveRequests())
         assertContentEquals(archives.getValue(10).first, folder.files[file("one", 1.0)])
         assertEquals("\"B\"", indexed(10)!!.etag)
-        assertNull(store.partEtag(10))
+        assertNull(store.partEtag(BookRef(BookKind.Chapter, 10)))
     }
 
     @Test fun aPartWithNoRecordedEtagStartsOver() = runTest {

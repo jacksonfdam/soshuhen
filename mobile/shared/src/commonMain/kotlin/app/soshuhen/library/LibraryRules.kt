@@ -1,6 +1,7 @@
 package app.soshuhen.library
 
 import app.soshuhen.api.Series
+import app.soshuhen.ui.seriesFormat
 import kotlin.math.max
 
 // The same arithmetic as frontend/src/features/library/useLibrary.ts, so a
@@ -34,12 +35,12 @@ fun continueReading(all: List<Series>): List<Series> = all
     .sortedWith(byRecentReading)
     .take(3)
 
-/** Comics only: the app has no reader for prose yet. A null kind is a comic. */
-fun comics(all: List<Series>): List<Series> = all.filter { it.kind != "prose" }
+/** The cover's format badge: the provider's word, or "Novel" for a novel that has none, so it is told from a manga. */
+fun coverFormat(s: Series): String? = seriesFormat(s.format) ?: "Novel".takeIf { s.kind == "prose" }
 
 fun visible(all: List<Series>, status: String?, query: String, marked: Set<Long> = emptySet()): List<Series> {
     val needle = query.trim()
-    return comics(all).filter {
+    return all.filter {
         (status == null || (if (status == ON_DEVICE) it.id in marked else it.status == status)) &&
             (needle.isEmpty() || it.title.contains(needle, ignoreCase = true))
     }

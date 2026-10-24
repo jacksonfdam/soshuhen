@@ -34,7 +34,7 @@ It is a reader and a mirror of the server's library. It is not a downloader.
   server's job (`download_batch`, `download_chapter`). The app only copies archives the server has
   already written to `/manga`. It does not stream chapters the server has not downloaded.
 - No prose (EPUB) support for now. Prose series do not appear as importable, and the reader handles
-  CBZ only.
+  CBZ only. *(Superseded on 2026-10-24: `2026-10-24-android-prose-reader-design.md` adds novels.)*
 - No server administration: no mapping review, no download requests, no settings beyond the app's
   own. The web interface keeps those.
 - No access from outside the home network (no tunnel, no relay, no cloud).
@@ -121,7 +121,8 @@ both move together.
 
 `GET /api/chapters/{id}/archive` streams the chapter's CBZ from `file_path`.
 
-- 404 when the chapter has no `file_path` or the file is missing. 409 for prose (EPUB).
+- 404 when the chapter has no `file_path` or the file is missing. 409 for prose (EPUB). *(Since
+  2026-10-24 a prose chapter's EPUB is served instead; see the prose reader design.)*
 - The path is resolved and checked to sit inside `library_path`, as the reader's archive path
   already does.
 - `Content-Length` set and `Range` honoured, so an interrupted copy over a weak Wi-Fi resumes rather

@@ -5,7 +5,6 @@ import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
-import androidx.room.PrimaryKey
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
@@ -13,15 +12,16 @@ import kotlinx.coroutines.flow.Flow
  * Apart from device_chapter so the Updates tab still lists a chapter after it
  * is deleted from the device: it reports what arrived, not what is left.
  * Keyed by chapter, so a chapter copied again moves to the top instead of
- * being listed twice.
+ * being listed twice; and by kind, since a volume's id can equal a chapter's.
  */
-@Entity(tableName = "import_log")
+@Entity(tableName = "import_log", primaryKeys = ["kind", "chapter_id"])
 data class ImportLogEntity(
-    @PrimaryKey @ColumnInfo(name = "chapter_id") val chapterId: Long,
+    @ColumnInfo(name = "chapter_id") val chapterId: Long,
     @ColumnInfo(name = "series_id") val seriesId: Long,
     @ColumnInfo(name = "series_title") val seriesTitle: String,
     val number: Double,
     @ColumnInfo(name = "imported_at") val importedAt: Long,
+    @ColumnInfo(defaultValue = "chapter") val kind: String = "chapter",
 )
 
 @Dao

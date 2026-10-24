@@ -129,7 +129,6 @@ fun LibraryScreen(
                     is LoadState.Loaded -> PullToRefreshBox(isRefreshing = false, onRefresh = { model.refresh(); onRefreshed() }) {
                         val all = s.data
                         val shown = visible(all, status, query, marked)
-                        val comics = comics(all)
                         // AppShell's canvas: the page fills the pane up to its max and is centred past it.
                         val content = minOf(pane, Tokens.canvasMaxWidth + side * 2) - side * 2
                         val cells = gridCells(content, phone)
@@ -146,16 +145,16 @@ fun LibraryScreen(
                                 }
                             }
                             notice?.let { message -> item { NoticeBar(message, modifier = page) } }
-                            item { StatusPanel(comics, marked, status, model::setStatus, page) }
+                            item { StatusPanel(all, marked, status, model::setStatus, page) }
                             item { FilterPanel(query, model::setQuery, page) }
-                            val continuing = continueReading(comics)
+                            val continuing = continueReading(all)
                             if (continuing.isNotEmpty()) {
                                 item {
                                     ContinueReading(continuing, coverUrl, { reachable(it, atHome, marked) }, open, threeUp = pane >= Tokens.box.md, page.padding(top = Tokens.space.gutter))
                                 }
                             }
                             item {
-                                Heading(status, shown.size, comics.size, page.padding(top = Tokens.space.gutter))
+                                Heading(status, shown.size, all.size, page.padding(top = Tokens.space.gutter))
                             }
                             if (shown.isEmpty()) {
                                 item {
@@ -317,7 +316,7 @@ private fun ContinueCard(row: Series, coverUrl: String, reachable: Boolean, onOp
     ) {
         Box(Modifier.size(Tokens.box.continueCoverWidth, Tokens.box.continueCoverHeight)) {
             CoverImage(coverUrl, row.title, Modifier.fillMaxSize(), shape = RoundedCornerShape(Tokens.radius.lg), fill = true)
-            seriesFormat(row.format)?.let { OverlayBadge(it, Tokens.onSurfaceVariant, Modifier.padding(Tokens.space.xs)) }
+            coverFormat(row)?.let { OverlayBadge(it, Tokens.onSurfaceVariant, Modifier.padding(Tokens.space.xs)) }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.space.xxs)) {
             Row(Modifier.fillMaxWidth()) {
@@ -433,7 +432,7 @@ private fun pipelineNote(series: Series): Note? = when {
 private fun CoverCard(series: Series, coverUrl: String, dimmed: Boolean, onDevice: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val total = totalChapters(series)
     val pct = total?.let { min(100, (series.progress * 100f / it).roundToInt()) }
-    val format = seriesFormat(series.format)
+    val format = coverFormat(series)
     val genre = series.genres.firstOrNull()
     val needsReview = series.state == "needs_review"
     val extra = unread(series)

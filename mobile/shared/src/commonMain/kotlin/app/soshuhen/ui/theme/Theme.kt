@@ -65,7 +65,7 @@ fun soshuhenColorScheme(): ColorScheme = darkColorScheme(
 // platform's variation handling. The collapsed spaces these were first blamed
 // for came from hinting; see step() in Tokens.kt.
 @Composable
-private fun sansFamily(): FontFamily = FontFamily(
+internal fun sansFamily(): FontFamily = FontFamily(
     Font(Res.font.plus_jakarta_sans_regular, FontWeight.Normal),
     Font(Res.font.plus_jakarta_sans_medium, FontWeight.Medium),
     Font(Res.font.plus_jakarta_sans_semibold, FontWeight.SemiBold),
