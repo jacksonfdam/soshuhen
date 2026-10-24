@@ -57,8 +57,15 @@ class LibraryRulesTest {
         assertEquals(listOf(2L, 1L), continueReading(all).map { it.id })
     }
 
-    @Test fun proseIsNeverVisible() {
-        assertTrue(visible(listOf(series(kind = "prose")), null, "").isEmpty())
+    @Test fun novelsAreVisible() {
+        assertEquals(1, visible(listOf(series(kind = "prose")), null, "").size)
+    }
+
+    // The provider's own format names a novel best; a novel without one still says what it is.
+    @Test fun aNovelWithoutAFormatIsLabelledNovel() {
+        assertEquals("Novel", coverFormat(series(kind = "prose")))
+        assertEquals("Light Novel", coverFormat(series(kind = "prose").copy(format = "light_novel")))
+        assertEquals(null, coverFormat(series(kind = "comic")))
     }
 
     @Test fun nullKindIsAComic() {

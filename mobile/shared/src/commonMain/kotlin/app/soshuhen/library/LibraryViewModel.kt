@@ -71,14 +71,14 @@ class LibraryViewModel(
                 val json = client.seriesJson()
                 val rows = SoshuhenJson.decodeFromString<List<Series>>(json)
                 keep { local.saveSeries(json) }
-                LoadState.Loaded(comics(rows))
+                LoadState.Loaded(rows)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 // Over loaded data a failure is a banner, not a blank screen:
                 // the laptop went to sleep, the library did not vanish.
                 if (previous is LoadState.Loaded) previous.copy(refreshFailed = refreshFailure())
-                else local.seriesSnapshot()?.let { LoadState.Loaded(comics(it), refreshFailed = OFFLINE) }
+                else local.seriesSnapshot()?.let { LoadState.Loaded(it, refreshFailed = OFFLINE) }
                     ?: LoadState.Failed(FAILED_FIRST)
             }
         }

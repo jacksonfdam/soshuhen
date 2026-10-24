@@ -93,8 +93,8 @@ class LibraryViewModelTest {
         val vm = LibraryViewModel(MutableStateFlow(api(true)), store, MutableStateFlow(true))
         advanceUntilIdle()
         val state = assertIs<LoadState.Loaded<List<app.soshuhen.api.Series>>>(vm.state.value)
-        // The fixture's second row is prose, which the app does not show.
-        assertEquals(listOf(243L), state.data.map { it.id })
+        // The fixture's second row is prose, which the app reads too.
+        assertEquals(listOf(243L, 7L), state.data.map { it.id })
         assertNull(state.refreshFailed)
     }
 
@@ -104,8 +104,8 @@ class LibraryViewModelTest {
         vm.refresh()
         advanceUntilIdle()
         val state = assertIs<LoadState.Loaded<List<app.soshuhen.api.Series>>>(vm.state.value)
-        // The fixture's second row is prose, which the app does not show.
-        assertEquals(listOf(243L), state.data.map { it.id })
+        // The fixture's second row is prose, which the app reads too.
+        assertEquals(listOf(243L, 7L), state.data.map { it.id })
         assertNotNull(state.refreshFailed)
     }
 
@@ -130,7 +130,7 @@ class LibraryViewModelTest {
         val vm = LibraryViewModel(MutableStateFlow(api(false)), store, MutableStateFlow(true))
         advanceUntilIdle()
         val state = assertIs<LoadState.Loaded<List<app.soshuhen.api.Series>>>(vm.state.value)
-        assertEquals(listOf(243L), state.data.map { it.id })
+        assertEquals(listOf(243L, 7L), state.data.map { it.id })
         assertEquals(OFFLINE, state.refreshFailed)
     }
 
@@ -149,7 +149,7 @@ class LibraryViewModelTest {
         val vm = LibraryViewModel(MutableStateFlow(api(true)), FailingStore(db), MutableStateFlow(true))
         advanceUntilIdle()
         val state = assertIs<LoadState.Loaded<List<app.soshuhen.api.Series>>>(vm.state.value)
-        assertEquals(listOf(243L), state.data.map { it.id })
+        assertEquals(listOf(243L, 7L), state.data.map { it.id })
         assertNull(state.refreshFailed)
     }
 
