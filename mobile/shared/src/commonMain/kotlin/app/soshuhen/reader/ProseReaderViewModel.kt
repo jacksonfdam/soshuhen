@@ -19,11 +19,15 @@ import app.soshuhen.core.Outbox
 import app.soshuhen.ui.keep
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okio.FileSystem
 import okio.Path
 import kotlin.math.floor
@@ -68,6 +72,8 @@ class ProseReaderViewModel(
     private val outbox: Outbox,
     private val cacheDir: Path,
     private val fs: FileSystem = FileSystem.SYSTEM,
+    // A whole volume is hundreds of kilobytes of XHTML; parsed on the main thread it freezes the screen.
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private val _state = MutableStateFlow<ProseState>(ProseState.Loading)
     val state: StateFlow<ProseState> = _state
@@ -180,7 +186,7 @@ class ProseReaderViewModel(
             else -> return ProseState.Unavailable(NOT_ON_DEVICE)
         }
         val book = try {
-            readBook(fs, dir)
+            withContext(io) { readBook(fs, dir) }
         } catch (_: NotAnEpub) {
             if (onDevice != null) markUnreadable(ref)
             return ProseState.Unavailable(FILE_UNREADABLE)
@@ -262,14 +268,23 @@ class ProseReaderViewModel(
         val download = cacheDir / "download-${ref.kind.key}-${ref.id}.epub"
         return try {
             val read: suspend (app.soshuhen.api.ArchiveDownload) -> String? = { d ->
-                fs.write(download) {
-                    val bytes = ByteArray(64 * 1024)
-                    while (true) {
-                        val n = d.body.readAvailable(bytes, 0, bytes.size)
-                        if (n == -1) break
-                        write(bytes, 0, n)
+                val written = withContext(io) {
+                    var count = 0L
+                    fs.write(download) {
+                        val bytes = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = d.body.readAvailable(bytes, 0, bytes.size)
+                            if (n == -1) break
+                            write(bytes, 0, n)
+                            count += n
+                        }
                     }
+                    count
                 }
+                // A connection that closes cleanly mid-body looks like the end of
+                // the file, and a zip cut at an entry's edge still unpacks: the
+                // book would open with its end missing and no word of why.
+                if (d.total != null && written != d.total) throw IllegalStateException("short download")
                 d.etag
             }
             val etag = when (ref.kind) {

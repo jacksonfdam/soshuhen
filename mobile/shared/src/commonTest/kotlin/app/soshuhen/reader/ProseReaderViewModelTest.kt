@@ -54,6 +54,16 @@ class ProseReaderViewModelTest {
     private val unpacked = mutableListOf<Pair<BookRef, String>>()
     private val unpackedBytes = mutableListOf<String>()
     private var unpackFails: Exception? = null
+    private var declaredLength: Long? = null
+    private var dispatched = 0
+
+    // Counts what the view model hands it, to show the heavy work leaves the main thread.
+    private val io = object : kotlinx.coroutines.CoroutineDispatcher() {
+        override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+            dispatched++
+            dispatcher.dispatch(context, block)
+        }
+    }
 
     private val home = MutableStateFlow(false)
     private val api = MutableStateFlow<SoshuhenApi?>(null)
@@ -115,8 +125,13 @@ class ProseReaderViewModelTest {
                 val json = headersOf(HttpHeaders.ContentType, "application/json")
                 when {
                     path == "/api/series/308" -> respond(proseDetail, HttpStatusCode.OK, json)
-                    path == "/api/volumes/42/archive" ->
-                        respond("PK server volume", HttpStatusCode.OK, headersOf(HttpHeaders.ETag, "\"s42\""))
+                    path == "/api/volumes/42/archive" -> respond(
+                        "PK server volume", HttpStatusCode.OK,
+                        headersOf(
+                            HttpHeaders.ETag to listOf("\"s42\""),
+                            HttpHeaders.ContentLength to listOf("${declaredLength ?: 16}"),
+                        ),
+                    )
                     request.method != HttpMethod.Get -> respond("{}", HttpStatusCode.OK, json)
                     else -> respondError(HttpStatusCode.NotFound)
                 }
@@ -131,7 +146,7 @@ class ProseReaderViewModelTest {
     }
 
     private fun reader(ref: BookRef) =
-        ProseReaderViewModel(308, ref, api, home, store, folder, books, outbox, "/cache".toPath(), fs)
+        ProseReaderViewModel(308, ref, api, home, store, folder, books, outbox, "/cache".toPath(), fs, io)
 
     private fun ProseReaderViewModel.ui(): ProseUi = assertIs<ProseState.Ready>(state.value).ui
 
@@ -261,5 +276,25 @@ class ProseReaderViewModelTest {
         advanceUntilIdle()
         assertEquals(ProsePosition(0, 1, 0), ProseStore(store).position(volume41))
         assertEquals(BookRef(BookKind.Volume, 40), vm.ui().ref)
+    }
+
+    // A connection that closes cleanly mid-body looks like the end of the file;
+    // unpacked, it would be a volume with its end missing and no error.
+    @Test fun aCutOffServerDownloadIsNotOpened() = runTest(dispatcher) {
+        home.value = true
+        declaredLength = 4000
+        val vm = reader(BookRef(BookKind.Volume, 42))
+        advanceUntilIdle()
+        assertEquals("The server could not open this chapter.", assertIs<ProseState.Unavailable>(vm.state.value).message)
+        assertTrue(unpacked.isEmpty())
+    }
+
+    @Test fun theBookIsReadOffTheMainThread() = runTest(dispatcher) {
+        store.saveDetail(308, proseDetail)
+        volumeOnDevice(41, 1.0)
+        val vm = reader(volume41)
+        advanceUntilIdle()
+        vm.ui()
+        assertTrue(dispatched > 0)
     }
 }
