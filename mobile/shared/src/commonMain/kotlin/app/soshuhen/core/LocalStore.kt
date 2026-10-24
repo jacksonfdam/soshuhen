@@ -152,6 +152,12 @@ open class LocalStore(
 
     suspend fun volumeProgress(seriesId: Long): Int? = read(volumesKey(seriesId))
 
+    // For a feature's own small state (the prose reader's places and type),
+    // kept beside the snapshots so a switch of server clears it with them.
+    suspend fun putValue(key: String, json: String) = save(key, json)
+
+    suspend fun value(key: String): String? = db.snapshots().get(key)?.json
+
     fun isMarked(seriesId: Long): Flow<Boolean> = db.marked().isMarked(seriesId)
 
     fun markedIds(): Flow<Set<Long>> = db.marked().ids().map { it.toSet() }
