@@ -31,6 +31,14 @@ export function ProseReaderRoute() {
   return <ProseReaderPage key={`${kind}-${id}`} kind={kind} id={Number(id)} />
 }
 
+/** A title that only restates the number ("Volume 2" on volume 2) is no title. */
+function ownTitle(title: string | null, number: number): string | null {
+  if (!title) return null
+  return new RegExp(`^(vol(ume)?|ch(apter)?)\\.?\\s*0*${number}$`, 'i').test(title.trim())
+    ? null
+    : title
+}
+
 async function imagesSettled(column: HTMLElement): Promise<void> {
   const pending = [...column.querySelectorAll('img')]
     .filter((image) => !image.complete)
@@ -161,14 +169,19 @@ function ProseReaderPage({ kind, id }: { kind: ProseKind; id: number }) {
   }
   if (!manifest || !prefs) return <ReaderMessage title="Opening…" backTo={back} />
 
-  const heading =
-    manifest.kind === 'volume'
-      ? `Vol. ${manifest.number}${manifest.title ? ` · ${manifest.title}` : ''}`
-      : `Ch ${manifest.number}${manifest.title ? ` · ${manifest.title}` : ''}`
-  const sectionTitle = manifest.sections[current.section]?.title
+  const title = ownTitle(manifest.title, manifest.number)
+  const heading = `${manifest.kind === 'volume' ? 'Vol.' : 'Ch'} ${manifest.number}${
+    title ? ` · ${title}` : ''
+  }`
+  // A book written as one section has the whole book's name as its only
+  // entry, which would repeat the series beside itself.
+  const sectionTitle =
+    manifest.sections.length > 1 ? manifest.sections[current.section]?.title : null
 
   return (
-    <div className={`min-h-screen ${PAGE[prefs.theme]}`}>
+    // flow-root: the end card's bottom margin would otherwise collapse out of
+    // the page and show the app's own background below it.
+    <div className={`flow-root min-h-screen ${PAGE[prefs.theme]}`}>
       <header
         className={`fixed inset-x-0 top-0 z-30 flex items-center gap-space-sm bg-surface-container/95 px-space-md py-space-sm text-on-surface shadow-card transition-transform duration-200 ${
           chrome ? 'translate-y-0' : '-translate-y-full'
@@ -185,7 +198,7 @@ function ProseReaderPage({ kind, id }: { kind: ProseKind; id: number }) {
           <span className="truncate text-title-md">{manifest.series.title}</span>
           <span className="truncate font-mono text-label-sm text-outline">
             {heading}
-            {sectionTitle && sectionTitle !== manifest.title ? ` · ${sectionTitle}` : ''}
+            {sectionTitle ? ` · ${sectionTitle}` : ''}
           </span>
         </div>
         <IconButton icon="list" label="Contents" onClick={() => setPanel('contents')} />

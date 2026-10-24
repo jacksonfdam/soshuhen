@@ -14,6 +14,12 @@ import { formatChapter } from '../../lib/format'
 const READ_LINK =
   'inline-flex items-center gap-1.5 rounded-lg px-space-sm py-1 font-mono text-label-sm text-primary transition-colors hover:bg-primary/[0.12]'
 
+/** A title that only restates the number ("Volume 2" on volume 2) is no title. */
+function ownTitle(title: string | null, number: number): string | null {
+  if (!title) return null
+  return new RegExp(`^vol(ume)?\\.?\\s*0*${number}$`, 'i').test(title.trim()) ? null : title
+}
+
 function ReadMark({ read }: { read: boolean }) {
   if (!read) return null
   return (
@@ -120,9 +126,9 @@ function VolumeRow({
           >
             Vol. {volume.number}
           </span>
-          {(range ?? volume.title) && (
+          {(range ?? ownTitle(volume.title, volume.number)) && (
             <span className="truncate font-mono text-label-sm text-outline">
-              {range ?? volume.title}
+              {range ?? ownTitle(volume.title, volume.number)}
             </span>
           )}
           <ReadMark read={read} />
