@@ -146,4 +146,10 @@ class EpubTest {
         assertEquals(ProsePosition(0, 2, 1), book.clamp(ProsePosition(0, 2, 40)))
         assertTrue(book.clamp(ProsePosition(7, 0, 0)).section == 1)
     }
+
+    // A trailing break is an empty last line: measured, it ends a page past the text.
+    @Test fun trailingBreaksAreDropped() {
+        book("c.xhtml" to "<p>text<br/></p><p>a<br/><br/> </p>")
+        assertEquals(listOf("text", "a"), texts(read().sections.single()))
+    }
 }

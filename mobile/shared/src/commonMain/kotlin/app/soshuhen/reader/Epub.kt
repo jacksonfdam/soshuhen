@@ -84,7 +84,9 @@ private fun blocksOf(fs: FileSystem, root: Path, file: Path): List<Block> {
     var skipping = 0
 
     fun flush() {
-        while (text.isNotEmpty() && text.last() == ' ') text.setLength(text.length - 1)
+        // A trailing break too: laid out, it is an empty last line that ends a
+        // page past the text, and the next page then repeats a line.
+        while (text.isNotEmpty() && (text.last() == ' ' || text.last() == '\n')) text.setLength(text.length - 1)
         if (text.isNotEmpty()) {
             val length = text.length
             val styled = Styled(
