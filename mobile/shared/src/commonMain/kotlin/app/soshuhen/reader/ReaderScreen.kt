@@ -196,7 +196,7 @@ private fun EndOfChapter(ui: ReaderUi, onNext: () -> Unit, onBack: () -> Unit) {
 
 /** The web's ReaderMessage: every state the reader shows before it has a page. */
 @Composable
-private fun ReaderMessage(title: String, detail: String?, onBack: () -> Unit) {
+internal fun ReaderMessage(title: String, detail: String?, onBack: () -> Unit) {
     Column(
         Modifier.fillMaxSize().background(Tokens.readerBlack).padding(horizontal = Tokens.space.lg),
         verticalArrangement = Arrangement.spacedBy(Tokens.space.md, Alignment.CenterVertically),
