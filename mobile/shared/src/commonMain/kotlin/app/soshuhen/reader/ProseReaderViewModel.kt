@@ -16,6 +16,7 @@ import app.soshuhen.core.NOT_DOWNLOADED
 import app.soshuhen.core.NOT_ON_DEVICE
 import app.soshuhen.core.NoRoomForPages
 import app.soshuhen.core.Outbox
+import app.soshuhen.core.volumeTitle
 import app.soshuhen.ui.keep
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
@@ -322,7 +323,8 @@ class ProseReaderViewModel(
         BookKind.Volume -> detail.volumes.filter { it.edition == "light" && it.id != null }.map {
             Item(
                 BookRef(BookKind.Volume, it.id!!), it.number,
-                it.title?.let { t -> "${defaultTitle(BookKind.Volume, it.number)}: $t" } ?: defaultTitle(BookKind.Volume, it.number),
+                volumeTitle(it.number, it.title)?.let { t -> "${defaultTitle(BookKind.Volume, it.number)}: $t" }
+                    ?: defaultTitle(BookKind.Volume, it.number),
                 onServer = it.readable,
             )
         }

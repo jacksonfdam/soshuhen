@@ -93,4 +93,13 @@ class ProseRowsTest {
         val rows = proseRows(detail, emptySet(), emptySet(), null)
         assertEquals(listOf(listOf(9.0, 10.0), listOf(11.0)), rows.web.map { g -> g.rows.map { it.number } })
     }
+
+    // An imported volume is titled "Volume 3", which only repeats the number beside it.
+    @Test fun aTitleThatOnlyRepeatsTheNumberIsDropped() {
+        val detail = SeriesDetail(
+            novel, emptyList(),
+            volumes = listOf(light(1, 1.0).copy(title = "Volume 1"), light(2, 2.0).copy(title = "The Desert")),
+        )
+        assertEquals(listOf(null, "The Desert"), proseRows(detail, emptySet(), emptySet(), null).light.map { it.title })
+    }
 }

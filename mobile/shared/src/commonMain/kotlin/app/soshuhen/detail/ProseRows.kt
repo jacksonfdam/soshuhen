@@ -4,6 +4,7 @@ import app.soshuhen.api.SeriesDetail
 import app.soshuhen.core.Availability
 import app.soshuhen.core.ChapterRow
 import app.soshuhen.core.chapterRows
+import app.soshuhen.core.volumeTitle
 import app.soshuhen.core.volumesRead
 import kotlin.math.floor
 
@@ -41,7 +42,7 @@ fun proseRows(
         VolumeRow(
             id = it.id,
             number = it.number,
-            title = it.title,
+            title = volumeTitle(it.number, it.title),
             read = floor(it.number) <= read,
             availability = when {
                 it.id != null && it.id in onDeviceVolumes -> Availability.OnDevice
