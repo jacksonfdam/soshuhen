@@ -65,7 +65,10 @@ class EpubFiles(
                     if (n == -1) break
                     kept?.write(scratch, 0, n)
                 }
-                kept?.let { small[entry.name] = it.toString(Charsets.UTF_8) }
+                // String(bytes), not toString(Charset): that overload is API 33, and
+                // below it the check died with NoSuchMethodError, an Error no catch
+                // around the import sees, so every run stopped here without a word.
+                kept?.let { small[entry.name] = String(it.toByteArray(), Charsets.UTF_8) }
             }
         }
         val opfName = small[CONTAINER]?.let { container ->
