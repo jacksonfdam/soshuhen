@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.graphics.RectangleShape
 import app.soshuhen.ui.Divider
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -46,7 +48,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.soshuhen.api.Series
 import app.soshuhen.api.SeriesMetadata
 import app.soshuhen.core.Availability
+import app.soshuhen.core.BookKind
 import app.soshuhen.core.ChapterRow
+import app.soshuhen.core.NOT_DOWNLOADED
+import app.soshuhen.core.NOT_ON_DEVICE
 import app.soshuhen.core.readableFrom
 import app.soshuhen.core.unreadableReason
 import app.soshuhen.ui.Badge
@@ -87,8 +92,11 @@ fun SeriesDetailScreen(
     // At home with the server found: decides which rows the reader will open.
     home: Boolean,
     onRead: (chapterId: Long, page: Int?, seriesTitle: String) -> Unit,
+    // A novel's chapter or volume, which the prose reader opens.
+    onReadBook: (kind: BookKind, id: Long, seriesTitle: String) -> Unit,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
+    val edition by model.edition.collectAsStateWithLifecycle()
     val prompt by model.unmarkPrompt.collectAsStateWithLifecycle()
     val notice by model.notice.collectAsStateWithLifecycle()
     prompt?.let { count ->
@@ -98,7 +106,7 @@ fun SeriesDetailScreen(
             onDismissRequest = model::dismissUnmark,
             containerColor = Tokens.surfaceContainer,
             shape = RoundedCornerShape(Tokens.radius.xl),
-            title = { Text("Delete the $count chapters on this device too?", style = MaterialTheme.typography.headlineSmall, color = Tokens.onSurface) },
+            title = { Text("Delete the $count ${if (isNovel(state)) "books" else "chapters"} on this device too?", style = MaterialTheme.typography.headlineSmall, color = Tokens.onSurface) },
             confirmButton = { WebButton("Keep them", { model.unmark(deleteFiles = false) }, variant = ButtonVariant.Primary) },
             dismissButton = { WebButton("Delete", { model.unmark(deleteFiles = true) }, variant = ButtonVariant.Danger) },
         )
@@ -135,8 +143,12 @@ fun SeriesDetailScreen(
                     notice?.let { item { NoticeBar(it, NoticeTone.Error, Modifier.padding(bottom = Tokens.space.xl)) } }
                     item { Hero(ui.series, ui.metadata, coverUrl, phone, wide) }
                     item {
-                        ProgressCard(ui, home, onRead, wide = maxWidth >= Tokens.box.md, Modifier.padding(top = Tokens.space.xxl))
+                        ProgressCard(ui, home, onRead, onReadBook, edition, wide = maxWidth >= Tokens.box.md, Modifier.padding(top = Tokens.space.xxl))
                     }
+                    val prose = ui.prose
+                    if (prose != null) {
+                        proseList(prose, edition, ui.series.title, home, model, onReadBook)
+                    } else {
                     item { ChapterTabs(ui.rows.size, Modifier.padding(top = Tokens.space.xl, bottom = Tokens.space.lg)) }
                     if (ui.rows.isEmpty()) {
                         item {
@@ -178,6 +190,7 @@ fun SeriesDetailScreen(
                                 if (bounded) MonoLabel("Showing the last ${Tokens.box.previewRows} of ${ui.rows.size}", modifier = Modifier.weight(1f, fill = false))
                             }
                         }
+                    }
                     }
                     item { DeviceCard(ui, model, Modifier.padding(top = Tokens.space.xl)) }
                 }
@@ -287,6 +300,8 @@ private fun ProgressCard(
     ui: DetailUi,
     home: Boolean,
     onRead: (chapterId: Long, page: Int?, seriesTitle: String) -> Unit,
+    onReadBook: (kind: BookKind, id: Long, seriesTitle: String) -> Unit,
+    edition: String,
     wide: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -314,14 +329,29 @@ private fun ProgressCard(
                     // Labelled an estimate because it is derived from a setting, not measured.
                     MonoLabel("$it chapters left" + (estimate?.let { minutes -> " · about ${(minutes / 60f).roundToInt()}h estimated" } ?: ""))
                 }
-                ui.continueWith?.let { next ->
+                val volume = ui.continueVolume?.takeIf { ui.prose != null && edition == LIGHT }
+                if (volume != null) {
+                    val reason = if (volumeReadableFrom(volume, home)) null else unreadableVolumeReason(volume)
+                    WebButton(
+                        "Continue volume ${chapterNumber(volume.number)}",
+                        { volume.id?.let { onReadBook(BookKind.Volume, it, series.title) } },
+                        Modifier.padding(top = Tokens.space.sm).alpha(if (reason == null) 1f else Tokens.dimmed),
+                        variant = ButtonVariant.Primary,
+                        icon = WebIcon.Book,
+                    )
+                    reason?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Tokens.onSurfaceVariant) }
+                }
+                ui.continueWith?.takeIf { ui.prose == null || edition == WEB }?.let { next ->
                     // Still the resume chapter, as on the web: that is where the
                     // user is. Dimmed like the rows when the reader would refuse it,
                     // and still tappable, with the reason said here first.
                     val reason = unreadableReason(next, home)
                     WebButton(
                         "Continue chapter ${chapterNumber(next.number)}",
-                        { onRead(next.id, ui.continuePage, series.title) },
+                        {
+                            if (ui.prose != null) onReadBook(BookKind.Chapter, next.id, series.title)
+                            else onRead(next.id, ui.continuePage, series.title)
+                        },
                         Modifier.padding(top = Tokens.space.sm).alpha(if (reason == null) 1f else Tokens.dimmed),
                         variant = ButtonVariant.Primary,
                         icon = WebIcon.Book,
@@ -363,17 +393,36 @@ private fun Fact(label: String, value: String) {
 /** Tabs.tsx with the one tab the app has: its label over a primary underline, on the strip's rule. */
 @Composable
 private fun ChapterTabs(count: Int, modifier: Modifier = Modifier) {
+    EditionTabs(listOf(Triple("chapters", "Chapters", count)), "chapters", {}, modifier)
+}
+
+/** The same strip with a tab per edition of a novel; one tab when it has only one. */
+@Composable
+private fun EditionTabs(
+    tabs: List<Triple<String, String, Int>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier.fillMaxWidth()) {
-        Column(Modifier.width(IntrinsicSize.Max)) {
-            Row(
-                Modifier.padding(horizontal = Tokens.space.lg, vertical = Tokens.space.sm),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Tokens.space.xs),
-            ) {
-                Text("Chapters", style = MaterialTheme.typography.labelMedium, color = Tokens.onSurface)
-                MonoLabel("($count)")
+        Row {
+            tabs.forEach { (key, label, count) ->
+                val on = key == selected
+                Column(Modifier.width(IntrinsicSize.Max).clickable(enabled = tabs.size > 1) { onSelect(key) }) {
+                    Row(
+                        Modifier.padding(horizontal = Tokens.space.lg, vertical = Tokens.space.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Tokens.space.xs),
+                    ) {
+                        Text(label, style = MaterialTheme.typography.labelMedium, color = if (on) Tokens.onSurface else Tokens.outline)
+                        MonoLabel("($count)")
+                    }
+                    Box(
+                        Modifier.fillMaxWidth().height(Tokens.reader.tabIndicator)
+                            .background(if (on) Tokens.primary else Color.Transparent),
+                    )
+                }
             }
-            Box(Modifier.fillMaxWidth().height(Tokens.reader.tabIndicator).background(Tokens.primary))
         }
         Divider(color = Tokens.outlineVariant)
     }
@@ -384,10 +433,10 @@ private val tableEnd = RoundedCornerShape(bottomStart = Tokens.radius.xl, bottom
 
 /** ChapterTable.tsx's header row, the top of its rounded surface-container-low table. */
 @Composable
-private fun TableTop() {
+private fun TableTop(first: String = "Chapter") {
     Column(Modifier.fillMaxWidth().background(Tokens.surfaceContainerLow, tableShape)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = Tokens.space.lg, vertical = Tokens.space.sm)) {
-            MonoLabel("Chapter", modifier = Modifier.weight(1f))
+            MonoLabel(first, modifier = Modifier.weight(1f))
             MonoLabel("State", modifier = Modifier.padding(end = Tokens.space.xl))
             MonoLabel("Read")
         }
@@ -489,12 +538,149 @@ private fun DeviceCard(ui: DetailUi, model: SeriesDetailViewModel, modifier: Mod
         WebToggle("Keep on this device", ui.marked, model::setMarked)
         Column(verticalArrangement = Arrangement.spacedBy(Tokens.space.xs)) {
             Divider(color = Tokens.surfaceContainerHighest.copy(alpha = Tokens.ruleAlpha))
+            // A novel's files are volumes and chapters alike: "books" covers both.
+            val noun = if (ui.prose != null) "book" else "chapter"
             MonoLabel(
-                "${ui.deviceChapters} chapter${if (ui.deviceChapters == 1) "" else "s"} on this device",
+                "${ui.deviceChapters} $noun${if (ui.deviceChapters == 1) "" else "s"} on this device",
                 Tokens.onSurfaceVariant,
                 Modifier.padding(top = Tokens.space.sm),
             )
-            WebButton("Delete read chapters", model::deleteRead, variant = ButtonVariant.Danger, small = true, enabled = ui.readOnDevice > 0)
+            WebButton("Delete read ${noun}s", model::deleteRead, variant = ButtonVariant.Danger, small = true, enabled = ui.readOnDevice > 0)
         }
+    }
+}
+
+private fun isNovel(state: LoadState<DetailUi>) = (state as? LoadState.Loaded)?.data?.prose != null
+
+private fun unreadableVolumeReason(row: VolumeRow): String =
+    if (row.availability == Availability.NotDownloaded || row.id == null) NOT_DOWNLOADED else NOT_ON_DEVICE
+
+/**
+ * A novel's list: light volumes as whole books, or web chapters under their
+ * volumes, oldest first, since a novel is read from its start.
+ */
+private fun LazyListScope.proseList(
+    prose: ProseRows,
+    edition: String,
+    seriesTitle: String,
+    home: Boolean,
+    model: SeriesDetailViewModel,
+    onReadBook: (kind: BookKind, id: Long, seriesTitle: String) -> Unit,
+) {
+    val tabs = prose.editions.map { e ->
+        if (e == LIGHT) Triple(LIGHT, "Light novel", prose.light.size)
+        else Triple(WEB, "Web novel", prose.web.sumOf { it.rows.size })
+    }.ifEmpty { listOf(Triple(LIGHT, "Volumes", 0)) }
+    item { EditionTabs(tabs, edition, model::setEdition, Modifier.padding(top = Tokens.space.xl, bottom = Tokens.space.lg)) }
+    if (edition == WEB && prose.web.isNotEmpty()) {
+        prose.web.forEachIndexed { g, group ->
+            item(key = "group-$g") {
+                MonoLabel(
+                    group.volume?.let { "Volume ${chapterNumber(it)}" } ?: "Other chapters",
+                    modifier = (if (g == 0) Modifier else Modifier.padding(top = Tokens.space.lg)).padding(bottom = Tokens.space.sm),
+                    uppercase = true,
+                )
+            }
+            item(key = "top-$g") { TableTop() }
+            itemsIndexed(group.rows, key = { _, row -> "c${row.id}" }) { index, row ->
+                ChapterLine(
+                    row,
+                    last = index == group.rows.lastIndex,
+                    isNext = false,
+                    isLastRead = false,
+                    readable = readableFrom(row, home),
+                    onRead = { onReadBook(BookKind.Chapter, row.id, seriesTitle) },
+                    onDelete = { model.deleteChapter(row.id) },
+                )
+            }
+        }
+    } else if (prose.light.isEmpty()) {
+        item {
+            Text(
+                "No volumes yet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Tokens.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+                    .background(Tokens.surfaceContainerLow, RoundedCornerShape(Tokens.radius.xl))
+                    .padding(Tokens.space.lg),
+            )
+        }
+    } else {
+        val next = continueVolume(prose)
+        item { TableTop("Volume") }
+        itemsIndexed(prose.light, key = { i, row -> "v${row.id ?: -i}" }) { index, row ->
+            VolumeLine(
+                row,
+                last = index == prose.light.lastIndex,
+                isNext = row == next,
+                readable = volumeReadableFrom(row, home),
+                onRead = { row.id?.let { onReadBook(BookKind.Volume, it, seriesTitle) } },
+                onDelete = { row.id?.let(model::deleteVolume) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun VolumeLine(
+    row: VolumeRow,
+    last: Boolean,
+    isNext: Boolean,
+    readable: Boolean,
+    onRead: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth()
+            .background(Tokens.surfaceContainerLow, if (last) tableEnd else RectangleShape)
+            .clip(if (last) tableEnd else RectangleShape)
+            .clickable(onClick = onRead),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = Tokens.space.lg, vertical = Tokens.space.sm)
+                .alpha(if (readable) 1f else Tokens.dimmed),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Tokens.space.sm),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.space.xs)) {
+                    Text(
+                        "Vol ${chapterNumber(row.number)}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (row.read) Tokens.secondary else Tokens.onSurface,
+                    )
+                    if (isNext) {
+                        MonoLabel(
+                            "Next",
+                            Tokens.primary,
+                            Modifier.background(Tokens.primary.copy(alpha = Tokens.tintAlpha), CircleShape)
+                                .padding(horizontal = Tokens.space.sm, vertical = Tokens.space.xxs),
+                        )
+                    }
+                }
+                row.title?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall.mono(),
+                        color = if (row.read) Tokens.secondary.copy(alpha = Tokens.readTitleAlpha) else Tokens.outline,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            when (row.availability) {
+                Availability.OnDevice -> StatePill("On device", Tone.Secondary)
+                Availability.OnServer -> StatePill(STATE_LABEL.getValue("downloaded"), STATE_TONE.getValue("downloaded"))
+                Availability.NotDownloaded -> StatePill(STATE_LABEL.getValue("known"), STATE_TONE.getValue("known"))
+            }
+            if (row.availability == Availability.OnDevice) {
+                WebButton("Delete", onDelete, variant = ButtonVariant.Danger, small = true)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.space.xsPlus)) {
+                WebGlyph(WebIcon.Book, Tokens.primary, Tokens.icon.sm)
+                MonoLabel("Read", Tokens.primary)
+            }
+        }
+        if (!last) Divider(color = Tokens.surfaceContainerHighest.copy(alpha = Tokens.rowRuleAlpha))
     }
 }
