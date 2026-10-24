@@ -258,11 +258,23 @@ private fun ScrollView(ui: ProseUi, styles: Styles, ink: Ink, model: ProseReader
     val list = rememberLazyListState(initialFirstVisibleItemIndex = startIndex)
     val scope = rememberCoroutineScope()
     val current by rememberUpdatedState(ui)
+    // The place the scroll itself last reported. Any other place came from the
+    // slider, and the list has to be taken there.
+    var reported by remember(ui.book) { mutableStateOf(ui.position) }
     LaunchedEffect(list) {
         snapshotFlow { scrolledTo(list, items, current.book) }
             .distinctUntilChanged()
             .filter { it != null }
-            .collect { model.moveTo(it!!) }
+            .collect {
+                reported = it!!
+                model.moveTo(it)
+            }
+    }
+    LaunchedEffect(ui.position) {
+        if (ui.position != reported) {
+            reported = ui.position
+            list.scrollToItem(items.indexOf(ui.position.section to ui.position.block).coerceAtLeast(0))
+        }
     }
     LaunchedEffect(list) {
         // The end of the last block on screen is the end of the book.
