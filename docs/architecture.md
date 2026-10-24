@@ -53,13 +53,17 @@ at most `per_source_concurrency + 1`.
 ## Endpoints the Android client uses
 
 The Android client reads on the home network and offline, and talks to nothing but this server.
-Four routes exist for it (design: `docs/superpowers/specs/2026-10-20-android-client-design.md`):
+Five routes exist for it (design: `docs/superpowers/specs/2026-10-20-android-client-design.md`, and
+`2026-10-24-android-prose-reader-design.md` for novels):
 
 - `GET /api/identity` names the app and a stable `instance_id`. `/api/health` answers `ok` like any
   service, so a LAN scan matches on `app`, and the id is how the client finds the same server again
   after DHCP moves it.
-- `GET /api/chapters/{id}/archive` serves a chapter's whole CBZ, with `Range` and an `ETag`, so a
-  copy cut off by weak Wi-Fi resumes and a rebuilt archive is copied again.
+- `GET /api/chapters/{id}/archive` serves a chapter's whole CBZ, or a prose chapter's EPUB as
+  `application/epub+zip`, with `Range` and an `ETag`, so a copy cut off by weak Wi-Fi resumes and a
+  rebuilt archive is copied again. It reads the chapter itself rather than through the reader's
+  lookup, which refuses prose.
+- `GET /api/volumes/{id}/archive` serves a light novel volume's EPUB the same way.
 - `GET /api/series/{id}/cover` serves the cover from `reader-cache/covers/`, fetched from the list
   provider once, so nothing on the phone reaches the internet. A failed fetch stores nothing and the
   next request tries again.

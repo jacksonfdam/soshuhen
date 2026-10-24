@@ -473,6 +473,14 @@ home network, and never to a source site or a list provider: covers come from th
   strip, and double page on a wide screen) and its settings, and reads from the device when the
   chapter is there and from the server otherwise. The volume buttons turn pages; that and inverting
   them are switches in Settings.
+- **Novels.** Novels show in the library like any series. A novel's page lists its light novel
+  volumes, or its web novel chapters under their volumes, with a switch when it has both. **Keep on
+  this device** copies them as the EPUB files the server holds. The novel reader turns pages left to
+  right or right to left, two at a time on a wide screen, or scrolls; the direction is kept per
+  series, and the font, text size and background (black, gray, white or sepia) for every novel.
+  Your place is kept as the place in the text, so it survives a new text size or turning the phone.
+  Finishing a volume or chapter is sent home like a manga chapter. A book's own fonts and layout are
+  not kept, and nothing in a book can make the phone reach the internet.
 - **Offline.** Away from home the library shows what it last saw, covers included, with "Offline.
   Showing the last sync." Every chapter on the device opens as usual, at the page where you
   stopped, and a series' **Continue** leads there too.
