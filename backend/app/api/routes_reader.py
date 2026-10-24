@@ -97,7 +97,7 @@ class PrefsIn(BaseModel):
 @router.get("/chapters/{chapter_id}")
 async def manifest(chapter_id: int, session: Session) -> dict[str, Any]:
     with service_errors():
-        row = service.comic_only(await service.chapter(session, chapter_id))
+        row = await service.chapter(session, chapter_id)
         origin, count = await service.page_count(session, row)
     previous, following = await service.neighbours(session, row)
     body = {
@@ -117,7 +117,7 @@ async def manifest(chapter_id: int, session: Session) -> dict[str, Any]:
 @router.get("/chapters/{chapter_id}/pages/{index}")
 async def page(chapter_id: int, index: int, session: Session) -> Response:
     with service_errors():
-        row = service.comic_only(await service.chapter(session, chapter_id))
+        row = await service.chapter(session, chapter_id)
         data, extension = await service.serve_page(session, row, index)
     await session.commit()
     return Response(
@@ -182,7 +182,7 @@ async def complete(
     with service_errors():
         # Prose too: a novel's chapter finished in the novel reader is the
         # same statement as a comic's, and goes to the lists the same way.
-        row = await service.chapter(session, chapter_id)
+        row = await service.chapter(session, chapter_id, prose_ok=True)
 
     # Lists count whole chapters. 23.5 finished means 23 is, and 24 is not.
     chapter = math.floor(row.number)

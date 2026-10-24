@@ -79,7 +79,16 @@ def cache_root() -> Path:
     return get_settings().reader_cache_path
 
 
-async def chapter(session: AsyncSession, chapter_id: int) -> ChapterRow:
+async def chapter(
+    session: AsyncSession, chapter_id: int, *, prose_ok: bool = False
+) -> ChapterRow:
+    """A chapter as the page routes see it.
+
+    Prose is refused unless the caller says otherwise: the page routes draw
+    images, and an EPUB opened as a zip would show its embedded illustrations
+    as if they were the pages. Only finishing a chapter means the same thing
+    for both kinds.
+    """
     result = await session.execute(
         text(
             """
@@ -100,15 +109,10 @@ async def chapter(session: AsyncSession, chapter_id: int) -> ChapterRow:
     row = result.first()
     if row is None:
         raise ChapterMissing(f"chapter {chapter_id} not found")
-    return ChapterRow(**row._mapping)
-
-
-def comic_only(row: ChapterRow) -> ChapterRow:
-    """The page routes draw images, and an EPUB opened as a zip would show its
-    embedded illustrations as if they were the pages."""
-    if row.series_kind == "prose":
-        raise ProseChapter(f"chapter {row.id} belongs to a light novel")
-    return row
+    found = ChapterRow(**row._mapping)
+    if found.series_kind == "prose" and not prose_ok:
+        raise ProseChapter(f"chapter {chapter_id} belongs to a light novel")
+    return found
 
 
 def library_file(file_path: str | None) -> Path | None:
