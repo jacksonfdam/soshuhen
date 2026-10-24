@@ -118,10 +118,8 @@ class ProseReaderViewModel(
                     keep { outbox.complete(seriesId, ui.ref.id) }
                     keep { local.raiseProgress(seriesId, whole) }
                 }
-                BookKind.Volume -> {
-                    keep { outbox.completeVolume(seriesId, ui.ref.id) }
-                    keep { local.raiseVolumeProgress(seriesId, whole) }
-                }
+                // The queued completion is the volume's read mark until the server has it.
+                BookKind.Volume -> keep { outbox.completeVolume(seriesId, ui.ref.id) }
             }
             sendIfHome()
         }

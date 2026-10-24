@@ -60,7 +60,6 @@ private const val UNREADABLE_ETAG = "unreadable"
 private fun detailKey(id: Long) = "series/$id"
 private fun prefsKey(id: Long) = "prefs/$id"
 private fun resumeKey(id: Long) = "resume/$id"
-private fun volumesKey(id: Long) = "volumes/$id"
 
 /**
  * The screens and the importer speak the API's types, not Room's rows, so a
@@ -140,17 +139,20 @@ open class LocalStore(
     }
 
     /**
-     * The highest light novel volume finished on this device. The lists' own
-     * count arrives with the detail; this covers what they have not heard yet.
-     * Never lowers, as chapter progress never does.
+     * The highest light novel volume finished here and not yet told to the
+     * server. Only a forecast: once the completion is sent, the lists' own
+     * count decides, as it does on the web. Kept as a value of its own, it
+     * outlived every correction, and a volume marked read by mistake stayed so.
      */
-    suspend fun raiseVolumeProgress(seriesId: Long, number: Int) {
-        if (number > (volumeProgress(seriesId) ?: 0)) {
-            save(volumesKey(seriesId), SoshuhenJson.encodeToString(Int.serializer(), number))
-        }
+    suspend fun volumeProgress(seriesId: Long): Int? {
+        val queued = db.outbox().all().filter { it.seriesId == seriesId && it.kind == Outbox.VOLUME_COMPLETE }
+        if (queued.isEmpty()) return null
+        val listed = detailSnapshot(seriesId)?.volumes.orEmpty()
+        return queued.mapNotNull { e ->
+            val id = e.chapterId ?: return@mapNotNull null
+            db.deviceVolumes().get(id)?.number ?: listed.firstOrNull { it.id == id }?.number
+        }.maxOfOrNull { kotlin.math.floor(it).toInt() }
     }
-
-    suspend fun volumeProgress(seriesId: Long): Int? = read(volumesKey(seriesId))
 
     // For a feature's own small state (the prose reader's places and type),
     // kept beside the snapshots so a switch of server clears it with them.
