@@ -24,7 +24,10 @@ def upgrade() -> None:
     op.add_column(
         "reading_position",
         sa.Column(
-            "volume_id", sa.Integer(), sa.ForeignKey("volume.id", ondelete="CASCADE"), nullable=True
+            "volume_id",
+            sa.BigInteger(),
+            sa.ForeignKey("volume.id", ondelete="CASCADE"),
+            nullable=True,
         ),
     )
     # Prose scrolls rather than turns pages: `page` is the section, and this is
