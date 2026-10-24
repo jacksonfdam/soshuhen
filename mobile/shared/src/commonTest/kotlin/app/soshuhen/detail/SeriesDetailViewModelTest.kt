@@ -107,6 +107,17 @@ class SeriesDetailViewModelTest {
         assertNull(store.deviceVolume(41))
     }
 
+    // A server from before volumes carried ids lists them but cannot serve them;
+    // a tap that does nothing reads as a broken app.
+    @Test fun aVolumeTheServerDoesNotNameSaysWhyItWillNotOpen() = runTest(dispatcher) {
+        val vm = SeriesDetailViewModel(308, MutableStateFlow(api(detail = Fixtures.PROSE_DETAIL_OLD) { true }), home, store, DeviceLibrary(store, FakeChapterFolder()))
+        advanceUntilIdle()
+        val row = assertNotNull(assertIs<LoadState.Loaded<DetailUi>>(vm.state.value).data.prose).light.single()
+        assertNull(row.id)
+        vm.cannotOpen(row)
+        assertEquals(VOLUME_UNNAMED, vm.notice.value)
+    }
+
     @Test fun aComicHasNoProseRows() = runTest(dispatcher) {
         val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), home, store, DeviceLibrary(store, FakeChapterFolder()))
         advanceUntilIdle()

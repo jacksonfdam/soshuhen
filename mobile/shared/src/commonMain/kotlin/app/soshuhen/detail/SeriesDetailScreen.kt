@@ -111,6 +111,17 @@ fun SeriesDetailScreen(
             dismissButton = { WebButton("Delete", { model.unmark(deleteFiles = true) }, variant = ButtonVariant.Danger) },
         )
     }
+    // Said where the tap was, not in the bar at the top of a long list of volumes.
+    if (notice == VOLUME_UNNAMED) {
+        AlertDialog(
+            onDismissRequest = model::dismissNotice,
+            containerColor = Tokens.surfaceContainer,
+            shape = RoundedCornerShape(Tokens.radius.xl),
+            title = { Text("This volume cannot be opened yet", style = MaterialTheme.typography.headlineSmall, color = Tokens.onSurface) },
+            text = { Text(VOLUME_UNNAMED, style = MaterialTheme.typography.bodyMedium, color = Tokens.onSurfaceVariant) },
+            confirmButton = { WebButton("OK", model::dismissNotice, variant = ButtonVariant.Primary) },
+        )
+    }
     BoxWithConstraints(Modifier.fillMaxSize().background(Tokens.background).statusBarsPadding()) {
         val phone = maxWidth < Tokens.box.sm
         val wide = maxWidth >= Tokens.box.lg
@@ -140,7 +151,7 @@ fun SeriesDetailScreen(
                     s.refreshFailed?.let {
                         item { NoticeBar(it, NoticeTone.Error, Modifier.padding(bottom = Tokens.space.xl)) { WebButton("Retry", model::refresh, small = true, icon = WebIcon.Sync) } }
                     }
-                    notice?.let { item { NoticeBar(it, NoticeTone.Error, Modifier.padding(bottom = Tokens.space.xl)) } }
+                    notice?.takeIf { it != VOLUME_UNNAMED }?.let { item { NoticeBar(it, NoticeTone.Error, Modifier.padding(bottom = Tokens.space.xl)) } }
                     item { Hero(ui.series, ui.metadata, coverUrl, phone, wide) }
                     item {
                         ProgressCard(ui, home, onRead, onReadBook, edition, wide = maxWidth >= Tokens.box.md, Modifier.padding(top = Tokens.space.xxl))
@@ -614,7 +625,7 @@ private fun LazyListScope.proseList(
                 last = index == prose.light.lastIndex,
                 isNext = row == next,
                 readable = volumeReadableFrom(row, home),
-                onRead = { row.id?.let { onReadBook(BookKind.Volume, it, seriesTitle) } },
+                onRead = { row.id?.let { onReadBook(BookKind.Volume, it, seriesTitle) } ?: model.cannotOpen(row) },
                 onDelete = { row.id?.let(model::deleteVolume) },
             )
         }

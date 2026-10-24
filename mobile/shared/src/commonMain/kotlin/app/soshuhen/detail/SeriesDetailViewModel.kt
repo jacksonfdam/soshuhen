@@ -54,6 +54,8 @@ data class DetailUi(
 /** What the server said, before the device's own state is laid over it. */
 private class Remote(val detail: SeriesDetail, val resume: Resume?, val volumeProgress: Int?)
 
+const val VOLUME_UNNAMED = "The server does not name its volumes yet. Update Soshuhen on the server to read them here."
+
 const val FOLDER_GONE = "The chapters folder is not available. Pick it again in Settings."
 
 class SeriesDetailViewModel(
@@ -148,6 +150,11 @@ class SeriesDetailViewModel(
     }
 
     fun dismissNotice() { _notice.value = null }
+
+    /** A volume the server listed without an id: nothing can fetch it, so say why instead of doing nothing. */
+    fun cannotOpen(row: VolumeRow) {
+        if (row.id == null) _notice.value = VOLUME_UNNAMED
+    }
 
     private fun attempt(action: suspend () -> Unit) {
         viewModelScope.launch {
