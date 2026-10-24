@@ -11,6 +11,7 @@ import app.soshuhen.core.LocalStore
 import app.soshuhen.core.Notifier
 import app.soshuhen.core.SafChapterFolder
 import app.soshuhen.db.databaseBuilder
+import app.soshuhen.core.EpubCheck
 import app.soshuhen.reader.ZipPages
 import okio.Path.Companion.toPath
 import kotlinx.coroutines.MainScope
@@ -40,6 +41,7 @@ class SoshuhenApplication : Application(), ImportEnvironment {
             cacheDir.absolutePath.toPath(),
             zip,
             zip,
+            EpubCheck { false },
         )
     }
 

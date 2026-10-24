@@ -1,7 +1,7 @@
 package app.soshuhen.core
 
 import app.soshuhen.api.ApiException
-import app.soshuhen.api.SeriesChapter
+import app.soshuhen.api.ArchiveDownload
 import app.soshuhen.api.SeriesDetail
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.api.SoshuhenJson
@@ -27,6 +27,9 @@ data class ImportReport(
     val seriesTitles: Map<Long, String>,
     val pending: Int,
     val problem: String?,
+    // Light novel volumes copied this run, per series; apart from chapters
+    // because the two number spaces mean different things.
+    val importedVolumes: Map<Long, List<Double>> = emptyMap(),
 )
 
 private const val FOLDER_GONE = "SD card or folder not available: pick the folder again in Settings"
@@ -47,10 +50,20 @@ private class Stop(val problem: String) : Exception(problem)
 
 private enum class Outcome { Copied, UpToDate, Adopted, Missing }
 
-private class Work(val detail: SeriesDetail, val chapter: SeriesChapter, val indexed: DeviceChapter?) {
+/** What the device already holds of a book, whichever index it is in. */
+private class Indexed(val fileName: String, val uri: String, val etag: String?, val size: Long)
+
+private class Work(
+    val detail: SeriesDetail,
+    val ref: BookRef,
+    val number: Double,
+    filePath: String,
+    val indexed: Indexed?,
+) {
     val slug get() = detail.series.slug
-    val fileName = chapter.filePath!!.substringAfterLast('/')
+    val fileName = filePath.substringAfterLast('/')
     val part = fileName + PART
+    val epub = fileName.endsWith(".epub", ignoreCase = true)
     var outcome: Outcome? = null
 }
 
@@ -67,6 +80,7 @@ class ImportRunner(
     private val folder: ChapterFolder,
     private val outbox: Outbox,
     private val check: ArchiveCheck,
+    private val epubCheck: EpubCheck,
     private val clock: () -> Instant,
 ) {
     // The hourly worker and a run-now request are separate unique works, so
@@ -97,12 +111,13 @@ class ImportRunner(
 
         val work = mutableListOf<Work>()
         val imported = linkedMapOf<Long, MutableList<Double>>()
+        val importedVolumes = linkedMapOf<Long, MutableList<Double>>()
         val titles = linkedMapOf<Long, String>()
         var unreadable = 0
 
         suspend fun copy(w: Work): Outcome {
             if (w.indexed != null) {
-                val current = probe(api, w.chapter.id, w.indexed.size)
+                val current = probe(api, w.ref, w.indexed.size)
                 if (current != null && current.etag == w.indexed.etag) return Outcome.UpToDate
             }
             // The very file the index holds, not just one of the same name: under
@@ -125,7 +140,7 @@ class ImportRunner(
                 throw e
             }
             val partUri = folder.find(w.slug, w.part) ?: return Outcome.Missing
-            if (!passes(partUri)) {
+            if (!passes(w, partUri)) {
                 removePart(w)
                 unreadable++
                 if (unreadable >= MAX_UNREADABLE) throw Stop(UNREADABLE)
@@ -133,15 +148,17 @@ class ImportRunner(
             }
             val size = folder.size(w.slug, w.part) ?: return Outcome.Missing
             val uri = folder.rename(w.slug, w.part, w.fileName)
-            store.forgetPart(BookRef(BookKind.Chapter, w.chapter.id))
+            store.forgetPart(w.ref)
             val now = clock()
-            store.indexChapter(
-                DeviceChapter(w.chapter.id, w.detail.series.id, w.chapter.number, w.fileName, uri, got.etag, size, now),
-            )
+            index(w, uri, got.etag, size, now)
             store.logImport(
-                ImportLogEntity(w.chapter.id, w.detail.series.id, w.detail.series.title, w.chapter.number, now.toEpochMilliseconds()),
+                ImportLogEntity(
+                    w.ref.id, w.detail.series.id, w.detail.series.title, w.number, now.toEpochMilliseconds(),
+                    kind = w.ref.kind.key,
+                ),
             )
-            imported.getOrPut(w.detail.series.id) { mutableListOf() } += w.chapter.number
+            val copied = if (w.ref.kind == BookKind.Volume) importedVolumes else imported
+            copied.getOrPut(w.detail.series.id) { mutableListOf() } += w.number
             titles[w.detail.series.id] = w.detail.series.title
             return Outcome.Copied
         }
@@ -171,12 +188,23 @@ class ImportRunner(
                 }
                 store.saveDetail(id, json)
                 val detail = SoshuhenJson.decodeFromString<SeriesDetail>(json)
-                if (detail.series.kind == "prose") continue
                 detail.chapters
                     .filter { it.state == "downloaded" && it.filePath != null }
                     // Oldest first, so a series is readable from its start while the rest copies.
                     .sortedBy { it.number }
-                    .forEach { work += Work(detail, it, store.deviceChapter(it.id)) }
+                    .forEach {
+                        val held = store.deviceChapter(it.id)?.let { c -> Indexed(c.fileName, c.uri, c.etag, c.size) }
+                        work += Work(detail, BookRef(BookKind.Chapter, it.id), it.number, it.filePath!!, held)
+                    }
+                // Only a light volume owns a file, and only one the server can
+                // serve; a web volume is read through its chapters above.
+                detail.volumes
+                    .filter { it.edition == "light" && it.readable && it.id != null && it.filePath != null }
+                    .sortedBy { it.number }
+                    .forEach {
+                        val held = store.deviceVolume(it.id!!)?.let { v -> Indexed(v.fileName, v.uri, v.etag, v.size) }
+                        work += Work(detail, BookRef(BookKind.Volume, it.id), it.number, it.filePath!!, held)
+                    }
             }
             // A run over chapters that are all indexed and unchanged touches no
             // file, and would clear the banner of a folder that is still gone.
@@ -199,7 +227,7 @@ class ImportRunner(
 
         // A chapter already on the device that was never reached is not known to be stale.
         val pending = work.count { it.outcome == Outcome.Missing || (it.outcome == null && it.indexed == null) }
-        return ImportReport(imported, titles, pending, problem)
+        return ImportReport(imported, titles, pending, problem, importedVolumes)
     }
 
     private fun problemFor(e: Exception): String? = when {
@@ -219,8 +247,8 @@ class ImportRunner(
      * not changed costs one byte instead of the whole file. Null when the
      * archive is now shorter than [size], which is a change too.
      */
-    private suspend fun probe(api: SoshuhenApi, chapterId: Long, size: Long): Probe? = try {
-        api.archive(chapterId, from = (size - 1).coerceAtLeast(0)) { Probe(it.etag, it.total) }
+    private suspend fun probe(api: SoshuhenApi, ref: BookRef, size: Long): Probe? = try {
+        archive(api, ref, from = (size - 1).coerceAtLeast(0)) { Probe(it.etag, it.total) }
     } catch (e: ApiException) {
         if (e.status == 416) null else throw e
     }
@@ -228,19 +256,36 @@ class ImportRunner(
     // Kept only when it is byte for byte the server's archive and readable: a
     // folder restored after a reinstall should not be copied a second time.
     private suspend fun adopt(api: SoshuhenApi, w: Work, existing: Long): Outcome {
-        val current = probe(api, w.chapter.id, existing) ?: return Outcome.Missing
+        val current = probe(api, w.ref, existing) ?: return Outcome.Missing
         if (current.total != existing) return Outcome.Missing
         val uri = folder.find(w.slug, w.fileName) ?: return Outcome.Missing
-        if (!passes(uri)) return Outcome.Missing
-        store.indexChapter(
-            DeviceChapter(w.chapter.id, w.detail.series.id, w.chapter.number, w.fileName, uri, current.etag, existing, clock()),
-        )
+        if (!passes(w, uri)) return Outcome.Missing
+        index(w, uri, current.etag, existing, clock())
         return Outcome.Adopted
+    }
+
+    private suspend fun index(w: Work, uri: String, etag: String?, size: Long, at: Instant) {
+        val seriesId = w.detail.series.id
+        when (w.ref.kind) {
+            BookKind.Chapter -> store.indexChapter(DeviceChapter(w.ref.id, seriesId, w.number, w.fileName, uri, etag, size, at))
+            BookKind.Volume -> store.indexVolume(DeviceVolume(w.ref.id, seriesId, w.number, w.fileName, uri, etag, size, at))
+        }
+    }
+
+    private suspend fun <T> archive(
+        api: SoshuhenApi,
+        ref: BookRef,
+        from: Long,
+        ifRange: String? = null,
+        read: suspend (ArchiveDownload) -> T,
+    ): T = when (ref.kind) {
+        BookKind.Chapter -> api.archive(ref.id, from, ifRange, read)
+        BookKind.Volume -> api.volumeArchive(ref.id, from, ifRange, read)
     }
 
     private suspend fun download(api: SoshuhenApi, w: Work): Probe {
         val held = folder.size(w.slug, w.part) ?: 0L
-        val startedFrom = if (held > 0) store.partEtag(BookRef(BookKind.Chapter, w.chapter.id)) else null
+        val startedFrom = if (held > 0) store.partEtag(w.ref) else null
         // A .part with no recorded ETag cannot be vouched for as the head of
         // the current archive, so it is written over from the start.
         val from = if (startedFrom == null) 0L else held
@@ -251,7 +296,7 @@ class ImportRunner(
             // Asking past the end of a .part that is already whole is refused;
             // its length and ETag decide whether it is the archive or a
             // leftover of an older, longer one.
-            val current = probe(api, w.chapter.id, from)
+            val current = probe(api, w.ref, from)
             if (current != null && current.total == from && current.etag == startedFrom) return current
             removePart(w)
             fetch(api, w, 0L, null)
@@ -259,11 +304,11 @@ class ImportRunner(
     }
 
     private suspend fun fetch(api: SoshuhenApi, w: Work, from: Long, ifRange: String?): Probe {
-        val got = api.archive(w.chapter.id, from, ifRange) { d ->
+        val got = archive(api, w.ref, from, ifRange) { d ->
             val append = from > 0 && !d.restarted
             if (!append) {
                 // Recorded before the first byte, so a copy cut off at any point resumes only onto its own archive.
-                d.etag?.let { store.savePartEtag(BookRef(BookKind.Chapter, w.chapter.id), it) } ?: store.forgetPart(BookRef(BookKind.Chapter, w.chapter.id))
+                d.etag?.let { store.savePartEtag(w.ref, it) } ?: store.forgetPart(w.ref)
             }
             folder.write(w.slug, w.part, append) { sink -> pump(d.body, sink) }
             Probe(d.etag, d.total)
@@ -292,10 +337,10 @@ class ImportRunner(
         }
     }
 
-    private suspend fun passes(uri: String): Boolean {
+    private suspend fun passes(w: Work, uri: String): Boolean {
         val source = folder.read(uri)
         return try {
-            check.pageCount(source) > 0
+            if (w.epub) epubCheck.opens(source) else check.pageCount(source) > 0
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -306,7 +351,7 @@ class ImportRunner(
     }
 
     private suspend fun removePart(w: Work) {
-        store.forgetPart(BookRef(BookKind.Chapter, w.chapter.id))
+        store.forgetPart(w.ref)
         try {
             folder.find(w.slug, w.part)?.let { folder.delete(it) }
         } catch (e: CancellationException) {

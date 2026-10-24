@@ -30,6 +30,7 @@ class AppGraph(
     // The same object as archiveCheck on Android, so the import check and the
     // reader share one extraction cache and one lock on it.
     val pages: PageExtractor,
+    epubCheck: EpubCheck,
 ) {
     val store: ServerStore = InstanceGuard(servers, local)
     val probe = identityProbe(client)
@@ -37,7 +38,7 @@ class AppGraph(
     val library = DeviceLibrary(local, folder)
     val session = Session(store, ServerLocator(probe, scanner), network, client, scope)
     val outbox = Outbox(local) { Clock.System.now() }
-    val importer = ImportRunner(session, local, folder, outbox, archiveCheck) { Clock.System.now() }
+    val importer = ImportRunner(session, local, folder, outbox, archiveCheck, epubCheck) { Clock.System.now() }
 
     // Read on every key press by the activity, which cannot wait for DataStore.
     val volumeKeys: StateFlow<Boolean> = store.volumeKeys.stateIn(scope, SharingStarted.Eagerly, true)
