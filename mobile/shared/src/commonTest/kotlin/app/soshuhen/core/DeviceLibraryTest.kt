@@ -102,7 +102,7 @@ class DeviceLibraryTest {
         volumeOnDevice(41, 1.0)
         volumeOnDevice(42, 2.0)
         volumeOnDevice(43, 3.0)
-        store.raiseVolumeProgress(7, 2)
+        Outbox(store) { Instant.fromEpochMilliseconds(0) }.completeVolume(7, 42)
         val detail = SeriesDetail(series, emptyList(), entries = listOf(SeriesEntry("mal", userProgressVolume = 1)))
         library.deleteRead(detail)
         assertEquals(setOf(43L), volumes())

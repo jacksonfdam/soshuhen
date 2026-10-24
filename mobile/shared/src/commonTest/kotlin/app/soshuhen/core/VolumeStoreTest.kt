@@ -51,11 +51,26 @@ class VolumeStoreTest {
         assertEquals("unreadable", store.deviceVolume(41)?.etag)
     }
 
-    @Test fun volumeProgressNeverLowers() = runTest {
+    // A finished volume shows as read only while the server has not heard of
+    // it; once sent, the lists' count decides, as it does on the web.
+    @Test fun volumeProgressIsTheCompletionsStillQueued() = runTest {
+        val outbox = Outbox(store) { Instant.fromEpochMilliseconds(0) }
         assertNull(store.volumeProgress(308))
-        store.raiseVolumeProgress(308, 3)
-        store.raiseVolumeProgress(308, 2)
+        store.indexVolume(volume(41, number = 3.0))
+        store.indexVolume(volume(42, number = 2.0))
+        outbox.completeVolume(308, 41)
+        outbox.completeVolume(308, 42)
         assertEquals(3, store.volumeProgress(308))
+        assertNull(store.volumeProgress(309))
+        store.outbox().forEach { store.dequeue(it.id) }
+        assertNull(store.volumeProgress(308))
+    }
+
+    // A volume finished from the server's copy at home, then queued while away.
+    @Test fun aQueuedVolumeNotOnTheDeviceIsNumberedFromTheDetail() = runTest {
+        store.saveDetail(308, app.soshuhen.api.Fixtures.PROSE_DETAIL)
+        Outbox(store) { Instant.fromEpochMilliseconds(0) }.completeVolume(308, 41)
+        assertEquals(1, store.volumeProgress(308))
     }
 
     @Test fun switchingServerForgetsVolumes() = runTest {

@@ -151,9 +151,10 @@ For a prose series the list below the header is built from `volumes` and `chapte
 - "Continue" opens the first unread item of the edition shown.
 - Delete-from-device works on volumes as it does on chapters.
 
-A light volume is read when its number is at or below the list's volume progress (or the device's own
-record of it, raised locally on completion like chapter progress). Web chapters use chapter progress,
-as comics do.
+A light volume is read when its number is at or below the lists' volume progress, as on the web, or
+while a completion for it is still queued on the device. Once that completion is sent the lists
+decide again; a device-only count that never lowered kept a volume marked read by mistake for good
+(changed 2026-10-24, after the device test). Web chapters use chapter progress, as comics do.
 
 ### Copying
 
@@ -239,8 +240,8 @@ switches, a slider by percentage, previous and next item.
   open, as with comics.
 - A finished web chapter queues `complete` for the chapter, exactly as comics.
 - A finished light volume queues a new `volume_complete` event, sent to
-  `POST /api/reader/volumes/{id}/complete` with `read_at`, and raises the device's own volume
-  progress at once.
+  `POST /api/reader/volumes/{id}/complete` with `read_at`; while it waits in the outbox, the volume
+  shows as read.
 - Both drain at home with the existing outbox, in order with everything else. A 4xx that can never
   succeed is dropped as today.
 

@@ -92,7 +92,7 @@ class SeriesDetailViewModelTest {
     @Test fun aNovelListsItsVolumesAndCountsThemOnTheDevice() = runTest(dispatcher) {
         val folder = FakeChapterFolder()
         store.indexVolume(DeviceVolume(41, 308, 1.0, "v.epub", folder.put("tsuki", "v.epub"), "\"e\"", 1, Instant.fromEpochMilliseconds(0)))
-        store.raiseVolumeProgress(308, 1)
+        Outbox(store) { Instant.fromEpochMilliseconds(0) }.completeVolume(308, 41)
         val vm = SeriesDetailViewModel(308, MutableStateFlow(api(detail = Fixtures.PROSE_DETAIL) { true }), home, store, DeviceLibrary(store, folder))
         advanceUntilIdle()
         val ui = assertIs<LoadState.Loaded<DetailUi>>(vm.state.value).data
