@@ -14,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import db_session
+from app.downloader.epub import is_epub
 from app.enums import JobType
 from app.importer import staging
 from app.importer.plan import Existing, Override, PlannedFile
@@ -93,8 +94,8 @@ async def preview(series_id: int, files: list[UploadFile], session: Session) -> 
         if total > _MAX_DROP_BYTES:
             raise HTTPException(status_code=413, detail="the drop is over 200 MB")
         data = await upload.read()
-        if not data.startswith(b"%PDF-"):
-            raise HTTPException(status_code=415, detail=f"{upload.filename} is not a PDF")
+        if not (data.startswith(b"%PDF-") or is_epub(data)):
+            raise HTTPException(status_code=415, detail=f"{upload.filename} is not a PDF or an EPUB")
         received.append((upload.filename or "unnamed.pdf", sha256_of(data), data))
     await session.close()
 
