@@ -19,6 +19,8 @@ type Stage =
   | { step: 'importing'; jobId: number | null; pct: number; files: ImportFile[] }
   | { step: 'done'; files: ImportFile[] }
 
+const ACCEPTED = ['application/pdf', 'application/epub+zip']
+
 const EDITIONS: { value: ImportEdition; label: string }[] = [
   { value: 'web', label: 'Web novel' },
   { value: 'light', label: 'Light novel' },
@@ -75,13 +77,14 @@ export function ImportPanel({ seriesId }: { seriesId: number }) {
   })
 
   async function read(files: File[]) {
-    const pdfs = files.filter((file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'))
-    if (pdfs.length === 0) return
+    // A PDF is split into chapters; an EPUB is one light novel volume, placed as it is.
+    const books = files.filter((file) => /\.(pdf|epub)$/i.test(file.name) || ACCEPTED.includes(file.type))
+    if (books.length === 0) return
     setError(null)
     setOverrides({})
     setStage({ step: 'reading' })
     try {
-      setStage({ step: 'review', preview: await api.previewImport(seriesId, pdfs) })
+      setStage({ step: 'review', preview: await api.previewImport(seriesId, books) })
     } catch (failure) {
       setError(messageOf(failure))
       setStage({ step: 'idle' })
@@ -246,12 +249,12 @@ export function ImportPanel({ seriesId }: { seriesId: number }) {
         }
       >
         <Icon name="book" className="h-5 w-5" />
-        {stage.step === 'reading' ? 'Reading files…' : 'Drop PDFs here, or click to choose'}
+        {stage.step === 'reading' ? 'Reading files…' : 'Drop PDFs or EPUBs here, or click to choose'}
       </button>
       <input
         ref={picker}
         type="file"
-        accept="application/pdf"
+        accept=".pdf,.epub,application/pdf,application/epub+zip"
         multiple
         hidden
         onChange={(event) => {
