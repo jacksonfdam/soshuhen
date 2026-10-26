@@ -59,9 +59,9 @@ and are written atomically — Komga never sees a half-finished download.
 Already own some chapters? Drop them into the library folder. Soshuhen sees them, counts them as
 present, and will not download them again.
 
-### Importing a novel you own as PDFs
+### Importing a novel you own as PDFs or EPUBs
 
-A prose series' page has an **Import files** tab. Drop the PDFs on it, or click to choose them.
+A prose series' page has an **Import files** tab. Drop PDFs or EPUBs on it, or click to choose them.
 Soshuhen reads each file and shows what it found before anything is written: the volume, whether it
 is the web novel or the light novel, the chapters it holds, and the names the files will get in the
 library. Change a volume number or an edition there if it guessed wrong, tick **Replace** on
@@ -77,6 +77,11 @@ anything the library already has, then press **Import**.
   novel, which is what MyAnimeList counts.
 - A file whose name starts `LN - ` or `WN - ` is taken at its word. Otherwise a book whose chapters
   restart at 1 after the series already has later chapters reads as the light novel.
+
+- **An EPUB** is one light novel volume and goes into the library exactly as it is: its own
+  markup, cover and table of contents are what every reader opens. Its volume number comes from
+  the file name, or from Calibre's series index when the name has none. An EPUB cannot be imported
+  as web novel chapters.
 
 The PDFs need bookmarks and real text. A scanned book, or a PDF without bookmarks, is shown as
 unreadable and left out. Importing never marks a chapter read; your lists stay where they were.
