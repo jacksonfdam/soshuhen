@@ -86,6 +86,10 @@ def plan_import(
             item.status, item.reason = "duplicate", "the same file is already in this drop"
         elif volume is None:
             item.status, item.reason = "conflict", "no volume number"
+        elif read.whole_file and is_web:
+            item.status, item.reason = (
+                "conflict", "an EPUB imports as a whole light novel volume, not as chapters"
+            )
         elif (volume, edition) in volumes:
             item.status, item.reason = "duplicate", f"another file in this drop is {edition} volume {volume}"
         elif (twice := _repeated(numbers)) is not None:

@@ -37,6 +37,8 @@ class ReadVolume:
     edition: Edition
     chapters: list[NumberedChapter]
     cover: bytes | None
+    # An EPUB is placed as the file it is; it is never a range of chapters.
+    whole_file: bool = False
 
 
 def _plain(value: str) -> Decimal:
