@@ -7,6 +7,8 @@ available, and reading progress belongs to the lists.
 """
 
 import asyncio
+import os
+import tempfile
 import time
 from decimal import Decimal
 from pathlib import Path
@@ -15,7 +17,7 @@ from typing import Any
 from sqlalchemy import text
 
 from app.config import get_settings
-from app.downloader.cbz import page_extension
+from app.downloader.cbz import page_extension, place_file
 from app.downloader.epub import EpubChapter, write_epub
 from app.downloader.paths import (
     chapter_path,
@@ -145,18 +147,37 @@ async def _write_light(
     read: ReadVolume,
     info: Any,
     library: Path,
+    data: bytes,
 ) -> None:
     destination = volume_path(library, series.slug, item.volume)
-    entries = [entry for chapter in read.chapters for entry in chapter.entries]
-    body, images = entries_to_body(_clean(entries))
-    await write_epub(
-        _epub(series, item.volume, f"Volume {item.volume}", body, images, read, info,
-              f"soshuhen:{series.id}:light-volume:{item.volume}"),
-        destination,
-    )
+    if read.whole_file:
+        # A dropped EPUB is the publisher's own book; rewriting it would lose
+        # its markup, cover and contents for nothing.
+        await _place_as_is(data, destination)
+    else:
+        entries = [entry for chapter in read.chapters for entry in chapter.entries]
+        body, images = entries_to_body(_clean(entries))
+        await write_epub(
+            _epub(series, item.volume, f"Volume {item.volume}", body, images, read, info,
+                  f"soshuhen:{series.id}:light-volume:{item.volume}"),
+            destination,
+        )
     previous = await _upsert_volume(ctx, series.id, item, None, None, str(destination))
     _drop_previous(previous, destination,
                    volume_number_from_filename(Path(previous).name) == item.volume if previous else False)
+
+
+async def _place_as_is(data: bytes, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    handle, scratch_name = tempfile.mkstemp(dir=destination.parent, suffix=".epub.part")
+    scratch = Path(scratch_name)
+    try:
+        with os.fdopen(handle, "wb") as out:
+            out.write(data)
+        await place_file(scratch, destination)
+    except BaseException:
+        scratch.unlink(missing_ok=True)
+        raise
 
 
 def _epub(series, number: Decimal, title: str | None, body: str, images: list[bytes],
@@ -230,6 +251,7 @@ async def handle(ctx: JobContext) -> None:
     received = await asyncio.to_thread(staging.staged, token)
     if received is None:
         raise PermanentError("staged files are gone; upload again")
+    files = {sha256: data for _, sha256, data in received}
 
     existing = await _existing(ctx, series_id)
     planned, read = await asyncio.to_thread(
@@ -250,7 +272,7 @@ async def handle(ctx: JobContext) -> None:
         if item.edition == "web":
             await _write_web(ctx, series, item, volume, info, library)
         else:
-            await _write_light(ctx, series, item, volume, info, library)
+            await _write_light(ctx, series, item, volume, info, library, files[item.sha256])
         # Per file, so a crash keeps every volume already written.
         await ctx.session.commit()
         await ctx.log(f"imported {item.edition} volume {item.volume}", pct=int(index * 100 / len(ready)))

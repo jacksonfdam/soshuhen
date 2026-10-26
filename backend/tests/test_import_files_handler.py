@@ -311,3 +311,27 @@ async def test_scratch_files_a_killed_worker_left_are_swept_but_fresh_ones_kept(
 
     assert not stale.exists()
     assert fresh.exists()
+
+
+async def test_an_epub_volume_is_placed_byte_for_byte():
+    from tests.epub_fixture import make_epub
+
+    data = make_epub(title="Volume 7")
+    async with get_sessionmaker()() as session:
+        series_id = await a_series(session)
+
+        await run(
+            session,
+            series_id,
+            staging.stage([("LN - Tsukimichi - Volume 07.epub", sha256_of(data), data)]),
+            pinned(data, "light", "7"),
+        )
+
+        volume = (await rows(session, "select number, edition, file_path, state from volume"))[0]
+        chapters = await rows(session, "select id from chapter")
+
+    expected = volume_path(library(), SLUG, Decimal(7))
+    assert (volume.number, volume.edition, volume.state) == (Decimal(7), "light", "downloaded")
+    assert volume.file_path == str(expected)
+    assert expected.read_bytes() == data
+    assert chapters == []
