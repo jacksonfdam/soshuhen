@@ -145,7 +145,8 @@ the library. `app/importer/` is pure at its edges like `downloader/`: it takes b
 values, and its tests build their PDFs rather than reading anyone's books. A drop left unconfirmed is
 swept the next time anyone drops, after 24 hours.
 
-Known risk: LoLoBun and Novelight number chapters by list position, so a chapter the site inserts
+Known risk: LoLoBun and Novelight number chapters by list position, and Gadgetized Panda does too
+for a series whose printed numbers repeat across volumes or parts, so a chapter the site inserts
 mid-list shifts every later number, and `upsert_chapters` would rebind existing rows to new URLs. A
 follow-up should detect a URL change on a downloaded row.
 

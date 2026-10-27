@@ -23,6 +23,7 @@ from app.sources.asurascans import AsuraScansSource
 from app.sources.base import RegisteredSource, SiteSource, Source, install_registry
 from app.sources.comick import SITES, ComickSource
 from app.sources.empirenovel import EmpireNovelSource
+from app.sources.gadgetizedpanda import GadgetizedPandaSource
 from app.sources.jnovel_auth import JncSession, TokenKeeper
 from app.sources.jnovelclub import API_BASE as JNC_API_BASE
 from app.sources.jnovelclub import SITE as JNC_SITE
@@ -65,6 +66,7 @@ NATIVE_SOURCES: dict[str, SiteSource] = {
     "lolobun": LolobunSource(),
     "novelight": NovelightSource(),
     "empirenovel": EmpireNovelSource(),
+    "gadgetizedpanda": GadgetizedPandaSource(),
 }
 
 # Ported templates, keyed by site_catalogue.template. A template with no entry
