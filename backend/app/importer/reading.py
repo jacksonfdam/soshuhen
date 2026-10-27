@@ -3,6 +3,7 @@
 import hashlib
 from decimal import Decimal
 
+from app.importer.epub import looks_like_epub, read_epub
 from app.importer.numbering import ReadVolume, number_book, volume_from_filename
 from app.importer.pdf import UnreadablePdf, read_pdf
 from app.importer.plan import Existing, Override, PlannedFile, plan_import
@@ -23,7 +24,10 @@ def read_files(
     read: dict[str, ReadVolume | None] = {}
     for name, sha256, data in order:
         try:
-            volume = number_book(read_pdf(data), name, known_max=known_max)
+            if looks_like_epub(name, data):
+                volume = read_epub(data, name)
+            else:
+                volume = number_book(read_pdf(data), name, known_max=known_max)
         except UnreadablePdf:
             read[sha256] = None
             continue

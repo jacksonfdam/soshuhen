@@ -265,3 +265,19 @@ async def test_an_oversized_drop_is_refused_before_it_is_read(client, monkeypatc
 
     assert response.status_code == 413
     assert reads == []
+
+
+async def test_an_epub_is_previewed_as_a_whole_light_volume(client):
+    from tests.epub_fixture import make_epub
+
+    series_id = await a_series()
+
+    response = await client.post(
+        f"/api/series/{series_id}/import",
+        files=[("files", ("LN - Tsukimichi - Volume 07.epub", make_epub(), "application/epub+zip"))],
+    )
+
+    assert response.status_code == 200, response.text
+    [planned] = response.json()["files"]
+    assert (planned["edition"], planned["volume"], planned["status"]) == ("light", "7", "ready")
+    assert planned["chapters"] == []
