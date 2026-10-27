@@ -121,8 +121,8 @@ outside your installation. That has two consequences:
 ## Light novels
 
 A light novel on MyAnimeList or AniList is recognised as one and kept apart from manga. It is
-searched on the prose sources, LoLoBun, Novelight and EmpireNovel, never on image sites, and you
-confirm the match on Discover like any other series.
+searched on the prose sources, LoLoBun, Novelight, EmpireNovel and Gadgetized Panda, never on image
+sites, and you confirm the match on Discover like any other series.
 
 Each chapter downloads as an EPUB, not a CBZ, with the series, chapter number, title and cover
 embedded, and lands in the same Komga library. Soshuhen reads it in its own novel reader (see
@@ -132,6 +132,14 @@ moves your lists forward the same way it does for manga.
 LoLoBun locks most of its chapters to its own app. Those cannot be fetched and show as skipped,
 rather than retrying. EmpireNovel sits behind a Cloudflare challenge and needs the `flaresolverr`
 compose profile; until it is running the source stays disabled.
+
+Gadgetized Panda is a translator's blog, and a series there is matched by its category page, such
+as `https://gadgetizedpanda.net/category/translation/spacemob/geek-mob/`, not by the index post the
+blog links it from. The blog keeps a web novel and its own light novel translation in separate
+categories, each numbered from chapter 1, so map only the one you want. A chapter still in Ko-fi
+early access has no post yet and appears once it is published. Search matches the blog's category
+names, which rarely read like a list's title; pasting the category URL on the series screen is
+the reliable way to map one.
 
 If a series is filed under the wrong kind, or no list says what it is, the **Format** control on the
 series page switches it between Comic and Light novel. A kind set there is kept, and sync does not
