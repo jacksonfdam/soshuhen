@@ -14,8 +14,10 @@ import { Icon, IconButton, ReaderMessage } from '../../ui'
 import { EndOfBook } from './EndOfBook'
 import { ProseContentsSheet } from './ProseContentsSheet'
 import { ProseSettings } from './ProseSettings'
+import { ReadAloudBar } from './ReadAloudBar'
 import { PAGE, SIZE } from './theme'
 import { scrollToPlace, useProsePosition } from './useProsePosition'
+import { useReadAloud } from './useReadAloud'
 
 // Long enough for the illustrations above the saved place to load, so the
 // place is measured on the page as it will finally sit; short enough that a
@@ -116,6 +118,7 @@ function ProseReaderPage({ kind, id }: { kind: ProseKind; id: number }) {
   const current = useProsePosition(manifest?.series.id ?? null, kind, id, column, ready)
   const place = useRef(current)
   place.current = current
+  const readAloud = useReadAloud(column)
 
   // A new text size reflows every line above the reader; without this the
   // same scroll offset lands pages away from where they were reading.
@@ -204,7 +207,12 @@ function ProseReaderPage({ kind, id }: { kind: ProseKind; id: number }) {
   return (
     // flow-root: the end card's bottom margin would otherwise collapse out of
     // the page and show the app's own background below it.
-    <div className={`flow-root min-h-screen ${PAGE[prefs.theme]}`}>
+    // The bottom padding keeps the end of the book clear of the player.
+    <div
+      className={`flow-root min-h-screen ${PAGE[prefs.theme]} ${
+        readAloud.state === 'stopped' ? '' : 'pb-prose-bar'
+      }`}
+    >
       <header
         className={`fixed inset-x-0 top-0 z-30 flex items-center gap-space-sm bg-surface-container/95 px-space-md py-space-sm text-on-surface shadow-card transition-transform duration-200 ${
           chrome ? 'translate-y-0' : '-translate-y-full'
@@ -224,6 +232,15 @@ function ProseReaderPage({ kind, id }: { kind: ProseKind; id: number }) {
             {sectionTitle ? ` · ${sectionTitle}` : ''}
           </span>
         </div>
+        {readAloud.supported && (
+          <IconButton
+            icon="headphones"
+            label="Read aloud"
+            aria-pressed={readAloud.state !== 'stopped'}
+            disabled={!ready || readAloud.state !== 'stopped'}
+            onClick={readAloud.toggle}
+          />
+        )}
         <IconButton icon="list" label="Contents" onClick={() => setPanel('contents')} />
         <IconButton icon="settings" label="Reading settings" onClick={() => setPanel('settings')} />
       </header>
@@ -264,6 +281,18 @@ function ProseReaderPage({ kind, id }: { kind: ProseKind; id: number }) {
         />
       )}
 
+      {readAloud.state !== 'stopped' && (
+        <ReadAloudBar
+          state={readAloud.state}
+          voices={readAloud.voices}
+          settings={readAloud.settings}
+          onToggle={readAloud.toggle}
+          onSkip={readAloud.skip}
+          onConfigure={readAloud.configure}
+          onClose={readAloud.stop}
+        />
+      )}
+
       {panel === 'settings' && (
         <ProseSettings
           prefs={prefs}
@@ -278,6 +307,9 @@ function ProseReaderPage({ kind, id }: { kind: ProseKind; id: number }) {
           current={current.section}
           onPick={(index) => {
             setPanel(null)
+            // A jump is a new place to read from, not a skip within what was
+            // being read: start again from there by choice.
+            readAloud.stop()
             scrollToPlace(column, index, 0)
           }}
           onClose={() => setPanel(null)}
