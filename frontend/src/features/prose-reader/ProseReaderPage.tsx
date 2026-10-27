@@ -120,8 +120,14 @@ function ProseReaderPage({ kind, id }: { kind: ProseKind; id: number }) {
   // A new text size reflows every line above the reader; without this the
   // same scroll offset lands pages away from where they were reading.
   const size = prefs?.font_size
+  const laidOutSize = useRef(size)
   useEffect(() => {
-    if (!ready || !column) return
+    // Only a change of size, never `ready` turning true: at that moment the
+    // place has just been restored but not yet measured, so `place` still
+    // reads the top, and the book reopened at its first line every time.
+    const changed = laidOutSize.current !== size
+    laidOutSize.current = size
+    if (!changed || !ready || !column) return
     const { section, fraction } = place.current
     requestAnimationFrame(() => scrollToPlace(column, section, fraction))
   }, [size, ready, column])
