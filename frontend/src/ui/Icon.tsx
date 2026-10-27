@@ -28,6 +28,11 @@ const ICONS = {
   bookmark: 'M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z',
   star: 'M12 17.3 18.2 21l-1.6-7L22 9.2l-7.2-.6L12 2 9.2 8.6 2 9.2 7.5 14l-1.7 7z',
   bell: 'M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1z',
+  play: 'M8 5v14l11-7z',
+  pause: 'M6 19h4V5H6zm8-14v14h4V5z',
+  skip_previous: 'M6 6h2v12H6zm3.5 6 8.5 6V6z',
+  skip_next: 'M6 18l8.5-6L6 6zM16 6v12h2V6z',
+  headphones: 'M12 3a9 9 0 0 0-9 9v7a2 2 0 0 0 2 2h3v-8H5v-1a7 7 0 0 1 14 0v1h-3v8h3a2 2 0 0 0 2-2v-7a9 9 0 0 0-9-9z',
 } as const
 
 export type IconName = keyof typeof ICONS
