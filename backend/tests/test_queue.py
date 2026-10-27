@@ -86,6 +86,105 @@ async def test_a_finished_job_does_not_block_the_next_identical_one():
     assert second is not None
 
 
+async def test_a_scan_asked_for_while_one_runs_still_happens_afterwards():
+    """Two download batches for one series, the second finishing mid-scan.
+
+    Series 347: the first batch's scan was already leased when the second batch
+    enqueued its own, the dedupe index dropped it, and the scan that did run
+    reconciled before the second batch's chapter was in Komga. That chapter
+    kept a null komga_book_id until someone scanned by hand.
+    """
+    series_id = await _series("scan-race")
+    key = f"komga_scan:{series_id}"
+    async with await session() as db:
+        await repo.enqueue(
+            db, JobType.KOMGA_SCAN, {"series_id": series_id}, series_id=series_id, dedupe_key=key
+        )
+        await db.commit()
+        running = await repo.lease(db, types=EVERY_TYPE)
+        await db.commit()
+        assert running is not None
+
+        await repo.enqueue(
+            db, JobType.KOMGA_SCAN, {"series_id": series_id}, series_id=series_id, dedupe_key=key
+        )
+        await db.commit()
+        await repo.complete(db, running.id)
+        await db.commit()
+
+        again = await repo.lease(db, types=EVERY_TYPE)
+        await db.commit()
+    assert again is not None and again.type == JobType.KOMGA_SCAN
+
+
+async def test_many_scans_asked_for_mid_scan_collapse_into_one_more():
+    series_id = await _series("scan-storm")
+    key = f"komga_scan:{series_id}"
+    async with await session() as db:
+        await repo.enqueue(db, JobType.KOMGA_SCAN, series_id=series_id, dedupe_key=key)
+        await db.commit()
+        running = await repo.lease(db, types=EVERY_TYPE)
+        await db.commit()
+        for _ in range(3):
+            await repo.enqueue(db, JobType.KOMGA_SCAN, series_id=series_id, dedupe_key=key)
+        await db.commit()
+        await repo.complete(db, running.id)
+        await db.commit()
+
+        again = await repo.lease(db, types=EVERY_TYPE)
+        await db.commit()
+        assert again is not None
+        await repo.complete(db, again.id)
+        await db.commit()
+        assert await repo.lease(db, types=EVERY_TYPE) is None
+
+
+async def test_a_scan_asked_for_while_the_running_one_completes_is_not_lost():
+    """The enqueue holds the row lock when completion reaches it.
+
+    Completion then waits, and must read the flag after the wait rather than
+    from the snapshot it started with.
+    """
+    series_id = await _series("scan-overlap")
+    key = f"komga_scan:{series_id}"
+    async with await session() as db:
+        await repo.enqueue(db, JobType.KOMGA_SCAN, series_id=series_id, dedupe_key=key)
+        await db.commit()
+        running = await repo.lease(db, types=EVERY_TYPE)
+        await db.commit()
+
+    async with await session() as asker, await session() as worker:
+        await repo.enqueue(asker, JobType.KOMGA_SCAN, series_id=series_id, dedupe_key=key)
+
+        async def finish() -> None:
+            await repo.complete(worker, running.id)
+            await worker.commit()
+
+        finishing = asyncio.create_task(finish())
+        await asyncio.sleep(0.3)
+        assert not finishing.done(), "completion did not wait on the enqueue's lock"
+        await asker.commit()
+        await finishing
+
+    async with await session() as db:
+        again = await repo.lease(db, types=EVERY_TYPE)
+        await db.commit()
+    assert again is not None and again.type == JobType.KOMGA_SCAN
+
+
+async def test_other_job_types_still_drop_a_duplicate_of_a_running_job():
+    """An hourly sync landing on a running one must not buy a second sync."""
+    async with await session() as db:
+        await repo.enqueue(db, JobType.LIST_SYNC, dedupe_key="list_sync:mal")
+        await db.commit()
+        running = await repo.lease(db, types=EVERY_TYPE)
+        await db.commit()
+        assert await repo.enqueue(db, JobType.LIST_SYNC, dedupe_key="list_sync:mal") is None
+        await repo.complete(db, running.id)
+        await db.commit()
+        assert await repo.lease(db, types=EVERY_TYPE) is None
+
+
 async def test_lease_takes_priority_order_before_arrival_order():
     async with await session() as db:
         await repo.enqueue(db, JobType.LIST_SYNC, {"tag": "cron"}, priority=100)
