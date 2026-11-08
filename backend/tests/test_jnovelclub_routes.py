@@ -15,7 +15,10 @@ from app.sources.jnovel_auth import JncAuthError, JncSession
 from tests.jnovelclub_seed import seed_jnovelclub
 
 pytestmark = pytest.mark.asyncio
-EXPIRES = datetime(2026, 10, 28, 12, tzinfo=UTC)
+# Relative to now, not a fixed date: the session route reads an expired token
+# as signed out, so a fixed date passed until the day it went by and then
+# failed every run.
+EXPIRES = datetime.now(UTC).replace(microsecond=0) + timedelta(days=30)
 
 
 @pytest.fixture(autouse=True)
