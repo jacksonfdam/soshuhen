@@ -15,11 +15,22 @@ from app.providers.base import (
     ListSource,
     MangaMeta,
     RelatedManga,
+    TokenRejected,
     TokenSet,
     WriteRefused,
 )
 
 API_URL = "https://graphql.anilist.co"
+
+
+def _says_invalid_token(response: httpx.Response) -> bool:
+    try:
+        errors = response.json().get("errors") or []
+    except ValueError:
+        return False
+    return any(
+        isinstance(error, dict) and error.get("message") == "Invalid token" for error in errors
+    )
 AUTHORIZE_URL = "https://anilist.co/api/v2/oauth/authorize"
 TOKEN_URL = "https://anilist.co/api/v2/oauth/token"
 
@@ -245,6 +256,13 @@ class AniListSource(ListSource):
         else:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(API_URL, json=payload, headers=headers)
+        # A revoked token is a 400, not a 401, and the reason is only in the
+        # body. Read by status alone it was an opaque "400 Bad Request" retried
+        # three times, while the stored expiry still said the token was good.
+        if response.status_code == 401 or (
+            response.status_code == 400 and _says_invalid_token(response)
+        ):
+            raise TokenRejected("AniList rejected the stored token; reconnect AniList")
         response.raise_for_status()
         body = response.json()
         if body.get("errors"):

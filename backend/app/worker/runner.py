@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.db import get_sessionmaker
 from app.handlers import reader_cache
 from app.handlers.base import JobContext, PermanentError, get_handler
+from app.providers.base import TokenRejected
 from app.queue import repo
 
 log = logging.getLogger(__name__)
@@ -47,7 +48,9 @@ async def run_job(job: repo.LeasedJob) -> None:
             )
             await session.commit()
     except Exception as exc:  # noqa: BLE001 - the outcome is recorded, not swallowed
-        permanent = isinstance(exc, PermanentError)
+        # Mapped here rather than in each handler: every job that talks to a
+        # list provider can meet a revoked token, and retrying one cannot help.
+        permanent = isinstance(exc, (PermanentError, TokenRejected))
         detail = str(exc) if permanent else traceback.format_exc(limit=5)
         log.warning("job %s (%s) failed: %s", job.id, job.type, exc)
         async with sessionmaker() as session:
