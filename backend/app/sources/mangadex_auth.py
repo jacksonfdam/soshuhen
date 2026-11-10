@@ -76,17 +76,31 @@ class TokenCache:
         return self._access_token
 
     async def _post(self, form: dict, client: httpx.AsyncClient | None = None) -> dict:
-        # The token endpoint takes a form body, not json.
+        # The token endpoint takes a form body, not json. Redirects are not
+        # followed: MangaDex's edge has answered it with a 302 to a bot
+        # challenge page, and followed, that was a 200 of HTML that failed in
+        # `.json()` as "Expecting value", naming nothing about sign-in.
         if client is not None:
-            response = await client.post(TOKEN_URL, data=form)
+            response = await client.post(TOKEN_URL, data=form, follow_redirects=False)
         else:
             async with httpx.AsyncClient(timeout=30) as owned:
                 response = await owned.post(TOKEN_URL, data=form)
+        if response.is_redirect:
+            raise MangaDexAuthError(
+                "mangadex sign-in was sent to a challenge page: "
+                f"{response.headers.get('location', '')[:200]}"
+            )
         if response.status_code >= 400:
             raise MangaDexAuthError(
                 f"mangadex auth failed ({response.status_code}): {response.text[:200]}"
             )
-        return response.json()
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise MangaDexAuthError(
+                f"mangadex sign-in answered with a page that is not JSON "
+                f"({response.status_code}): {response.text[:200]}"
+            ) from exc
 
     async def token(self, client: httpx.AsyncClient | None = None) -> str | None:
         """A usable access token, or None when no credentials are configured."""
