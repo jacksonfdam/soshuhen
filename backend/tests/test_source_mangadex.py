@@ -163,3 +163,40 @@ async def test_the_bucket_is_the_documented_at_home_limit():
 
     assert bucket._permits == API_RATE_LIMIT["permits"]
     assert bucket._period == API_RATE_LIMIT["period_seconds"]
+
+
+async def test_a_failed_sign_in_still_lists_chapters_anonymously(fixture, monkeypatch):
+    # Chapter feeds never needed the login. A sign-in MangaDex refused at
+    # 06:00 one morning failed every chapter_discover for MangaDex series,
+    # three attempts each, while the feed itself answered anonymous requests.
+    from app.sources import mangadex_auth
+
+    async def refused(client=None):
+        raise mangadex_auth.MangaDexAuthError("mangadex sign-in was sent to a challenge page")
+
+    monkeypatch.setattr(mangadex_auth.tokens, "token", refused)
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"result": "ok", "data": [], "total": 0})
+
+    chapters = await _source(handler).list_chapters(
+        "https://mangadex.org/title/15a1a7e1-8b39-4b76-b4d2-3006f3413dfd"
+    )
+    assert chapters == []
+    assert seen and "authorization" not in seen[0].headers
+
+
+async def test_a_failed_sign_in_still_fails_a_write_that_needs_it(monkeypatch):
+    from app.enums import ListStatus
+    from app.sources import mangadex_auth
+
+    async def refused(client=None):
+        raise mangadex_auth.MangaDexAuthError("mangadex sign-in was sent to a challenge page")
+
+    monkeypatch.setattr(mangadex_auth.tokens, "token", refused)
+    with pytest.raises(mangadex_auth.MangaDexAuthError):
+        await _source(lambda request: httpx.Response(200)).set_reading_status(
+            "15a1a7e1-8b39-4b76-b4d2-3006f3413dfd", ListStatus.READING
+        )

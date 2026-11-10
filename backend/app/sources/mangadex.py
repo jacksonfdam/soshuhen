@@ -4,6 +4,7 @@ Chosen as the first source because it publishes a documented JSON API for both
 search and chapter listing, which keeps this module free of HTML scraping.
 """
 
+import logging
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -19,11 +20,13 @@ from app.sources.base import (
     PageRef,
     Source,
 )
-from app.sources.mangadex_auth import tokens
+from app.sources.mangadex_auth import MangaDexAuthError, tokens
 from app.sources.net import CatalogueRow, get_client
 from app.text_utils import best_similarity
 
 API_BASE = "https://api.mangadex.org"
+
+log = logging.getLogger(__name__)
 
 # MangaDex documents 40 requests a minute on the at-home endpoint specifically,
 # separate from its general limit. One bucket cannot express two, so the whole
@@ -176,7 +179,15 @@ class MangaDexSource(Source):
         )
 
     async def _headers(self) -> dict[str, str]:
-        token = await tokens.token(self._client)
+        # Reads never needed the login, so a sign-in MangaDex refuses must not
+        # take them down with it: one refused sign-in once failed every
+        # MangaDex chapter_discover while the feed answered anonymous requests.
+        # Writes ask for the token themselves and still fail on it.
+        try:
+            token = await tokens.token(self._client)
+        except MangaDexAuthError as exc:
+            log.warning("mangadex sign-in failed, reading anonymously: %s", exc)
+            return {}
         return {"Authorization": f"Bearer {token}"} if token else {}
 
     async def _get(self, path: str, params: list[tuple[str, Any]]) -> dict[str, Any]:
