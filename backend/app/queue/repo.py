@@ -21,6 +21,20 @@ NOTIFY_CHANNEL = "jobs"
 BACKOFF_BASE_SECONDS = 60
 BACKOFF_FACTOR = 5
 
+# Job types whose work is a read of what earlier jobs wrote. For these, a
+# duplicate arriving while one is leased is not redundant: the running one may
+# already have read past the new write. Two download batches for series 347
+# finished two seconds apart; the second's komga_scan was dropped against the
+# first's, which reconciled before chapter 3 reached Komga and left it with no
+# komga_book_id. Every other type keeps dropping the duplicate - an hourly sync
+# landing on a running one gains nothing from a second.
+RERUN_WHEN_BUSY = frozenset({JobType.KOMGA_SCAN})
+
+# Enough for the holder to finish between our insert and our update a couple of
+# times over; each round trip waits on the holder's row lock, so this is not a
+# spin.
+ENQUEUE_ROUNDS = 3
+
 
 @dataclass(frozen=True)
 class LeasedJob:
@@ -54,7 +68,38 @@ async def enqueue(
     Deduplication is enforced by a partial unique index over (type, dedupe_key)
     restricted to pending and leased rows, so a finished job never blocks a
     later identical one.
+
+    For a type in `RERUN_WHEN_BUSY`, a duplicate of a leased job is not dropped
+    but recorded on that job, and `complete` queues it once more. Narrowing the
+    index to pending rows would have done the same with no new column, but it
+    lets two workers run one key at once and makes `fail` and `reclaim_expired`
+    collide with the index when they put a leased job back.
     """
+    for _ in range(ENQUEUE_ROUNDS):
+        job_id = await _insert(
+            session, job_type, payload, priority, dedupe_key, series_id, run_after, max_attempts
+        )
+        if job_id is not None or dedupe_key is None or job_type not in RERUN_WHEN_BUSY:
+            return job_id
+        if await _request_rerun(session, job_type, dedupe_key):
+            return None
+        if await _waiting_twin(session, job_type, dedupe_key):
+            return None
+        # The leased twin finished between the insert and the update, so the
+        # index is free again and the next insert should land.
+    return None
+
+
+async def _insert(
+    session: AsyncSession,
+    job_type: JobType,
+    payload: dict[str, Any] | None,
+    priority: int,
+    dedupe_key: str | None,
+    series_id: int | None,
+    run_after: datetime | None,
+    max_attempts: int,
+) -> int | None:
     result = await session.execute(
         text(
             """
@@ -78,6 +123,34 @@ async def enqueue(
     )
     row = result.first()
     return row[0] if row else None
+
+
+async def _request_rerun(session: AsyncSession, job_type: JobType, dedupe_key: str) -> bool:
+    """Flag a leased twin to run once more. False when no twin is leased."""
+    result = await session.execute(
+        text(
+            """
+            update job set rerun_requested = true
+             where type = :type and dedupe_key = :dedupe_key and state = 'leased'
+            returning id
+            """
+        ),
+        {"type": str(job_type), "dedupe_key": dedupe_key},
+    )
+    return result.first() is not None
+
+
+async def _waiting_twin(session: AsyncSession, job_type: JobType, dedupe_key: str) -> bool:
+    result = await session.execute(
+        text(
+            """
+            select 1 from job
+             where type = :type and dedupe_key = :dedupe_key and state = 'pending'
+            """
+        ),
+        {"type": str(job_type), "dedupe_key": dedupe_key},
+    )
+    return result.first() is not None
 
 
 async def lease(
@@ -141,12 +214,41 @@ async def renew_lease(session: AsyncSession, job_id: int, *, lease_seconds: int 
 
 
 async def complete(session: AsyncSession, job_id: int) -> None:
+    """Mark a job done, and queue its successor if one was asked for mid-run.
+
+    The successor is a new row rather than this one put back, so the log keeps
+    the two runs apart and this one's history reads as the run it was.
+    """
+    # Locked and read before the update, not read back from it: a subquery in
+    # RETURNING sees the statement's snapshot, so a flag set by an enqueue this
+    # update waited on would read as false and the rerun would be lost.
+    result = await session.execute(
+        text("select rerun_requested from job where id = :job_id for update"),
+        {"job_id": job_id},
+    )
+    rerun = result.scalar_one_or_none()
     await session.execute(
         text(
             """
             update job
-               set state = 'done', finished_at = now(), lease_until = null, last_error = null
+               set state = 'done', finished_at = now(), lease_until = null, last_error = null,
+                   rerun_requested = false
              where id = :job_id
+            """
+        ),
+        {"job_id": job_id},
+    )
+    if not rerun:
+        return
+    await session.execute(
+        text(
+            """
+            insert into job (type, payload, state, priority, attempts, max_attempts,
+                             run_after, dedupe_key, series_id, created_at)
+            select type, payload, 'pending', priority, 0, max_attempts,
+                   now(), dedupe_key, series_id, now()
+              from job where id = :job_id
+            on conflict do nothing
             """
         ),
         {"job_id": job_id},
