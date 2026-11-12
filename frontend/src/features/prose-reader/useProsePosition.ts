@@ -6,7 +6,7 @@ const SAVE_AFTER_MS = 1500
 
 /** The line on screen a place is measured from: a third of the way down,
     roughly where the eye is while reading, rather than the very top edge. */
-function anchor(): number {
+export function anchor(): number {
   return window.innerHeight / 3
 }
 

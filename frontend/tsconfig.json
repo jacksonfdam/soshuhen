@@ -12,5 +12,7 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Run by `node --test`, which has its own types; tsc has no @types/node.
+  "exclude": ["src/**/*.test.ts"]
 }

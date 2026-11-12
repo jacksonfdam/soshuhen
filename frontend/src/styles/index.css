@@ -62,6 +62,10 @@
   .prose-text img {
     @apply mx-auto my-space-md block h-auto max-w-full;
   }
+  /* The paragraph being read aloud, marked by useReadAloud. */
+  .prose-text [data-speaking] {
+    @apply rounded-sm bg-primary/20;
+  }
   .prose-text figure {
     @apply my-space-lg;
   }

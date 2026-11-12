@@ -167,6 +167,11 @@ jobs:
         # Runs tsc first, so this type-checks as well as bundles.
         run: npm run build
 
+      - name: Test
+        # Node's own runner, which strips the types itself: the logic worth
+        # testing here is kept free of the DOM so it needs nothing else.
+        run: npm test
+
   mobile:
     runs-on: ubuntu-latest
     defaults:
