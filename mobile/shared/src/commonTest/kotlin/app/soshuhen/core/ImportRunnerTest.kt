@@ -449,6 +449,18 @@ class ImportRunnerTest {
         assertNull(indexed(10))
     }
 
+    @Test fun aRefusedCreateWithRoomLeftSaysSoInsteadOfDeviceFull() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0), downloaded(11, 2.0))
+        serve(10); serve(11)
+        store.mark(1, "one")
+        folder.failNextWriteWith = CannotCreate("x.cbz")
+        val report = runner().run()
+        val message = "Could not create a file in the chapters folder; will try again next time"
+        assertEquals(message, report.problem)
+        assertEquals(message, store.problem().first())
+        assertNull(indexed(10))
+    }
+
     @Test fun aLostServerKeepsThePartForNextTime() = runTest {
         addSeries(1, "one", downloaded(10, 1.0))
         serve(10)
