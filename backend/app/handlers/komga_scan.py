@@ -479,7 +479,7 @@ async def release_offloaded(ctx: JobContext, client, library_id: str, series_id:
         )
     ).scalars().all()
     offloaded = set(rows)
-    deleted = {book.id for book in books if book.deleted}
+    deleted = {book.id for book in books if getattr(book, "deleted", False)}
     if not deleted:
         return 0
     if not deleted <= offloaded:
