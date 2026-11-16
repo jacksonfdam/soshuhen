@@ -1,4 +1,7 @@
-import { Badge, Card, Icon } from '../../ui'
+import { useState } from 'react'
+
+import { Badge, Button, Card, Icon } from '../../ui'
+import { messageOf } from '../../lib/api'
 import type { SeriesVolume } from '../../lib/api'
 import { externalBase } from '../../lib/externalUrl'
 
@@ -8,6 +11,15 @@ import { externalBase } from '../../lib/externalUrl'
 function stateBadge(volume: SeriesVolume) {
   if (volume.status === 'preorder') return <Badge tone="tertiary">Pre-order</Badge>
   if (volume.state === 'downloaded') return <Badge tone="secondary">Downloaded</Badge>
+  // Offloaded on the user's word: a revision waits for them instead of
+  // downloading by itself, so the badge says there is one.
+  if (volume.state === 'offloaded') {
+    return (
+      <Badge tone="secondary">
+        {volume.revised ? 'On device · newer revision on J-Novel Club' : 'On device'}
+      </Badge>
+    )
+  }
   if (volume.state === 'failed') return <Badge tone="error">Failed</Badge>
   if (volume.revised) return <Badge tone="warning">Updated, downloading again</Badge>
   if (volume.state === 'queued' || volume.state === 'downloading') {
@@ -18,12 +30,34 @@ function stateBadge(volume: SeriesVolume) {
   return <Badge tone="tertiary">Not downloaded yet</Badge>
 }
 
+function DownloadAgain({ volumeId, onDownload }: { volumeId: number; onDownload: (id: number) => Promise<unknown> }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const click = () => {
+    setBusy(true)
+    setError(null)
+    onDownload(volumeId)
+      .catch((failure: unknown) => setError(messageOf(failure)))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <>
+      <Button variant="ghost" size="sm" icon="download" onClick={click} disabled={busy}>
+        Download again
+      </Button>
+      {error && <span className="text-label-sm text-error">{error}</span>}
+    </>
+  )
+}
+
 export function VolumesPanel({
   volumes,
   komgaBaseUrl,
+  onDownloadAgain,
 }: {
   volumes: SeriesVolume[]
   komgaBaseUrl: string
+  onDownloadAgain?: (volumeId: number) => Promise<unknown>
 }) {
   const komgaHref = externalBase(komgaBaseUrl)
   if (volumes.length === 0) return null
@@ -48,6 +82,9 @@ export function VolumesPanel({
             </span>
             <span className="inline-flex items-center gap-space-xs">
               {stateBadge(volume)}
+              {onDownloadAgain && volume.id != null && volume.state === 'offloaded' && (
+                <DownloadAgain volumeId={volume.id} onDownload={onDownloadAgain} />
+              )}
               {komgaHref && volume.komga_book_id && volume.state === 'downloaded' && (
                 <a
                   href={`${komgaHref}/book/${volume.komga_book_id}/read-epub`}
