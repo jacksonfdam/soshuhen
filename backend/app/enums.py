@@ -65,6 +65,7 @@ class JobType(StrEnum):
     JNC_LIBRARY_SYNC = "jnc_library_sync"
     VOLUME_DOWNLOAD = "volume_download"
     IMPORT_FILES = "import_files"
+    OFFLOAD = "offload"
 
 
 class Lane(StrEnum):
@@ -91,6 +92,8 @@ _DOWNLOAD_LANE = frozenset(
         JobType.VOLUME_DOWNLOAD,
         # An import writes /manga, which only worker-download mounts read-write.
         JobType.IMPORT_FILES,
+        # Offloading deletes from /manga, for the same reason.
+        JobType.OFFLOAD,
     }
 )
 
