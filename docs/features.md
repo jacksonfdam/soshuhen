@@ -500,6 +500,18 @@ home network, and never to a source site or a list provider: covers come from th
 - **Progress goes home.** Chapters you finish, and where you stopped, are kept on the phone and sent
   to the server the next time it is reachable, so your lists move forward as if you had read at
   home. Re-reading an earlier chapter never moves a list backwards.
+- **Freeing the server's disk.** **Sync** in Settings (or **Sync with server** on a kept series)
+  copies whatever is missing, then checks every chapter and volume the server holds for the kept
+  series against the device: copied, still in the folder, the same size, and known by the version
+  it was copied at. If anything is missing it says what and offers nothing else. If everything is
+  there it asks whether to **Keep on server** (the default) or **Delete from server**. The server
+  deletes a file only if it is still exactly the one the phone copied; a chapter rebuilt since stays.
+  Deleted chapters read **On device only** in the app and **On device** on the web, never download
+  again by themselves, and come back with the web's **Download range** (or **Download again** on a
+  volume). A J-Novel Club revision of such a volume is shown, not downloaded. Komga forgets their
+  books. Deleting one of them from the phone warns that it is the only copy.
+- **Storage.** Settings shows how much the Soshuhen folder uses, how much is free on the phone or
+  card that holds it, and the size of each series.
 - **Settings.** The server, the folder with **Change folder** (chapters already copied stay where
   they are; new ones go to the new folder), whether background copies are unrestricted with a way
   to the battery settings, whether notifications are on with a way to Android's notification
@@ -510,7 +522,8 @@ home network, and never to a source site or a list provider: covers come from th
 
 Nothing is ever deleted unless you ask. Turning **Keep on this device** off asks whether to keep the
 files or delete them, and keeps them unless you choose **Delete**; **Delete read chapters** and a
-chapter's own **Delete** remove only what they say. The app never prunes the folder, never removes a
-file it did not copy, and never touches the server's library.
+chapter's own **Delete** remove only what they say. The app never prunes the folder and never
+removes a file it did not copy. It touches the server's library only when you answer **Delete from
+server** after a sync.
 
 Building and installing: `mobile/README.md`.

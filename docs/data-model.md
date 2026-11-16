@@ -117,7 +117,11 @@ a chapter number would otherwise need a filter, and a forgotten one would count 
 chapter 16.
 
 `last_updated` is J-Novel Club's own revision date; `downloaded_updated` is the revision of the file
-on disk. When the first is newer, the volume downloads again and replaces the file. `last_part` sets
+on disk. When the first is newer, the volume downloads again and replaces the file, unless it is
+`offloaded`: then the revision waits for the user (`revised` in the series detail says one exists).
+
+`state` takes the chapter's values below except `skipped` and `streaming`, guarded by
+`volume_state_check`; `offloaded` was added in `0031`. `last_part` sets
 where Komga sorts the volume: just after the last part it collects. Download links are never stored
 - they carry their own authorisation and are read fresh from the library each time.
 
@@ -147,6 +151,13 @@ moving files by hand does not cause a redownload.
 
 `known` → `queued` → `downloading` → `downloaded`, with `failed` and `skipped` as ends. `skipped`
 means the source will not serve it in the requested language; it does not return to retry.
+
+`offloaded` sits beside `downloaded`: the Android app verified it holds the file, the user asked
+the server to delete its copy, and the `offload` job did, after checking the file still answers the
+ETag the phone copied it under. `file_path` is null. Nothing queues an offloaded chapter by itself
+- not discovery, not `auto_download`, and the Komga reconcile leaves it alone even while Komga still
+lists the deleted book. "Download range" on the web brings it back; `POST /api/volumes/{id}/download`
+does the same for a volume.
 
 `streaming` sits beside `known`: someone is reading the chapter before it was downloaded, and its
 pages are arriving in the reader cache. `download_batch` leaves it alone, because the cache becomes
