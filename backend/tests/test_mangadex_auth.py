@@ -10,6 +10,7 @@ import pytest
 
 from app.config import get_settings
 from app.sources.mangadex_auth import (
+    MangaDexAuthError,
     TokenCache,
     password_grant_form,
     refresh_grant_form,
@@ -130,3 +131,31 @@ async def test_a_rejected_refresh_falls_back_to_signing_in(configured):
         cache._expires_at = 0
         assert await cache.token(client) == "fresh"
     assert grants == ["password", "refresh_token", "password"]
+
+
+CHALLENGE = "https://mangadex.org/edge/challenge?src=L3JlYWxtcw"
+
+
+async def test_a_challenge_redirect_is_an_auth_error_not_a_parse_error(configured):
+    # MangaDex's edge has answered the token endpoint with a 302 to a bot
+    # challenge page. Followed, that is a 200 of HTML, and `.json()` failed
+    # with "Expecting value" in whichever job happened to ask for a token.
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "mangadex.org":
+            return httpx.Response(200, text="<html>checking your browser</html>")
+        return httpx.Response(302, headers={"location": CHALLENGE})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), follow_redirects=True
+    ) as client:
+        with pytest.raises(MangaDexAuthError, match="challenge"):
+            await TokenCache().token(client)
+
+
+async def test_a_page_that_is_not_json_is_an_auth_error(configured):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>maintenance</html>")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(MangaDexAuthError, match="not JSON"):
+            await TokenCache().token(client)

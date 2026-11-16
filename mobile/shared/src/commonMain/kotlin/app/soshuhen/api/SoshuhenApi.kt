@@ -94,6 +94,15 @@ class SoshuhenApi(val baseUrl: String, private val client: HttpClient) {
         )
     }
 
+    // Only queues: the server re-checks every file against its ETag before deleting it.
+    suspend fun offload(request: OffloadRequest): OffloadResult =
+        checked(
+            client.post("$baseUrl/api/offload") {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            },
+        ).body()
+
     suspend fun prefs(seriesId: Long): ReaderPrefs =
         checked(client.get("$baseUrl/api/reader/series/$seriesId/prefs")).body()
 

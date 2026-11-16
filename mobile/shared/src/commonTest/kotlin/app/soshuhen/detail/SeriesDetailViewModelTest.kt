@@ -210,4 +210,61 @@ class SeriesDetailViewModelTest {
         advanceUntilIdle()
         assertEquals(OFFLINE, assertIs<LoadState.Loaded<DetailUi>>(vm.state.value).refreshFailed)
     }
+
+    private val offloadedDetail = Fixtures.DETAIL.replace(
+        "\"id\": 11, \"number\": 1.0, \"title\": \"Chapter 1\", \"state\": \"downloaded\"",
+        "\"id\": 11, \"number\": 1.0, \"title\": \"Chapter 1\", \"state\": \"offloaded\"",
+    )
+
+    @Test fun deleting_offloaded_chapter_asks_first() = runTest(dispatcher) {
+        val folder = FakeChapterFolder()
+        store.indexChapter(app.soshuhen.core.DeviceChapter(11, 1, 1.0, "c.cbz", folder.put("frieren", "c.cbz"), "\"e\"", 3, Instant.fromEpochMilliseconds(0)))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api(detail = offloadedDetail) { true }), home, store, DeviceLibrary(store, folder))
+        advanceUntilIdle()
+        vm.deleteChapter(11)
+        advanceUntilIdle()
+        assertEquals(OnlyCopy.Chapter(11), vm.onlyCopy.value)
+        assertNotNull(store.deviceChapter(11))
+        vm.dismissOnlyCopy()
+        advanceUntilIdle()
+        assertNull(vm.onlyCopy.value)
+        assertNotNull(store.deviceChapter(11))
+        vm.deleteChapter(11)
+        vm.confirmOnlyCopy()
+        advanceUntilIdle()
+        assertNull(store.deviceChapter(11))
+    }
+
+    @Test fun deleting_a_chapter_the_server_still_holds_asks_nothing() = runTest(dispatcher) {
+        val folder = FakeChapterFolder()
+        store.indexChapter(app.soshuhen.core.DeviceChapter(11, 1, 1.0, "c.cbz", folder.put("frieren", "c.cbz"), "\"e\"", 3, Instant.fromEpochMilliseconds(0)))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api { true }), home, store, DeviceLibrary(store, folder))
+        advanceUntilIdle()
+        vm.deleteChapter(11)
+        advanceUntilIdle()
+        assertNull(vm.onlyCopy.value)
+        assertNull(store.deviceChapter(11))
+    }
+
+    @Test fun deleting_read_with_an_offloaded_chapter_asks_first() = runTest(dispatcher) {
+        val folder = FakeChapterFolder()
+        store.indexChapter(app.soshuhen.core.DeviceChapter(11, 1, 1.0, "c.cbz", folder.put("frieren", "c.cbz"), "\"e\"", 3, Instant.fromEpochMilliseconds(0)))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api(detail = offloadedDetail) { true }), home, store, DeviceLibrary(store, folder))
+        advanceUntilIdle()
+        vm.deleteRead()
+        advanceUntilIdle()
+        assertEquals(OnlyCopy.Read, vm.onlyCopy.value)
+        assertNotNull(store.deviceChapter(11))
+    }
+
+    @Test fun unmarking_with_an_offloaded_chapter_warns_in_the_prompt() = runTest(dispatcher) {
+        val folder = FakeChapterFolder()
+        store.mark(1, "frieren")
+        store.indexChapter(app.soshuhen.core.DeviceChapter(11, 1, 1.0, "c.cbz", folder.put("frieren", "c.cbz"), "\"e\"", 3, Instant.fromEpochMilliseconds(0)))
+        val vm = SeriesDetailViewModel(1, MutableStateFlow(api(detail = offloadedDetail) { true }), home, store, DeviceLibrary(store, folder))
+        advanceUntilIdle()
+        vm.setMarked(false)
+        advanceUntilIdle()
+        assertEquals(UnmarkPrompt(count = 1, onlyCopies = 1), vm.unmarkPrompt.value)
+    }
 }

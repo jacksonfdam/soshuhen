@@ -10,7 +10,7 @@ gated behind Compose profiles and start only when asked for by name.
 | `postgres` | The only datastore. Domain, queue and history |
 | `api` | FastAPI. REST and the SSE stream. Runs migrations on start. Fetches pages from source sites for the reader |
 | `worker` | The fetch lane: every job type but the two downloads, plus the cron that feeds them. The only process running the scheduler |
-| `worker-download` | The download lane: `download_batch`, `download_chapter`, `volume_download` and `import_files`. The only process that writes archives, and the one that empties the reader cache |
+| `worker-download` | The download lane: `download_batch`, `download_chapter`, `volume_download`, `import_files` and `offload`. The only process that writes archives, and the one that empties the reader cache |
 | `web` | Caddy, serving the built interface and proxying `/api` |
 | `komga` | The library server, and one reader of several |
 | `bootstrap` | One-shot: claims Komga if needed, creates the library, exits |

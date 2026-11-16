@@ -87,6 +87,10 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        coalesce(m.source_site, '') as source_site,
        coalesce(m.source_url, '') as source_url,
        coalesce(max(ch.downloaded), 0) as downloaded,
+       -- Held by a device only: the server deleted its copy on the user's word.
+       coalesce(max(ch.offloaded), 0)
+         + (select count(*) from volume v
+             where v.series_id = s.id and v.state = 'offloaded') as offloaded,
        -- A subquery rather than a join: a volume row beside list_entry and the
        -- chapter stats would multiply both, the trap #34 was about.
        (select count(*) from volume v
@@ -120,6 +124,7 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
       -- synced from two providers used to count every chapter twice.
       select series_id,
              count(*) filter (where state = 'downloaded') as downloaded,
+             count(*) filter (where state = 'offloaded') as offloaded,
              count(*) as known,
              count(*) filter (where state in ('queued', 'downloading')) as in_flight,
              count(*) filter (where state = 'failed') as failed,
@@ -148,6 +153,10 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        coalesce(m.source_site, '') as source_site,
        coalesce(m.source_url, '') as source_url,
        coalesce(max(ch.downloaded), 0) as downloaded,
+       -- Held by a device only: the server deleted its copy on the user's word.
+       coalesce(max(ch.offloaded), 0)
+         + (select count(*) from volume v
+             where v.series_id = s.id and v.state = 'offloaded') as offloaded,
        -- A subquery rather than a join: a volume row beside list_entry and the
        -- chapter stats would multiply both, the trap #34 was about.
        (select count(*) from volume v
@@ -181,6 +190,7 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
       -- library card, and the two screens disagreed about the same series.
       select series_id,
              count(*) filter (where state = 'downloaded') as downloaded,
+             count(*) filter (where state = 'offloaded') as offloaded,
              count(*) as known,
              count(*) filter (where state in ('queued', 'downloading')) as in_flight,
              count(*) filter (where state = 'failed') as failed,
@@ -266,6 +276,7 @@ def _row_to_series(row: Any) -> dict[str, Any]:
         "providers": sorted(row.providers or []),
         "writable": row.writable,
         "downloaded": row.downloaded,
+        "offloaded": row.offloaded,
         "known": row.known,
         "in_flight": row.in_flight,
         "failed": row.failed,
@@ -773,7 +784,8 @@ async def download_range(series_id: int, body: DownloadIn, session: Session) -> 
     """Manual download. Priority 0 puts it ahead of whatever the cron queued."""
     clauses = [
         "series_id = :series_id",
-        "state in ('known', 'failed', 'skipped', 'streaming')",
+        # offloaded: the device holds it and the user is asking for it back.
+        "state in ('known', 'failed', 'skipped', 'streaming', 'offloaded')",
     ]
     params: dict[str, Any] = {"series_id": series_id}
     if body.from_chapter is not None:

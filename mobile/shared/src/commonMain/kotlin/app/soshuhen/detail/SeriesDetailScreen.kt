@@ -48,6 +48,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.soshuhen.api.Series
 import app.soshuhen.api.SeriesMetadata
 import app.soshuhen.core.Availability
+import app.soshuhen.ui.SyncDialog
+import app.soshuhen.core.REMOVED_FROM_SERVER
+import app.soshuhen.core.ONLY_COPY
+import app.soshuhen.core.deviceLabel
 import app.soshuhen.core.BookKind
 import app.soshuhen.core.ChapterRow
 import app.soshuhen.core.NOT_DOWNLOADED
@@ -99,7 +103,7 @@ fun SeriesDetailScreen(
     val edition by model.edition.collectAsStateWithLifecycle()
     val prompt by model.unmarkPrompt.collectAsStateWithLifecycle()
     val notice by model.notice.collectAsStateWithLifecycle()
-    prompt?.let { count ->
+    prompt?.let { (count, onlyCopies) ->
         // Keep them is the filled button and the one the system dismisses to:
         // the app deletes only what it was plainly told to.
         AlertDialog(
@@ -107,9 +111,31 @@ fun SeriesDetailScreen(
             containerColor = Tokens.surfaceContainer,
             shape = RoundedCornerShape(Tokens.radius.xl),
             title = { Text("Delete the $count ${if (isNovel(state)) "books" else "chapters"} on this device too?", style = MaterialTheme.typography.headlineSmall, color = Tokens.onSurface) },
+            text = if (onlyCopies > 0) {
+                { Text("$onlyCopies of them are not on the server any more. $ONLY_COPY", style = MaterialTheme.typography.bodyMedium, color = Tokens.onSurfaceVariant) }
+            } else {
+                null
+            },
             confirmButton = { WebButton("Keep them", { model.unmark(deleteFiles = false) }, variant = ButtonVariant.Primary) },
             dismissButton = { WebButton("Delete", { model.unmark(deleteFiles = true) }, variant = ButtonVariant.Danger) },
         )
+    }
+    val onlyCopy by model.onlyCopy.collectAsStateWithLifecycle()
+    if (onlyCopy != null) {
+        // Keep is the filled button and what the system dismisses to.
+        AlertDialog(
+            onDismissRequest = model::dismissOnlyCopy,
+            containerColor = Tokens.surfaceContainer,
+            shape = RoundedCornerShape(Tokens.radius.xl),
+            title = { Text("Delete the only copy?", style = MaterialTheme.typography.headlineSmall, color = Tokens.onSurface) },
+            text = { Text(ONLY_COPY, style = MaterialTheme.typography.bodyMedium, color = Tokens.onSurfaceVariant) },
+            confirmButton = { WebButton("Keep it", model::dismissOnlyCopy, variant = ButtonVariant.Primary) },
+            dismissButton = { WebButton("Delete", model::confirmOnlyCopy, variant = ButtonVariant.Danger) },
+        )
+    }
+    model.sync?.let { flow ->
+        val syncState by flow.state.collectAsStateWithLifecycle()
+        SyncDialog(syncState, flow)
     }
     // Said where the tap was, not in the bar at the top of a long list of volumes.
     if (notice == VOLUME_UNNAMED) {
@@ -463,6 +489,8 @@ private val STATE_LABEL = mapOf(
     "known" to "Known",
     "failed" to "Failed",
     "skipped" to "Skipped",
+    // Offloaded and then deleted from the phone as well.
+    "offloaded" to "Removed from server",
 )
 private val STATE_TONE = mapOf(
     "downloaded" to Tone.Secondary,
@@ -471,6 +499,7 @@ private val STATE_TONE = mapOf(
     "known" to Tone.Primary,
     "failed" to Tone.Error,
     "skipped" to Tone.Primary,
+    "offloaded" to Tone.Tertiary,
 )
 
 @Composable
@@ -523,8 +552,9 @@ private fun ChapterLine(
                     )
                 }
             }
-            if (row.availability == Availability.OnDevice) {
-                StatePill("On device", Tone.Secondary)
+            val onDevice = deviceLabel(row)
+            if (onDevice != null) {
+                StatePill(onDevice, Tone.Secondary)
             } else {
                 val state = row.state ?: if (row.availability == Availability.OnServer) "downloaded" else "known"
                 StatePill(STATE_LABEL[state] ?: state, STATE_TONE[state] ?: Tone.Primary)
@@ -557,14 +587,20 @@ private fun DeviceCard(ui: DetailUi, model: SeriesDetailViewModel, modifier: Mod
                 Modifier.padding(top = Tokens.space.sm),
             )
             WebButton("Delete read ${noun}s", model::deleteRead, variant = ButtonVariant.Danger, small = true, enabled = ui.readOnDevice > 0)
+            model.sync?.takeIf { ui.marked }?.let { flow ->
+                WebButton("Sync with server", flow::start, small = true, icon = WebIcon.Sync)
+            }
         }
     }
 }
 
 private fun isNovel(state: LoadState<DetailUi>) = (state as? LoadState.Loaded)?.data?.prose != null
 
-private fun unreadableVolumeReason(row: VolumeRow): String =
-    if (row.availability == Availability.NotDownloaded || row.id == null) NOT_DOWNLOADED else NOT_ON_DEVICE
+private fun unreadableVolumeReason(row: VolumeRow): String = when {
+    row.offloaded && row.availability != Availability.OnDevice -> REMOVED_FROM_SERVER
+    row.availability == Availability.NotDownloaded || row.id == null -> NOT_DOWNLOADED
+    else -> NOT_ON_DEVICE
+}
 
 /**
  * A novel's list: light volumes as whole books, or web chapters under their
@@ -680,9 +716,13 @@ private fun VolumeLine(
                 }
             }
             when (row.availability) {
-                Availability.OnDevice -> StatePill("On device", Tone.Secondary)
+                Availability.OnDevice -> StatePill(if (row.onlyCopy) "On device only" else "On device", Tone.Secondary)
                 Availability.OnServer -> StatePill(STATE_LABEL.getValue("downloaded"), STATE_TONE.getValue("downloaded"))
-                Availability.NotDownloaded -> StatePill(STATE_LABEL.getValue("known"), STATE_TONE.getValue("known"))
+                Availability.NotDownloaded -> if (row.offloaded) {
+                    StatePill(STATE_LABEL.getValue("offloaded"), STATE_TONE.getValue("offloaded"))
+                } else {
+                    StatePill(STATE_LABEL.getValue("known"), STATE_TONE.getValue("known"))
+                }
             }
             if (row.availability == Availability.OnDevice) {
                 WebButton("Delete", onDelete, variant = ButtonVariant.Danger, small = true)

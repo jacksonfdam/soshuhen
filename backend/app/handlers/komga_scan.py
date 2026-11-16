@@ -48,6 +48,9 @@ async def adopt_book_ids(session: AsyncSession, series_id: int, books) -> int:
                        state = 'downloaded',
                        file_path = coalesce(file_path, :path)
                  where series_id = :series_id
+                   -- Marked offloaded by the API, file not yet deleted: still
+                   -- matches by path, and must not be turned back.
+                   and state <> 'offloaded'
                    and (file_path = :path or file_path like :suffix)
                 """
             ),
@@ -416,6 +419,9 @@ async def reconcile_volumes(ctx: JobContext, client, series_id: int, books) -> i
             text(
                 "select id, number, last_part from volume"
                 " where series_id = :s and edition = 'light'"
+                # Komga keeps listing a deleted book until its trash is
+                # emptied; an offloaded volume must not adopt it again.
+                " and state <> 'offloaded'"
             ),
             {"s": series_id},
         )
@@ -449,6 +455,62 @@ async def reconcile_volumes(ctx: JobContext, client, series_id: int, books) -> i
         except Exception as exc:  # noqa: BLE001 - see the docstring
             await ctx.log(f"could not place volume {number} in Komga: {exc}", level="warning")
     return matched
+
+
+async def release_offloaded(ctx: JobContext, client, library_id: str, series_id: int, books) -> int:
+    """Drop the books of offloaded chapters and volumes from Komga's trash.
+
+    Komga keeps a deleted book listed until its trash is emptied, which shows an
+    offloaded chapter as a broken book. The trash is library-wide, so it is
+    emptied only when every deleted book in the whole library belongs to a row
+    Soshuhen offloaded: a library whose mount went away shows every book
+    deleted, and a series that is entirely offloaded looks clean on its own.
+    A book Komga has not noticed is gone yet waits for a later scan.
+    """
+    if not any(getattr(book, "deleted", False) for book in books):
+        return 0
+    rows = (
+        await ctx.session.execute(
+            text(
+                """
+                select komga_book_id from chapter
+                 where state = 'offloaded' and file_path is null and komga_book_id is not null
+                union
+                select komga_book_id from volume
+                 where state = 'offloaded' and file_path is null and komga_book_id is not null
+                """
+            )
+        )
+    ).scalars().all()
+    offloaded = set(rows)
+    try:
+        trash = {book.id for book in await client.deleted_books(library_id)}
+    except Exception as exc:  # noqa: BLE001 - the scan's real work is done
+        await ctx.log(f"could not read Komga's trash: {exc}", level="warning")
+        return 0
+    if not trash:
+        return 0
+    if not trash <= offloaded:
+        await ctx.log(
+            f"{len(trash - offloaded)} books are in Komga's trash that were not offloaded;"
+            " leaving the trash alone",
+            level="warning",
+        )
+        return 0
+    try:
+        await client.empty_trash(library_id)
+    except Exception as exc:  # noqa: BLE001 - the scan's real work is done
+        await ctx.log(f"could not empty Komga's trash: {exc}", level="warning")
+        return 0
+    for table in ("chapter", "volume"):
+        await ctx.session.execute(
+            text(
+                f"update {table} set komga_book_id = null"
+                " where komga_book_id = any(cast(:ids as text[]))"
+            ),
+            {"ids": sorted(trash)},
+        )
+    return len(trash)
 
 
 @register(JobType.KOMGA_SCAN)
@@ -495,6 +557,11 @@ async def handle(ctx: JobContext) -> None:
     volumes = await reconcile_volumes(ctx, client, series_id, books)
     if volumes:
         await ctx.log(f"{volumes} volumes matched")
+    await ctx.session.commit()
+
+    released = await release_offloaded(ctx, client, library_id, series_id, books)
+    if released:
+        await ctx.log(f"{released} offloaded books removed from Komga")
     await ctx.session.commit()
 
     caught_up = await mark_read_up_to_lists(ctx, client, series_id, books)

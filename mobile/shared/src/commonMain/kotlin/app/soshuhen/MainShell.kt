@@ -235,7 +235,7 @@ private fun Shell(
                 )
             }
             composable<SettingsRoute> {
-                SettingsScreen(viewModel { SettingsViewModel(graph.session.api, graph.store, platform) }, appVersion)
+                SettingsScreen(viewModel { SettingsViewModel(graph.session.api, graph.store, platform, graph.local, graph.sync) }, appVersion)
             }
         }
     }
@@ -297,7 +297,7 @@ private fun LibraryPanes(
                 } else {
                     // Keyed by id, so opening another series gets its own model.
                     SeriesDetailScreen(
-                        viewModel(key = "series-$id") { SeriesDetailViewModel(id, graph.session.api, graph.session.atHome, graph.local, graph.library) },
+                        viewModel(key = "series-$id") { SeriesDetailViewModel(id, graph.session.api, graph.session.atHome, graph.local, graph.library, graph.sync) },
                         coverUrl(id),
                         home = atHome && api != null,
                         onRead = { chapterId, page, title -> onRead(id, chapterId, page, title) },

@@ -139,6 +139,11 @@ export function useSeriesDetail(id: number) {
   )
 
   const download = useCallback((from?: number, to?: number) => api.download(id, from, to), [id])
+  // Volumes come back one at a time: "Download range" selects chapters only.
+  const downloadVolume = useCallback(
+    (volumeId: number) => api.downloadVolume(volumeId).then(() => reload()),
+    [reload],
+  )
   const research = useCallback(() => api.research(id), [id])
 
   // Superseding a mapping re-runs chapter discovery against the new source, so
@@ -199,6 +204,7 @@ export function useSeriesDetail(id: number) {
     setListStatus,
     saveNotes,
     download,
+    downloadVolume,
     research,
     remap,
   }

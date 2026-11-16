@@ -35,4 +35,12 @@ class FormatTest {
         assertEquals("AniList / MAL / mangabaka", providers(listOf("anilist", "mal", "mangabaka")))
         assertEquals("10/10/2026", day("2026-10-10"))
     }
+
+    @Test fun bytesAreShownInTheLargestWholeUnit() {
+        assertEquals("0 B", formatBytes(0))
+        assertEquals("900 B", formatBytes(900))
+        assertEquals("1.5 KB", formatBytes(1_536))
+        assertEquals("4.8 GB", formatBytes(5_153_960_755))
+        assertEquals("21 GB", formatBytes(22_548_578_304))
+    }
 }

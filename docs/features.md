@@ -447,6 +447,14 @@ column, scrolled like an e-reader, with its illustrations in place.
 - **Your place is kept.** Where you stopped is saved as you scroll and comes back when you open the
   book again, or when you press **Continue**.
 - **Contents** jumps to a chapter of a volume when the book has a table of contents.
+- **Read aloud.** The headphones button reads the book out from where you are, with your browser's
+  own voices. The paragraph being read is highlighted and kept on screen, and your place moves on
+  with it, so stopping and opening the book again later picks up there. A bar at the bottom pauses,
+  steps back or forward a paragraph, and sets the speed and the voice; those two are remembered on
+  that device only, since each browser has its own voices. Reading stops when you leave the book or
+  jump with **Contents**. The voices are whatever the browser and system offer: on a Mac, the
+  Enhanced and Premium voices downloaded in System Settings sound better than the defaults.
+  A phone stops reading when its screen locks. The button is absent in a browser that cannot speak.
 - **At the end**, mark the volume or chapter read, or go straight on to the next one, which marks
   this one read on the way. A light novel volume reaches your lists as a volume read; a web novel
   chapter as a chapter. Either only ever moves them forward.
@@ -500,6 +508,19 @@ home network, and never to a source site or a list provider: covers come from th
 - **Progress goes home.** Chapters you finish, and where you stopped, are kept on the phone and sent
   to the server the next time it is reachable, so your lists move forward as if you had read at
   home. Re-reading an earlier chapter never moves a list backwards.
+- **Freeing the server's disk.** **Sync** in Settings (or **Sync with server** on a kept series)
+  copies whatever is missing, then checks every chapter and volume the server holds for the kept
+  series against the device: copied, still in the folder, the same size, and known by the version
+  it was copied at. If anything is missing it says what and offers nothing else. If everything is
+  there it asks whether to **Keep on server** (the default) or **Delete from server**. The server
+  deletes a file only if it is still exactly the one the phone copied; a chapter rebuilt since stays.
+  Files you imported yourself are never removed this way: nothing could download them again.
+  Deleted chapters read **On device only** in the app and **On device** on the web, never download
+  again by themselves, and come back with the web's **Download range** (or **Download again** on a
+  volume). A J-Novel Club revision of such a volume is shown, not downloaded. Komga forgets their
+  books. Deleting one of them from the phone warns that it is the only copy.
+- **Storage.** Settings shows how much the Soshuhen folder uses, how much is free on the phone or
+  card that holds it, and the size of each series.
 - **Settings.** The server, the folder with **Change folder** (chapters already copied stay where
   they are; new ones go to the new folder), whether background copies are unrestricted with a way
   to the battery settings, whether notifications are on with a way to Android's notification
@@ -510,7 +531,8 @@ home network, and never to a source site or a list provider: covers come from th
 
 Nothing is ever deleted unless you ask. Turning **Keep on this device** off asks whether to keep the
 files or delete them, and keeps them unless you choose **Delete**; **Delete read chapters** and a
-chapter's own **Delete** remove only what they say. The app never prunes the folder, never removes a
-file it did not copy, and never touches the server's library.
+chapter's own **Delete** remove only what they say. The app never prunes the folder and never
+removes a file it did not copy. It touches the server's library only when you answer **Delete from
+server** after a sync.
 
 Building and installing: `mobile/README.md`.

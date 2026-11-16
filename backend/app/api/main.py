@@ -18,6 +18,7 @@ from app.api import (
     routes_import,
     routes_jobs,
     routes_notifications,
+    routes_offload,
     routes_reader,
     routes_series,
     routes_settings,
@@ -66,6 +67,7 @@ app.include_router(routes_sources.router)
 app.include_router(routes_reader.router)
 app.include_router(routes_chapters.router)
 app.include_router(routes_volumes.router)
+app.include_router(routes_offload.router)
 app.include_router(routes_updates.router)
 app.include_router(routes_backup.router)
 

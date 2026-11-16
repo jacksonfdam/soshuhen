@@ -17,7 +17,26 @@ data class ChapterRow(
     val availability: Availability,
     // The server's own word for the chapter (downloaded, known, queued...), as the web's table shows it.
     val state: String? = null,
-)
+) {
+    /**
+     * The server holds no file for it, so a copy on this device is the only one.
+     * Not only offloaded: a download again that failed or was cancelled leaves
+     * the row known or failed, and the device copy is still all there is.
+     */
+    val onlyCopy: Boolean get() = state != null && state != "downloaded"
+
+    /** The server deleted its copy for a device; with none here either, only the web can fetch it again. */
+    val offloaded: Boolean get() = state == OFFLOADED
+}
+
+const val OFFLOADED = "offloaded"
+
+/** The pill for a row whose file is on the device; null when it is not. */
+fun deviceLabel(row: ChapterRow): String? = when {
+    row.availability != Availability.OnDevice -> null
+    row.onlyCopy -> "On device only"
+    else -> "On device"
+}
 
 fun chapterRows(detail: SeriesDetail, onDevice: Set<Long> = emptySet()): List<ChapterRow> = detail.chapters
     .sortedByDescending { it.number }
@@ -57,9 +76,15 @@ const val NOT_ON_DEVICE = "Not on this device. It will be copied the next time y
 // NOT_ON_DEVICE would be false for one it never downloaded.
 const val NOT_DOWNLOADED = "Not downloaded on the server yet."
 
+// Offloaded, then deleted from the phone too: only the web can fetch it again.
+const val REMOVED_FROM_SERVER = "Removed from server — download again from the web"
+
+const val ONLY_COPY = "This is the only copy. It will have to be downloaded again from the source."
+
 /** Why the reader would refuse [row] from where the phone is, or null when it would open it. */
 fun unreadableReason(row: ChapterRow, home: Boolean): String? = when {
     readableFrom(row, home) -> null
+    row.offloaded -> REMOVED_FROM_SERVER
     row.availability == Availability.NotDownloaded -> NOT_DOWNLOADED
     else -> NOT_ON_DEVICE
 }

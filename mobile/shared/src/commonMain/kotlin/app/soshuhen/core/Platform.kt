@@ -20,4 +20,7 @@ interface Platform {
 
     /** This app's page in Android's notification settings, the one place they are turned back on. */
     fun openNotificationSettings()
+
+    /** Free and total bytes on the volume holding [treeUri]; null when Android cannot say. */
+    fun freeSpace(treeUri: String): VolumeSpace?
 }

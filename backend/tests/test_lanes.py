@@ -28,6 +28,11 @@ def test_downloads_are_the_download_lane():
     assert lane_of(JobType.IMPORT_FILES) is Lane.DOWNLOAD
 
 
+def test_offload_runs_on_the_download_lane():
+    # Offloading deletes from /manga, which only worker-download mounts read-write.
+    assert lane_of(JobType.OFFLOAD) is Lane.DOWNLOAD
+
+
 def test_the_jobs_a_user_waits_on_are_the_fetch_lane():
     for job_type in (JobType.MATCH_SEARCH, JobType.CHAPTER_DISCOVER, JobType.PROGRESS_PUSH):
         assert lane_of(job_type) is Lane.FETCH

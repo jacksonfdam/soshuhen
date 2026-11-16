@@ -143,6 +143,16 @@ class TokenSet:
     account_name: str | None = None
 
 
+class TokenRejected(Exception):
+    """The provider no longer accepts the stored token: revoked, or issued to a
+    client whose secret has since changed. A stored expiry says nothing about
+    either, and only signing in again helps, so the worker does not retry it.
+
+    Deliberately not a RuntimeError: progress pushing turns those into
+    WriteRefused and retries the write without its volume, which a dead token
+    would refuse identically."""
+
+
 class NotSupported(Exception):
     """The provider does not offer this capability."""
 
