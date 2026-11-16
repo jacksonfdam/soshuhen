@@ -35,6 +35,7 @@ from app.handlers import (  # noqa: F401
     match_search,
     media_enrich,
     notes_write,
+    offload,
     progress_push,
     progress_write,
     status_write,
