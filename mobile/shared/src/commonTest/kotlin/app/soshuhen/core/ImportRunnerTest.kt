@@ -654,6 +654,24 @@ class ImportRunnerTest {
         assertEquals("\"e10\"", indexed(10)!!.etag)
     }
 
+    @Test fun anUnchangedChapterWhoseFileIsGoneIsCopiedAgain() = runTest {
+        // A card swapped for another, or a file removed by hand: the index still
+        // holds the server's ETag, which alone once read as up to date for good.
+        addSeries(1, "one", downloaded(10, 1.0))
+        serve(10)
+        store.mark(1, "one")
+        runner().run()
+        val path = file("one", 1.0)
+        folder.files.remove(path)
+        val before = archiveRequests().size
+        val report = runner().run()
+        assertEquals(listOf(1.0), report.imported[1])
+        assertTrue(path in folder.files)
+        // The ETag probe, then the copy itself.
+        assertEquals(before + 2, archiveRequests().size)
+        assertEquals(path, indexed(10)?.uri)
+    }
+
     @Test fun aRevokedFolderKeepsItsBannerWhenNothingNeedsCopying() = runTest {
         addSeries(1, "one", downloaded(10, 1.0))
         serve(10)
