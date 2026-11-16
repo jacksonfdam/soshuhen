@@ -21,6 +21,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import app.soshuhen.ui.formatBytes
+import app.soshuhen.ui.SyncDialog
+import app.soshuhen.ui.ProgressBar
+import app.soshuhen.ui.ButtonVariant
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -48,6 +55,11 @@ fun SettingsScreen(model: SettingsViewModel, appVersion: String) {
     val folder by model.folder.collectAsStateWithLifecycle()
     val unrestricted by model.batteryUnrestricted.collectAsStateWithLifecycle()
     val notificationsOn by model.notificationsOn.collectAsStateWithLifecycle()
+    val storage by model.storage.collectAsStateWithLifecycle()
+    model.sync?.let { flow ->
+        val syncState by flow.state.collectAsStateWithLifecycle()
+        SyncDialog(syncState, flow)
+    }
     LifecycleResumeEffect(model) {
         model.refreshSystemState()
         onPauseOrDispose { }
@@ -137,6 +149,19 @@ fun SettingsScreen(model: SettingsViewModel, appVersion: String) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         WebButton("Change folder", model::changeFolder, small = true, icon = WebIcon.Folder)
                     }
+                    storage?.let { StorageBlock(it) }
+                    model.sync?.let { flow ->
+                        Column(verticalArrangement = Arrangement.spacedBy(Tokens.space.xs)) {
+                            Text(
+                                "Check that every marked series is on this device, then choose whether the server keeps its copies.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Tokens.onSurfaceVariant,
+                            )
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                WebButton("Sync", flow::start, small = true, icon = WebIcon.Sync)
+                            }
+                        }
+                    }
                     Inset {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             StatusDot(if (unrestricted) Tokens.secondary else Tokens.warning)
@@ -202,4 +227,34 @@ private fun Inset(content: @Composable () -> Unit) {
 @Composable
 private fun StatusDot(color: Color) {
     Box(Modifier.size(Tokens.box.dot).background(color, CircleShape))
+}
+
+@Composable
+private fun StorageBlock(storage: StorageUi) {
+    var open by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.space.xs)) {
+        val space = storage.space
+        Text(
+            if (space != null) {
+                "Used by Soshuhen ${formatBytes(storage.used)} · Free on this card ${formatBytes(space.free)}"
+            } else {
+                "Used by Soshuhen ${formatBytes(storage.used)}"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = Tokens.onSurface,
+        )
+        // How full the volume is; the line above says how much of it is ours.
+        if (space != null) ProgressBar(value = (space.total - space.free).toFloat(), max = space.total.toFloat())
+        if (storage.perSeries.isNotEmpty()) {
+            WebButton(if (open) "Hide per series" else "Per series", { open = !open }, small = true, variant = ButtonVariant.Ghost)
+        }
+        if (open) {
+            storage.perSeries.forEach { usage ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(usage.title, style = MaterialTheme.typography.bodySmall, color = Tokens.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    MonoLabel(formatBytes(usage.bytes), Tokens.onSurfaceVariant)
+                }
+            }
+        }
+    }
 }

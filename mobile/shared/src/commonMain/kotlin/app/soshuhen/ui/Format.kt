@@ -50,3 +50,18 @@ fun day(iso: String): String {
     val (year, month, date) = match.destructured
     return "$date/$month/$year"
 }
+
+/** Bytes in the largest unit that keeps a whole number in front, binary as Android's own storage screen counts. */
+fun formatBytes(bytes: Long): String {
+    val units = listOf("B", "KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= 1024 && unit < units.lastIndex) {
+        value /= 1024
+        unit++
+    }
+    if (unit == 0) return "$bytes B"
+    val rounded = if (value < 10) kotlin.math.round(value * 10) / 10 else kotlin.math.round(value)
+    val text = if (rounded % 1.0 == 0.0) rounded.toLong().toString() else rounded.toString()
+    return "$text ${units[unit]}"
+}

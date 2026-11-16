@@ -205,6 +205,10 @@ async def reconcile_with_komga(session: AsyncSession, series_id: int, slug: str)
                 update chapter
                    set state = 'downloaded', file_path = :path, komga_book_id = :book_id
                  where series_id = :series_id
+                   -- Komga keeps deleted books in its trash and keeps listing
+                   -- them; an offloaded chapter matching by number would
+                   -- otherwise come back as downloaded with no file.
+                   and state <> 'offloaded'
                    and (file_path = :path or file_path like :suffix
                         or (file_path is null and :number = number))
                 """

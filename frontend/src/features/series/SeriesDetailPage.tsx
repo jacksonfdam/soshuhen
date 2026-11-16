@@ -44,6 +44,7 @@ export function SeriesDetailPage() {
     toggleAutoDownload,
     setKind,
     download,
+    downloadVolume,
     research,
     remap,
     setProgress,
@@ -215,12 +216,22 @@ export function SeriesDetailPage() {
             onResearch={research}
             onRemap={remap}
           />
-          {/* A novel's volumes are its contents, listed in the main column. */}
-          {!prose && (
-            <VolumesPanel volumes={detail.volumes} komgaBaseUrl={detail.komga_public_url} />
-          )}
+          {/* A novel's volumes are listed in the main column, which shows no
+              state; one offloaded to a device still needs a way back, so those
+              are listed here too. */}
+          <VolumesPanel
+            volumes={prose ? detail.volumes.filter((v) => v.state === 'offloaded') : detail.volumes}
+            komgaBaseUrl={detail.komga_public_url}
+            onDownloadAgain={downloadVolume}
+          />
           <SyncTargets entries={entries} />
           <KindControl kind={series.kind} onChange={setKind} />
+          {series.offloaded > 0 && (
+            <p className="text-body-sm text-on-surface-variant">
+              {series.offloaded} on a device only. Download them again here when you want them back
+              on the server.
+            </p>
+          )}
           <DownloadControls
             autoDownload={series.auto_download}
             onToggleAutoDownload={toggleAutoDownload}

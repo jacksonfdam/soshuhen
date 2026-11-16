@@ -29,6 +29,7 @@ const TONE: Record<string, 'secondary' | 'tertiary' | 'error' | 'primary'> = {
   known: 'primary',
   failed: 'error',
   skipped: 'primary',
+  offloaded: 'secondary',
 }
 
 const LABEL: Record<string, string> = {
@@ -38,6 +39,9 @@ const LABEL: Record<string, string> = {
   known: 'Known',
   failed: 'Failed',
   skipped: 'Skipped',
+  // The server deleted its copy because a device holds it; "Download range"
+  // brings it back.
+  offloaded: 'On device',
 }
 
 // The bracket form dates from Tailwind 3, where a plain `/12` compiled to no

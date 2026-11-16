@@ -92,6 +92,8 @@ export interface Series {
       series held only by read-only providers, where every write must fail. */
   writable: boolean
   downloaded: number
+  /** Chapters and volumes held only by a device: the server deleted its copy. */
+  offloaded: number
   known: number
   in_flight: number
   failed: number
@@ -343,7 +345,8 @@ export interface SeriesVolume {
   status: 'owned' | 'preorder'
   state: string
   last_updated: string | null
-  /** A newer edition exists than the file on disk; it is downloading again. */
+  /** A newer edition exists than the file downloaded. Downloading again by
+      itself, except for an offloaded volume, which waits for the user. */
   revised: boolean
   komga_book_id: string | null
   file_path: string | null
@@ -1187,6 +1190,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ from_chapter: from ?? null, to_chapter: to ?? null }),
     }),
+  downloadVolume: (id: number) =>
+    request<{ queued: boolean }>(`/api/volumes/${id}/download`, { method: 'POST' }),
   setListStatus: (id: number, status: ListStatus) =>
     request<{ ok: boolean; status: ListStatus; queued: boolean }>(
       `/api/series/${id}/status`,

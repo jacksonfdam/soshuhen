@@ -32,6 +32,8 @@ class KomgaBook:
     number_sort: float | None = None
     number_lock: bool = False
     number_sort_lock: bool = False
+    # In Komga's trash: the file is gone from disk but the book is still listed.
+    deleted: bool = False
 
     @property
     def filename(self) -> str:
@@ -98,6 +100,7 @@ def parse_books(payload: Any) -> list[KomgaBook]:
                 number_sort=metadata.get("numberSort"),
                 number_lock=bool(metadata.get("numberLock")),
                 number_sort_lock=bool(metadata.get("numberSortLock")),
+                deleted=bool(item.get("deleted")),
             )
         )
     return books
@@ -218,6 +221,29 @@ class KomgaClient:
         )
         if response.status_code >= 400:
             raise KomgaError(f"scan failed: {response.status_code} {response.text[:300]}")
+
+    async def empty_trash(self, library_id: str) -> None:
+        # Komga 1.26's API offers no per-book or per-series way to drop a deleted
+        # book (DELETE /books/{id}/file removes a file, which is already gone),
+        # so the trash is emptied for the library. The caller checks first that
+        # every deleted book it can see is one Soshuhen offloaded on purpose.
+        response = await self._request("POST", f"{API}/libraries/{library_id}/empty-trash")
+        if response.status_code >= 400:
+            raise KomgaError(f"emptying trash failed: {response.status_code} {response.text[:300]}")
+
+    async def deleted_books(self, library_id: str) -> list[KomgaBook]:
+        """Every book in the library's trash, whatever series it belonged to."""
+        response = await self._request(
+            "POST",
+            f"{API}/books/list",
+            params={"unpaged": "true"},
+            json={"condition": {"allOf": [
+                {"libraryId": {"operator": "is", "value": library_id}},
+                {"deleted": {"operator": "isTrue"}},
+            ]}},
+        )
+        response.raise_for_status()
+        return parse_books(response.json())
 
     async def find_series(self, root: str, slug: str, library_id: str | None = None) -> str | None:
         params: dict[str, Any] = {"search": slug, "size": PAGE_SIZE}

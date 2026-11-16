@@ -41,6 +41,16 @@ class AppGraph(
     val session = Session(store, ServerLocator(probe, scanner), network, client, scope)
     val outbox = Outbox(local) { Clock.System.now() }
     val importer = ImportRunner(session, local, folder, outbox, archiveCheck, epubCheck) { Clock.System.now() }
+    val sync = Sync(
+        importRun = { progress -> importer.run(onProgress = progress) },
+        store = local,
+        folder = folder,
+        atHome = { session.atHome.value },
+        offload = { request ->
+            val api = session.api.value ?: throw IllegalStateException("no server configured")
+            api.offload(request)
+        },
+    )
 
     // Read on every key press by the activity, which cannot wait for DataStore.
     val volumeKeys: StateFlow<Boolean> = store.volumeKeys.stateIn(scope, SharingStarted.Eagerly, true)

@@ -24,6 +24,10 @@ class FakePlatform(
         return false
     }
 
+    var space: VolumeSpace? = VolumeSpace(free = 21_000_000_000, total = 64_000_000_000)
+
+    override fun freeSpace(treeUri: String): VolumeSpace? = space
+
     override fun isBatteryUnrestricted() = unrestricted
 
     override fun openBatterySettings() {

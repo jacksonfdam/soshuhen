@@ -65,6 +65,9 @@ data class SeriesVolume(
     @SerialName("last_part") val lastPart: Double? = null,
     // The file is on disk inside the library, which is what the archive route serves.
     val readable: Boolean = false,
+    // J-Novel Club has a newer edition than the file downloaded; an offloaded
+    // volume waits for the user rather than downloading it by itself.
+    val revised: Boolean = false,
 )
 
 /** A list's own record of the series; only the volume count is read, for light novel volumes. */
@@ -112,3 +115,16 @@ data class Resume(
     @SerialName("chapter_id") val chapterId: Long,
     val page: Int,
 )
+
+/** One file the device holds, named by the ETag it was copied under so the server deletes only that file. */
+@Serializable
+data class OffloadItem(val id: Long, val etag: String, val size: Long)
+
+@Serializable
+data class OffloadRequest(val chapters: List<OffloadItem>, val volumes: List<OffloadItem>)
+
+@Serializable
+data class OffloadSkip(val id: Long, val kind: String, val reason: String)
+
+@Serializable
+data class OffloadResult(val queued: Int, val skipped: List<OffloadSkip> = emptyList())

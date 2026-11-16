@@ -76,4 +76,16 @@ class DetailRulesTest {
     @Test fun continueCanUseAChapterOnlyOnTheDevice() {
         assertEquals(20L, continueChapter(detail(progress = 1), null, onDevice = setOf(20))?.id)
     }
+
+    @Test fun offloaded_not_on_device_is_not_continued() {
+        val d = detail(
+            progress = 0,
+            chapters = listOf(
+                app.soshuhen.api.SeriesChapter(1, 1.0, state = "offloaded"),
+                app.soshuhen.api.SeriesChapter(2, 2.0, state = "downloaded", filePath = "/x"),
+            ),
+        )
+        kotlin.test.assertEquals(2L, continueChapter(d, null)?.id)
+        kotlin.test.assertEquals(1L, continueChapter(d, null, onDevice = setOf(1L))?.id)
+    }
 }
