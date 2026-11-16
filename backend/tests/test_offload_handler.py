@@ -247,3 +247,29 @@ async def test_offload_skips_unknown_id(tmp_path):
             await session.execute(text("select type from job where state = 'pending'"))
         ).scalars().all()
     assert types == []
+
+
+async def test_offload_finishes_a_row_the_api_marked(tmp_path):
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session)
+        path = _file(tmp_path, "frieren", "Frieren Ch.1.cbz")
+        chapter_id = await _chapter(session, series_id, 1, path, state="offloaded")
+        await session.commit()
+        await _run(session, chapters=[_item(chapter_id, path)])
+        row = await _chapter_row(session, chapter_id)
+    assert not path.exists()
+    assert row.state == "offloaded" and row.file_path is None
+
+
+async def test_a_rebuilt_file_returns_a_marked_row_to_downloaded(tmp_path):
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session)
+        path = _file(tmp_path, "frieren", "Frieren Ch.1.cbz")
+        chapter_id = await _chapter(session, series_id, 1, path, state="offloaded")
+        await session.commit()
+        stale = _item(chapter_id, path)
+        path.write_bytes(b"PK-rebuilt-with-more-pages")
+        await _run(session, chapters=[stale])
+        row = await _chapter_row(session, chapter_id)
+    assert path.exists()
+    assert row.state == "downloaded" and row.file_path == str(path)

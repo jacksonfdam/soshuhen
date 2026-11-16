@@ -48,6 +48,9 @@ async def adopt_book_ids(session: AsyncSession, series_id: int, books) -> int:
                        state = 'downloaded',
                        file_path = coalesce(file_path, :path)
                  where series_id = :series_id
+                   -- Marked offloaded by the API, file not yet deleted: still
+                   -- matches by path, and must not be turned back.
+                   and state <> 'offloaded'
                    and (file_path = :path or file_path like :suffix)
                 """
             ),

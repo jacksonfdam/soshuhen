@@ -37,39 +37,54 @@ def served_etag(path: Path) -> str:
 async def _offload_one(
     ctx: JobContext, table: str, item: dict[str, Any], root: Path
 ) -> tuple[int | None, int, str | None]:
-    """(series_id, bytes freed, reason skipped). One transaction per item."""
+    """(series_id, bytes freed, reason kept). One transaction per item.
+
+    The API marks a row offloaded as it accepts it; a row the job then keeps
+    goes back to downloaded, since the server still holds its file.
+    """
+    item_id = int(item["id"])
     row = (
         await ctx.session.execute(
             text(f"select series_id, state, file_path from {table} where id = :id for update"),
-            {"id": int(item["id"])},
+            {"id": item_id},
         )
     ).first()
     if row is None:
         return None, 0, "unknown"
-    if row.state != "downloaded" or row.file_path is None:
+    if row.state not in ("downloaded", "offloaded") or row.file_path is None:
         return None, 0, f"state is {row.state}"
+
+    async def keep(reason: str) -> tuple[None, int, str]:
+        await ctx.session.execute(
+            text(f"update {table} set state = 'downloaded' where id = :id"), {"id": item_id}
+        )
+        return None, 0, reason
+
     path = Path(row.file_path)
     if not inside(path, root):
-        return None, 0, "outside the library"
-    freed = 0
+        return await keep("outside the library")
+    size = 0
     if path.is_file():
         size = path.stat().st_size
         if size != int(item["size"]) or served_etag(path) != item["etag"]:
-            return None, 0, "changed since the device copied it"
-        path.unlink()
-        freed = size
+            return await keep("changed since the device copied it")
+    # The row is committed before the file goes: a failure after the commit
+    # leaves a stray file, which is harmless, never a row that says the server
+    # holds a file it deleted. A file already gone still becomes offloaded -
+    # the device has it, which is all the state promises.
+    await ctx.session.execute(
+        text(f"update {table} set state = 'offloaded', file_path = null where id = :id"),
+        {"id": item_id},
+    )
+    await ctx.session.commit()
+    if size:
+        path.unlink(missing_ok=True)
         # Only an empty folder goes: anything else in it is still the library's.
         try:
             path.parent.rmdir()
         except OSError:
             pass
-    # A file already gone still becomes offloaded: the device holds it, which is
-    # all the state promises.
-    await ctx.session.execute(
-        text(f"update {table} set state = 'offloaded', file_path = null where id = :id"),
-        {"id": int(item["id"])},
-    )
-    return int(row.series_id), freed, None
+    return int(row.series_id), size, None
 
 
 @register(JobType.OFFLOAD)

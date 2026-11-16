@@ -46,12 +46,12 @@ async def _series(kind="comic") -> int:
     ).scalar_one()
 
 
-async def _chapter(series_id, number, state, file_path=None) -> int:
+async def _chapter(series_id, number, state, file_path=None, source_url="https://src/c") -> int:
     return (
         await _exec(
-            "insert into chapter (series_id, number, state, file_path)"
-            " values (:s, :n, :st, cast(:f as text)) returning id",
-            {"s": series_id, "n": number, "st": state, "f": file_path},
+            "insert into chapter (series_id, number, state, file_path, source_url)"
+            " values (:s, :n, :st, cast(:f as text), cast(:u as text)) returning id",
+            {"s": series_id, "n": number, "st": state, "f": file_path, "u": source_url},
         )
     ).scalar_one()
 
@@ -161,3 +161,43 @@ async def test_fully_offloaded_series_counts_as_holding_files():
         await _exec(f"select {HOLDS_FILES} from series s where s.id = :id", {"id": series_id})
     ).scalar_one()
     assert held is True
+
+
+async def test_offload_endpoint_marks_rows_offloaded_at_once(client, tmp_path):
+    # The phone refreshes right after; a row still saying downloaded would let
+    # it delete its copy without the only-copy warning before the job runs.
+    series_id = await _series()
+    path = _file(tmp_path)
+    ok = await _chapter(series_id, 1, "downloaded", str(path))
+    item = {"id": ok, "etag": served_etag(path), "size": path.stat().st_size}
+    await client.post("/api/offload", json={"chapters": [item]})
+    row = (await _exec("select state, file_path from chapter where id = :id", {"id": ok})).one()
+    assert row.state == "offloaded"
+    assert row.file_path == str(path)
+    assert path.exists()
+    priority = (await _exec("select priority from job")).scalar_one()
+    assert priority == 0
+
+
+async def test_offload_endpoint_skips_items_with_no_source(client, tmp_path):
+    series_id = await _series("prose")
+    path = _file(tmp_path)
+    imported = await _chapter(series_id, 1, "downloaded", str(path), source_url=None)
+    volume_id = (
+        await _exec(
+            "insert into volume (series_id, number, source_volume_id, status, state, file_path)"
+            " values (:s, 1, 'import:abc', 'owned', 'downloaded', '/manga/x.epub') returning id",
+            {"s": series_id},
+        )
+    ).scalar_one()
+    r = await client.post(
+        "/api/offload",
+        json={"chapters": [{"id": imported, "etag": '"x"', "size": 1}],
+              "volumes": [{"id": volume_id, "etag": '"y"', "size": 1}]},
+    )
+    reason = "no source to download it again"
+    assert r.json() == {"queued": 0, "skipped": [
+        {"id": imported, "kind": "chapter", "reason": reason},
+        {"id": volume_id, "kind": "volume", "reason": reason},
+    ]}
+    assert await _jobs() == []

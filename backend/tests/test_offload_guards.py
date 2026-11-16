@@ -167,3 +167,22 @@ async def test_queue_missing_never_queues_offloaded():
             await session.execute(text("select count(*) from job where type <> 'chapter_discover'"))
         ).scalar_one()
     assert jobs == 0
+
+
+async def test_adopt_book_ids_leaves_a_marked_row_with_its_path():
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session)
+        chapter_id = (
+            await session.execute(
+                text(
+                    "insert into chapter (series_id, number, state, file_path)"
+                    " values (:s, 1, 'offloaded', '/manga/a/a Ch.1.cbz') returning id"
+                ),
+                {"s": series_id},
+            )
+        ).scalar_one()
+        await session.commit()
+        await komga_scan.adopt_book_ids(session, series_id, [_book("B1", "a Ch.1.cbz")])
+        await session.commit()
+        row = await _state(session, "chapter", chapter_id)
+    assert row.state == "offloaded"
