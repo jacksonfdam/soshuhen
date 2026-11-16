@@ -454,6 +454,57 @@ async def reconcile_volumes(ctx: JobContext, client, series_id: int, books) -> i
     return matched
 
 
+async def release_offloaded(ctx: JobContext, client, library_id: str, series_id: int, books) -> int:
+    """Drop the books of offloaded chapters and volumes from Komga's trash.
+
+    Komga keeps a deleted book listed until its trash is emptied, which shows an
+    offloaded chapter as a broken book. The trash is library-wide, so it is
+    emptied only when every deleted book this series shows is one Soshuhen
+    offloaded: a library whose mount went away shows every book deleted, and
+    emptying it then would wipe Komga's record of the whole series. A book
+    Komga has not noticed is gone yet waits for a later scan.
+    """
+    rows = (
+        await ctx.session.execute(
+            text(
+                """
+                select komga_book_id from chapter
+                 where series_id = :s and state = 'offloaded' and komga_book_id is not null
+                union
+                select komga_book_id from volume
+                 where series_id = :s and state = 'offloaded' and komga_book_id is not null
+                """
+            ),
+            {"s": series_id},
+        )
+    ).scalars().all()
+    offloaded = set(rows)
+    deleted = {book.id for book in books if book.deleted}
+    if not deleted:
+        return 0
+    if not deleted <= offloaded:
+        await ctx.log(
+            f"{len(deleted - offloaded)} books are in Komga's trash that were not offloaded;"
+            " leaving the trash alone",
+            level="warning",
+        )
+        return 0
+    try:
+        await client.empty_trash(library_id)
+    except Exception as exc:  # noqa: BLE001 - the scan's real work is done
+        await ctx.log(f"could not empty Komga's trash: {exc}", level="warning")
+        return 0
+    for table in ("chapter", "volume"):
+        await ctx.session.execute(
+            text(
+                f"update {table} set komga_book_id = null"
+                " where series_id = :s and komga_book_id = any(cast(:ids as text[]))"
+            ),
+            {"s": series_id, "ids": sorted(deleted)},
+        )
+    return len(deleted)
+
+
 @register(JobType.KOMGA_SCAN)
 async def handle(ctx: JobContext) -> None:
     settings = get_settings()
@@ -498,6 +549,11 @@ async def handle(ctx: JobContext) -> None:
     volumes = await reconcile_volumes(ctx, client, series_id, books)
     if volumes:
         await ctx.log(f"{volumes} volumes matched")
+    await ctx.session.commit()
+
+    released = await release_offloaded(ctx, client, library_id, series_id, books)
+    if released:
+        await ctx.log(f"{released} offloaded books removed from Komga")
     await ctx.session.commit()
 
     caught_up = await mark_read_up_to_lists(ctx, client, series_id, books)

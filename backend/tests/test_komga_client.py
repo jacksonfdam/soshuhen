@@ -234,3 +234,21 @@ async def test_selecting_artwork_targets_the_thumbnail():
 
     assert seen["method"] == "PUT"
     assert seen["path"] == "/api/v1/series/s1/thumbnails/thumb-1/selected"
+
+
+async def test_empty_trash_posts_to_the_library():
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        return httpx.Response(202)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = KomgaClient("http://komga", api_key="k", client=http_client)
+        await client.empty_trash("lib-1")
+    assert calls == [("POST", "/api/v1/libraries/lib-1/empty-trash")]
+
+
+def test_parse_books_reads_deleted():
+    books = parse_books([{"id": "b1", "url": "/manga/a/x.cbz", "deleted": True}, {"id": "b2"}])
+    assert [b.deleted for b in books] == [True, False]
