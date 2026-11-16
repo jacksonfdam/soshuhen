@@ -231,6 +231,20 @@ class KomgaClient:
         if response.status_code >= 400:
             raise KomgaError(f"emptying trash failed: {response.status_code} {response.text[:300]}")
 
+    async def deleted_books(self, library_id: str) -> list[KomgaBook]:
+        """Every book in the library's trash, whatever series it belonged to."""
+        response = await self._request(
+            "POST",
+            f"{API}/books/list",
+            params={"unpaged": "true"},
+            json={"condition": {"allOf": [
+                {"libraryId": {"operator": "is", "value": library_id}},
+                {"deleted": {"operator": "isTrue"}},
+            ]}},
+        )
+        response.raise_for_status()
+        return parse_books(response.json())
+
     async def find_series(self, root: str, slug: str, library_id: str | None = None) -> str | None:
         params: dict[str, Any] = {"search": slug, "size": PAGE_SIZE}
         if library_id:

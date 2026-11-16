@@ -19,8 +19,13 @@ async def clean():
 
 
 class FakeKomga:
-    def __init__(self):
+    def __init__(self, library_deleted=None):
         self.emptied: list[str] = []
+        # None: the library's deleted books are exactly the ones a test passes in.
+        self.library_deleted = library_deleted
+
+    async def deleted_books(self, library_id):
+        return self.library_deleted
 
     async def empty_trash(self, library_id):
         self.emptied.append(library_id)
@@ -62,7 +67,7 @@ async def _book_ids(session):
 
 
 async def test_offloaded_books_are_emptied_and_forgotten():
-    komga = FakeKomga()
+    komga = FakeKomga(library_deleted=[_book("b1", True)])
     async with get_sessionmaker()() as session:
         ctx, series_id = await _setup(session, [(1, "offloaded", "b1"), (2, "downloaded", "b2")])
         released = await release_offloaded(
@@ -96,6 +101,20 @@ async def test_nothing_deleted_yet_waits_for_a_later_scan():
     async with get_sessionmaker()() as session:
         ctx, series_id = await _setup(session, [(1, "offloaded", "b1")])
         released = await release_offloaded(ctx, komga, "lib-1", series_id, [_book("b1", False)])
+        await session.commit()
+        ids = await _book_ids(session)
+    assert released == 0
+    assert komga.emptied == []
+    assert ids == {1: "b1"}
+
+
+async def test_a_fully_offloaded_series_does_not_hide_a_library_outage():
+    # Every book of this series is offloaded, so the series alone looks clean;
+    # another series' books showing deleted is what an outage looks like.
+    komga = FakeKomga(library_deleted=[_book("b1", True), _book("other", True)])
+    async with get_sessionmaker()() as session:
+        ctx, series_id = await _setup(session, [(1, "offloaded", "b1")])
+        released = await release_offloaded(ctx, komga, "lib-1", series_id, [_book("b1", True)])
         await session.commit()
         ids = await _book_ids(session)
     assert released == 0

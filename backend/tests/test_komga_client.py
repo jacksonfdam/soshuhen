@@ -252,3 +252,22 @@ async def test_empty_trash_posts_to_the_library():
 def test_parse_books_reads_deleted():
     books = parse_books([{"id": "b1", "url": "/manga/a/x.cbz", "deleted": True}, {"id": "b2"}])
     assert [b.deleted for b in books] == [True, False]
+
+
+async def test_deleted_books_asks_komga_for_the_librarys_trash():
+    calls: list[tuple[str, str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path, request.content))
+        return httpx.Response(200, json={"content": [{"id": "b1", "deleted": True}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = KomgaClient("http://komga", api_key="k", client=http_client)
+        books = await client.deleted_books("lib-1")
+    assert [b.id for b in books] == ["b1"]
+    method, path, body = calls[0]
+    assert (method, path) == ("POST", "/api/v1/books/list")
+    assert json.loads(body) == {"condition": {"allOf": [
+        {"libraryId": {"operator": "is", "value": "lib-1"}},
+        {"deleted": {"operator": "isTrue"}},
+    ]}}

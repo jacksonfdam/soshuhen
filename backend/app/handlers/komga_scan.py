@@ -462,32 +462,37 @@ async def release_offloaded(ctx: JobContext, client, library_id: str, series_id:
 
     Komga keeps a deleted book listed until its trash is emptied, which shows an
     offloaded chapter as a broken book. The trash is library-wide, so it is
-    emptied only when every deleted book this series shows is one Soshuhen
-    offloaded: a library whose mount went away shows every book deleted, and
-    emptying it then would wipe Komga's record of the whole series. A book
-    Komga has not noticed is gone yet waits for a later scan.
+    emptied only when every deleted book in the whole library belongs to a row
+    Soshuhen offloaded: a library whose mount went away shows every book
+    deleted, and a series that is entirely offloaded looks clean on its own.
+    A book Komga has not noticed is gone yet waits for a later scan.
     """
+    if not any(getattr(book, "deleted", False) for book in books):
+        return 0
     rows = (
         await ctx.session.execute(
             text(
                 """
                 select komga_book_id from chapter
-                 where series_id = :s and state = 'offloaded' and komga_book_id is not null
+                 where state = 'offloaded' and file_path is null and komga_book_id is not null
                 union
                 select komga_book_id from volume
-                 where series_id = :s and state = 'offloaded' and komga_book_id is not null
+                 where state = 'offloaded' and file_path is null and komga_book_id is not null
                 """
-            ),
-            {"s": series_id},
+            )
         )
     ).scalars().all()
     offloaded = set(rows)
-    deleted = {book.id for book in books if getattr(book, "deleted", False)}
-    if not deleted:
+    try:
+        trash = {book.id for book in await client.deleted_books(library_id)}
+    except Exception as exc:  # noqa: BLE001 - the scan's real work is done
+        await ctx.log(f"could not read Komga's trash: {exc}", level="warning")
         return 0
-    if not deleted <= offloaded:
+    if not trash:
+        return 0
+    if not trash <= offloaded:
         await ctx.log(
-            f"{len(deleted - offloaded)} books are in Komga's trash that were not offloaded;"
+            f"{len(trash - offloaded)} books are in Komga's trash that were not offloaded;"
             " leaving the trash alone",
             level="warning",
         )
@@ -501,11 +506,11 @@ async def release_offloaded(ctx: JobContext, client, library_id: str, series_id:
         await ctx.session.execute(
             text(
                 f"update {table} set komga_book_id = null"
-                " where series_id = :s and komga_book_id = any(cast(:ids as text[]))"
+                " where komga_book_id = any(cast(:ids as text[]))"
             ),
-            {"s": series_id, "ids": sorted(deleted)},
+            {"ids": sorted(trash)},
         )
-    return len(deleted)
+    return len(trash)
 
 
 @register(JobType.KOMGA_SCAN)
