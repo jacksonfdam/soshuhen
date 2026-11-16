@@ -506,6 +506,7 @@ home network, and never to a source site or a list provider: covers come from th
   it was copied at. If anything is missing it says what and offers nothing else. If everything is
   there it asks whether to **Keep on server** (the default) or **Delete from server**. The server
   deletes a file only if it is still exactly the one the phone copied; a chapter rebuilt since stays.
+  Files you imported yourself are never removed this way: nothing could download them again.
   Deleted chapters read **On device only** in the app and **On device** on the web, never download
   again by themselves, and come back with the web's **Download range** (or **Download again** on a
   volume). A J-Novel Club revision of such a volume is shown, not downloaded. Komga forgets their
