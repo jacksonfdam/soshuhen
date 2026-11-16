@@ -119,7 +119,12 @@ class ImportRunner(
         suspend fun copy(w: Work): Outcome {
             if (w.indexed != null) {
                 val current = probe(api, w.ref, w.indexed.size)
-                if (current != null && current.etag == w.indexed.etag) return Outcome.UpToDate
+                // An unchanged ETag says the server's file is the same, not that
+                // ours is still there: a swapped card or a hand-deleted file kept
+                // its index row, and the chapter was never copied again.
+                if (current != null && current.etag == w.indexed.etag && folder.exists(w.indexed.uri)) {
+                    return Outcome.UpToDate
+                }
             }
             // The very file the index holds, not just one of the same name: under
             // a renamed series' new slug that name may be someone else's file.
