@@ -416,6 +416,9 @@ async def reconcile_volumes(ctx: JobContext, client, series_id: int, books) -> i
             text(
                 "select id, number, last_part from volume"
                 " where series_id = :s and edition = 'light'"
+                # Komga keeps listing a deleted book until its trash is
+                # emptied; an offloaded volume must not adopt it again.
+                " and state <> 'offloaded'"
             ),
             {"s": series_id},
         )

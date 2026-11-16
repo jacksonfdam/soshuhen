@@ -60,9 +60,22 @@ def needs_download(
     """
     if status != "owned" or not has_link:
         return False
+    # Offloaded to a device on the user's word: a revision is news for them to
+    # act on, not a reason to fill the disk they just freed.
+    if state == "offloaded":
+        return False
     if downloaded_updated is None:
         return True
-    return last_updated is not None and downloaded_updated < last_updated
+    return has_newer_revision(downloaded_updated, last_updated)
+
+
+def has_newer_revision(downloaded_updated: datetime | None, last_updated: datetime | None) -> bool:
+    """J-Novel Club has revised the volume since the copy we last downloaded."""
+    return (
+        downloaded_updated is not None
+        and last_updated is not None
+        and downloaded_updated < last_updated
+    )
 
 
 @dataclass(frozen=True)
