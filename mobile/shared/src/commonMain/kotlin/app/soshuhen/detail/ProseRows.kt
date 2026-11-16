@@ -2,6 +2,7 @@ package app.soshuhen.detail
 
 import app.soshuhen.api.SeriesDetail
 import app.soshuhen.core.Availability
+import app.soshuhen.core.OFFLOADED
 import app.soshuhen.core.ChapterRow
 import app.soshuhen.core.chapterRows
 import app.soshuhen.core.volumeTitle
@@ -15,6 +16,8 @@ data class VolumeRow(
     val title: String?,
     val read: Boolean,
     val availability: Availability,
+    // Offloaded: the server deleted its copy, so the device's is the only one.
+    val onlyCopy: Boolean = false,
 )
 
 /** A web novel volume's chapters; [volume] is null for the chapters no volume's range covers. */
@@ -49,6 +52,7 @@ fun proseRows(
                 it.id != null && it.readable -> Availability.OnServer
                 else -> Availability.NotDownloaded
             },
+            onlyCopy = it.state == OFFLOADED,
         )
     }
     val chapters = chapterRows(detail, onDeviceChapters).sortedBy { it.number }

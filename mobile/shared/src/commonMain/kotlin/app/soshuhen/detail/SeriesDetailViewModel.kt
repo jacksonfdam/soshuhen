@@ -17,6 +17,9 @@ import app.soshuhen.core.volumesRead
 import app.soshuhen.core.FolderUnavailable
 import app.soshuhen.core.LocalStore
 import app.soshuhen.ui.FAILED_FIRST
+import app.soshuhen.core.Sync
+import app.soshuhen.core.SyncFlow
+import app.soshuhen.core.Availability
 import app.soshuhen.ui.LoadState
 import app.soshuhen.ui.OFFLINE
 import app.soshuhen.ui.keep
@@ -56,6 +59,16 @@ private class Remote(val detail: SeriesDetail, val resume: Resume?, val volumePr
 
 const val VOLUME_UNNAMED = "The server does not name its volumes yet. Update Soshuhen on the server to read them here."
 
+/** A delete that would lose the only copy, waiting for the user to say so. */
+sealed interface OnlyCopy {
+    data class Chapter(val id: Long) : OnlyCopy
+    data class Volume(val id: Long) : OnlyCopy
+    data object Read : OnlyCopy
+}
+
+/** The unmark question: how many files are on the device, and how many of them the server no longer holds. */
+data class UnmarkPrompt(val count: Int, val onlyCopies: Int)
+
 const val FOLDER_GONE = "The chapters folder is not available. Pick it again in Settings."
 
 class SeriesDetailViewModel(
@@ -64,7 +77,17 @@ class SeriesDetailViewModel(
     private val atHome: StateFlow<Boolean>,
     private val local: LocalStore,
     private val library: DeviceLibrary,
+    sync: Sync? = null,
 ) : ViewModel() {
+    /** This series' own sync: copy what is missing, then ask about the server's copies. */
+    val sync: SyncFlow? = sync?.let { s ->
+        SyncFlow(
+            run = { progress -> s.run(setOf(seriesId), progress) },
+            offload = { report -> s.offload(report).also { refresh() } },
+            scope = viewModelScope,
+        )
+    }
+
     private val remote = MutableStateFlow<LoadState<Remote>>(LoadState.Loading)
 
     // Marking and the device's files change under a loaded screen, so they are
@@ -88,10 +111,15 @@ class SeriesDetailViewModel(
 
     fun setEdition(edition: String) { chosenEdition.value = edition }
 
-    private val _unmarkPrompt = MutableStateFlow<Int?>(null)
+    private val _unmarkPrompt = MutableStateFlow<UnmarkPrompt?>(null)
 
-    /** The number of chapters on the device while the unmark question is open, null otherwise. */
-    val unmarkPrompt: StateFlow<Int?> = _unmarkPrompt
+    /** What is on the device while the unmark question is open, null otherwise. */
+    val unmarkPrompt: StateFlow<UnmarkPrompt?> = _unmarkPrompt
+
+    private val _onlyCopy = MutableStateFlow<OnlyCopy?>(null)
+
+    /** A delete of a file the server no longer holds, waiting to be confirmed. */
+    val onlyCopy: StateFlow<OnlyCopy?> = _onlyCopy
 
     private val _notice = MutableStateFlow<String?>(null)
     val notice: StateFlow<String?> = _notice
@@ -128,8 +156,13 @@ class SeriesDetailViewModel(
                 library.mark(series)
                 return@launch
             }
-            val count = (state.value as? LoadState.Loaded)?.data?.deviceChapters ?: 0
-            if (count > 0) _unmarkPrompt.value = count else library.unmark(seriesId, deleteFiles = false)
+            val ui = (state.value as? LoadState.Loaded)?.data
+            val count = ui?.deviceChapters ?: 0
+            if (count > 0) {
+                _unmarkPrompt.value = UnmarkPrompt(count, ui?.let(::onlyCopiesOnDevice) ?: 0)
+            } else {
+                library.unmark(seriesId, deleteFiles = false)
+            }
         }
     }
 
@@ -140,14 +173,56 @@ class SeriesDetailViewModel(
 
     fun dismissUnmark() { _unmarkPrompt.value = null }
 
-    fun deleteChapter(chapterId: Long) = attempt { library.deleteChapter(chapterId) }
+    private fun loaded(): DetailUi? = (state.value as? LoadState.Loaded)?.data
 
-    fun deleteVolume(volumeId: Long) = attempt { library.deleteVolume(volumeId) }
+    private fun chapterRowsOnDevice(ui: DetailUi): List<ChapterRow> =
+        (ui.rows + ui.prose?.web?.flatMap { it.rows }.orEmpty()).filter { it.availability == Availability.OnDevice }
+
+    private fun volumeRowsOnDevice(ui: DetailUi): List<VolumeRow> =
+        ui.prose?.light.orEmpty().filter { it.availability == Availability.OnDevice }
+
+    private fun onlyCopiesOnDevice(ui: DetailUi): Int =
+        chapterRowsOnDevice(ui).distinctBy { it.id }.count { it.onlyCopy } + volumeRowsOnDevice(ui).count { it.onlyCopy }
+
+    fun deleteChapter(chapterId: Long) {
+        val ui = loaded()
+        if (ui != null && chapterRowsOnDevice(ui).any { it.id == chapterId && it.onlyCopy }) {
+            _onlyCopy.value = OnlyCopy.Chapter(chapterId)
+            return
+        }
+        attempt { library.deleteChapter(chapterId) }
+    }
+
+    fun deleteVolume(volumeId: Long) {
+        val ui = loaded()
+        if (ui != null && volumeRowsOnDevice(ui).any { it.id == volumeId && it.onlyCopy }) {
+            _onlyCopy.value = OnlyCopy.Volume(volumeId)
+            return
+        }
+        attempt { library.deleteVolume(volumeId) }
+    }
 
     fun deleteRead() {
         val detail = lastDetail ?: return
+        val ui = loaded()
+        if (ui != null && (chapterRowsOnDevice(ui).any { it.read && it.onlyCopy } || volumeRowsOnDevice(ui).any { it.read && it.onlyCopy })) {
+            _onlyCopy.value = OnlyCopy.Read
+            return
+        }
         attempt { library.deleteRead(detail) }
     }
+
+    fun confirmOnlyCopy() {
+        val pending = _onlyCopy.value ?: return
+        _onlyCopy.value = null
+        when (pending) {
+            is OnlyCopy.Chapter -> attempt { library.deleteChapter(pending.id) }
+            is OnlyCopy.Volume -> attempt { library.deleteVolume(pending.id) }
+            OnlyCopy.Read -> lastDetail?.let { detail -> attempt { library.deleteRead(detail) } }
+        }
+    }
+
+    fun dismissOnlyCopy() { _onlyCopy.value = null }
 
     fun dismissNotice() { _notice.value = null }
 

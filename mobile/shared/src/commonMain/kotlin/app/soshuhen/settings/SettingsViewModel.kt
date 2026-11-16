@@ -4,11 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.soshuhen.api.Identity
 import app.soshuhen.api.SoshuhenApi
+import app.soshuhen.core.LocalStore
 import app.soshuhen.core.Platform
+import app.soshuhen.core.Sync
+import app.soshuhen.core.SyncFlow
+import app.soshuhen.core.VolumeSpace
 import app.soshuhen.core.percentDecode
 import app.soshuhen.core.ServerStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
@@ -20,11 +25,35 @@ import kotlinx.coroutines.launch
 
 data class ServerCard(val baseUrl: String, val identity: Identity?)
 
+data class SeriesUsage(val seriesId: Long, val title: String, val bytes: Long)
+
+/** What the app's folder takes: from the index, plus what Android says is free on that volume. */
+data class StorageUi(val used: Long, val space: VolumeSpace?, val perSeries: List<SeriesUsage>)
+
 class SettingsViewModel(
     private val api: StateFlow<SoshuhenApi?>,
     private val store: ServerStore,
     private val platform: Platform,
+    local: LocalStore? = null,
+    sync: Sync? = null,
 ) : ViewModel() {
+    val storage: StateFlow<StorageUi?> = local?.let { l ->
+        combine(l.storageBySeries(), store.folder) { sums, uri ->
+            val titles = l.seriesSnapshot().orEmpty().associate { it.id to it.title }
+            StorageUi(
+                used = sums.values.sum(),
+                space = uri?.let(platform::freeSpace),
+                perSeries = sums.map { (id, bytes) -> SeriesUsage(id, titles[id] ?: "Series $id", bytes) }
+                    .sortedByDescending { it.bytes },
+            )
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    } ?: MutableStateFlow(null)
+
+    /** Every marked series: copy what is missing, then ask about the server's copies. */
+    val sync: SyncFlow? = sync?.let { s ->
+        SyncFlow(run = { progress -> s.run(null, progress) }, offload = s::offload, scope = viewModelScope)
+    }
+
     private val _server = MutableStateFlow<ServerCard?>(null)
     val server: StateFlow<ServerCard?> = _server
 
