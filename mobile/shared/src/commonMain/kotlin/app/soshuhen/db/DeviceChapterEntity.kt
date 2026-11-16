@@ -37,6 +37,9 @@ interface DeviceChapterDao {
     @Query("SELECT chapter_id FROM device_chapter")
     fun ids(): Flow<List<Long>>
 
+    @Query("SELECT * FROM device_chapter")
+    fun all(): Flow<List<DeviceChapterEntity>>
+
     @Query("SELECT DISTINCT series_id FROM device_chapter")
     fun seriesIds(): Flow<List<Long>>
 

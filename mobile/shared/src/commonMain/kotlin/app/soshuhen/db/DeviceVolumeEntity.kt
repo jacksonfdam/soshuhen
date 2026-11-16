@@ -35,6 +35,9 @@ interface DeviceVolumeDao {
     @Query("SELECT * FROM device_volume WHERE volume_id = :volumeId")
     suspend fun get(volumeId: Long): DeviceVolumeEntity?
 
+    @Query("SELECT * FROM device_volume")
+    fun all(): Flow<List<DeviceVolumeEntity>>
+
     @Query("SELECT DISTINCT series_id FROM device_volume")
     fun seriesIds(): Flow<List<Long>>
 

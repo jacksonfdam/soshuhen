@@ -29,6 +29,20 @@ class LocalStoreTest {
     private fun chapter(id: Long, series: Long) =
         DeviceChapter(id, series, 1.0, "c.cbz", "content://c", null, 10, Instant.fromEpochMilliseconds(1_000))
 
+    @Test fun storageSumsChaptersAndVolumesPerSeries() = runTest {
+        val at = Instant.fromEpochMilliseconds(1_000)
+        store.indexChapter(DeviceChapter(1, 1, 1.0, "a.cbz", "content://a", null, 100, at))
+        store.indexChapter(DeviceChapter(2, 1, 2.0, "b.cbz", "content://b", null, 250, at))
+        store.indexVolume(DeviceVolume(9, 2, 1.0, "v.epub", "content://v", null, 4_000, at))
+        assertEquals(mapOf(1L to 350L, 2L to 4_000L), store.storageBySeries().first())
+        assertEquals(4_350L, store.storageTotal().first())
+    }
+
+    @Test fun storageIsZeroWithNothingCopied() = runTest {
+        assertEquals(emptyMap(), store.storageBySeries().first())
+        assertEquals(0L, store.storageTotal().first())
+    }
+
     @Test fun aSavedLibraryReadsBack() = runTest {
         store.saveSeries(Fixtures.SERIES)
         assertEquals(2, store.seriesSnapshot()!!.size)

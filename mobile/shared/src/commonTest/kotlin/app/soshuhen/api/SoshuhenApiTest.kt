@@ -188,4 +188,38 @@ class RedirectTest {
         assertEquals(302, assertFailsWith<ApiException> { api.identity() }.status)
         assertEquals(listOf("10.0.0.5"), hosts)
     }
+
+    @Test
+    fun offloadPostsItemsAndDecodesResult() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        var sent = ""
+        val engine = MockEngine { request ->
+            requests += request
+            sent = (request.body as io.ktor.http.content.TextContent).text
+            respond(
+                """{"queued": 1, "skipped": [{"id": 4, "kind": "chapter", "reason": "not downloaded"}]}""",
+                HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val result = SoshuhenApi("http://10.0.0.5:8080", soshuhenHttpClient(engine)).offload(
+            OffloadRequest(chapters = listOf(OffloadItem(3, "\"e\"", 10)), volumes = emptyList()),
+        )
+        assertEquals("/api/offload", requests.single().url.encodedPath)
+        assertEquals(HttpMethod.Post, requests.single().method)
+        assertEquals(
+            OffloadRequest(chapters = listOf(OffloadItem(3, "\"e\"", 10)), volumes = emptyList()),
+            SoshuhenJson.decodeFromString<OffloadRequest>(sent),
+        )
+        assertEquals(1, result.queued)
+        assertEquals(OffloadSkip(4, "chapter", "not downloaded"), result.skipped.single())
+    }
+
+    @Test
+    fun aVolumeReadsWhetherItWasRevised() {
+        val volume = SoshuhenJson.decodeFromString<SeriesVolume>(
+            """{"number": 1, "edition": "light", "state": "offloaded", "revised": true}""",
+        )
+        assertTrue(volume.revised)
+    }
 }

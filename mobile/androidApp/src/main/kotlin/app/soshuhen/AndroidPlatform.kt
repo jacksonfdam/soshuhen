@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
+import android.os.StatFs
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
@@ -20,6 +21,8 @@ import androidx.core.net.toUri
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import app.soshuhen.core.Platform
+import app.soshuhen.core.VolumeSpace
+import app.soshuhen.core.storageRoot
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -95,6 +98,14 @@ class AndroidPlatform(private val app: Application) : Platform {
         pendingNotifications = answer
         launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         answer.await()
+    }
+
+    // A statfs on the volume's mount reads sizes only, never a file, so it needs
+    // no storage permission; any failure just hides the free-space figure.
+    override fun freeSpace(treeUri: String): VolumeSpace? = try {
+        storageRoot(treeUri)?.let { root -> StatFs(root).let { VolumeSpace(it.availableBytes, it.totalBytes) } }
+    } catch (_: Exception) {
+        null
     }
 
     override fun isBatteryUnrestricted(): Boolean =

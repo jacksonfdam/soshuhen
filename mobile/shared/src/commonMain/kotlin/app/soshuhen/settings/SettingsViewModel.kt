@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.soshuhen.api.Identity
 import app.soshuhen.api.SoshuhenApi
 import app.soshuhen.core.Platform
+import app.soshuhen.core.percentDecode
 import app.soshuhen.core.ServerStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -112,21 +113,4 @@ internal fun folderLabel(uri: String): String {
         volume == "primary" -> path.ifEmpty { "Internal storage" }
         else -> if (path.isEmpty()) volume else "$volume: $path"
     }
-}
-
-private fun percentDecode(s: String): String {
-    val bytes = mutableListOf<Byte>()
-    var i = 0
-    while (i < s.length) {
-        val c = s[i]
-        val escaped = if (c == '%' && i + 2 < s.length) s.substring(i + 1, i + 3).toIntOrNull(16) else null
-        if (escaped != null) {
-            bytes += escaped.toByte()
-            i += 3
-        } else {
-            bytes += c.toString().encodeToByteArray().toList()
-            i++
-        }
-    }
-    return bytes.toByteArray().decodeToString()
 }

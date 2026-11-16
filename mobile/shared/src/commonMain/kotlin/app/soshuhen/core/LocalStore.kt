@@ -199,6 +199,17 @@ open class LocalStore(
      */
     suspend fun markUnreadable(chapterId: Long) = db.deviceChapters().setEtag(chapterId, UNREADABLE_ETAG)
 
+    /** Bytes held per series, from the index rather than a walk of the folder, which is slow over SAF. */
+    fun storageBySeries(): Flow<Map<Long, Long>> =
+        combine(db.deviceChapters().all(), db.deviceVolumes().all()) { chapters, volumes ->
+            val sums = mutableMapOf<Long, Long>()
+            chapters.forEach { sums[it.seriesId] = (sums[it.seriesId] ?: 0L) + it.size }
+            volumes.forEach { sums[it.seriesId] = (sums[it.seriesId] ?: 0L) + it.size }
+            sums
+        }
+
+    fun storageTotal(): Flow<Long> = storageBySeries().map { it.values.sum() }
+
     fun deviceVolumes(seriesId: Long): Flow<List<DeviceVolume>> =
         db.deviceVolumes().forSeries(seriesId).map { rows -> rows.map { it.toVolume() } }
 
