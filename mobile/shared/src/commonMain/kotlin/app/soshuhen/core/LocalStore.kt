@@ -56,7 +56,7 @@ private const val SERIES_KEY = "series"
 private const val INSTANCE_KEY = "instance"
 
 // Unquoted, so never equal to an ETag a server sends.
-private const val UNREADABLE_ETAG = "unreadable"
+internal const val UNREADABLE_ETAG = "unreadable"
 private fun detailKey(id: Long) = "series/$id"
 private fun prefsKey(id: Long) = "prefs/$id"
 private fun resumeKey(id: Long) = "resume/$id"
