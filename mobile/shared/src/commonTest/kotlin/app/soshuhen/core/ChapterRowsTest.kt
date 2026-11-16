@@ -43,4 +43,18 @@ class ChapterRowsTest {
         kotlin.test.assertEquals(REMOVED_FROM_SERVER, unreadableReason(row, home = true))
         kotlin.test.assertEquals("Removed from server — download again from the web", REMOVED_FROM_SERVER)
     }
+
+    @Test fun a_device_copy_the_server_no_longer_holds_is_the_only_copy() {
+        // A failed or cancelled download again leaves the row known or failed,
+        // and the device copy is still the only one.
+        for (state in listOf("queued", "downloading", "failed", "known")) {
+            val detail = app.soshuhen.api.SeriesDetail(
+                app.soshuhen.api.Series(id = 1, title = "S", slug = "s"),
+                listOf(app.soshuhen.api.SeriesChapter(4, 4.0, state = state)),
+            )
+            val row = chapterRows(detail, onDevice = setOf(4L)).single()
+            kotlin.test.assertTrue(row.onlyCopy, state)
+            kotlin.test.assertEquals("On device only", deviceLabel(row), state)
+        }
+    }
 }

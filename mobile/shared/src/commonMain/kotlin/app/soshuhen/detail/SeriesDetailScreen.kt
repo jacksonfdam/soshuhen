@@ -597,7 +597,7 @@ private fun DeviceCard(ui: DetailUi, model: SeriesDetailViewModel, modifier: Mod
 private fun isNovel(state: LoadState<DetailUi>) = (state as? LoadState.Loaded)?.data?.prose != null
 
 private fun unreadableVolumeReason(row: VolumeRow): String = when {
-    row.onlyCopy && row.availability != Availability.OnDevice -> REMOVED_FROM_SERVER
+    row.offloaded && row.availability != Availability.OnDevice -> REMOVED_FROM_SERVER
     row.availability == Availability.NotDownloaded || row.id == null -> NOT_DOWNLOADED
     else -> NOT_ON_DEVICE
 }
@@ -718,7 +718,7 @@ private fun VolumeLine(
             when (row.availability) {
                 Availability.OnDevice -> StatePill(if (row.onlyCopy) "On device only" else "On device", Tone.Secondary)
                 Availability.OnServer -> StatePill(STATE_LABEL.getValue("downloaded"), STATE_TONE.getValue("downloaded"))
-                Availability.NotDownloaded -> if (row.onlyCopy) {
+                Availability.NotDownloaded -> if (row.offloaded) {
                     StatePill(STATE_LABEL.getValue("offloaded"), STATE_TONE.getValue("offloaded"))
                 } else {
                     StatePill(STATE_LABEL.getValue("known"), STATE_TONE.getValue("known"))
