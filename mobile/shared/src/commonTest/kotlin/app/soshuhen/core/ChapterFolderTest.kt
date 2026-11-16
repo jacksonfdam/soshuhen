@@ -11,8 +11,23 @@ class ChapterFolderTest {
         assertEquals("wa", writeMode(append = true))
     }
 
-    @Test fun aRefusedCreateInAFolderStillThereIsAFullDevice() {
-        assertIs<DeviceFull>(refusedToCreate(folderAvailable = true, "Ch 1.cbz"))
-        assertIs<FolderUnavailable>(refusedToCreate(folderAvailable = false, "Ch 1.cbz"))
+    @Test fun aRefusedCreateIsAFullDeviceOnlyWhenSpaceIsActuallyLow() {
+        assertIs<DeviceFull>(refusedToCreate(folderAvailable = true, freeBytes = 1_000_000, "Ch 1.cbz"))
+        assertIs<DeviceFull>(refusedToCreate(folderAvailable = true, freeBytes = 0, "Ch 1.cbz"))
+    }
+
+    @Test fun aRefusedCreateWithRoomToSpareIsNotAFullDevice() {
+        // A Galaxy Tab reported a full device with 109 GB free on the card.
+        val e = refusedToCreate(folderAvailable = true, freeBytes = 109_000_000_000, "Ch 1.cbz")
+        assertIs<CannotCreate>(e)
+        assertEquals("Ch 1.cbz", e.name)
+    }
+
+    @Test fun aRefusedCreateWithUnknownSpaceIsNotAFullDevice() {
+        assertIs<CannotCreate>(refusedToCreate(folderAvailable = true, freeBytes = null, "Ch 1.cbz"))
+    }
+
+    @Test fun aRefusedCreateInAFolderThatWentAwayIsTheFolder() {
+        assertIs<FolderUnavailable>(refusedToCreate(folderAvailable = false, freeBytes = 0, "Ch 1.cbz"))
     }
 }

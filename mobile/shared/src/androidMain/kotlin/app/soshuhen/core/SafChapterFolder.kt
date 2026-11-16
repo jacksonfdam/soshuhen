@@ -2,6 +2,8 @@ package app.soshuhen.core
 
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
+import android.os.StatFs
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +46,25 @@ class SafChapterFolder(
 
     private fun child(parent: DocumentFile, name: String, create: Boolean): DocumentFile? =
         parent.findFile(name)?.takeIf { it.isDirectory }
-            ?: if (create) parent.createDirectory(name) ?: throw refusedToCreate(isAvailable(), name) else null
+            ?: if (create) parent.createDirectory(name) ?: throw refused(name) else null
+
+    private fun refused(name: String): Exception = refusedToCreate(isAvailable(), freeBytes(), name)
+
+    // The volume's own figure, read where it is mounted. Asking the documents
+    // provider for its roots would be simpler, but needs a permission only the
+    // system holds. A tree id is "<volume>:<path>", "primary" for internal storage.
+    private fun freeBytes(): Long? = try {
+        val tree = Uri.parse(treeUri.value ?: return null)
+        val volume = DocumentsContract.getTreeDocumentId(tree).substringBefore(':')
+        val mount = when {
+            volume == "primary" -> Environment.getExternalStorageDirectory().path
+            volume.isEmpty() || volume.contains('/') || volume.contains("..") -> return null
+            else -> "/storage/$volume"
+        }
+        StatFs(mount).availableBytes
+    } catch (_: Exception) {
+        null
+    }
 
     private fun seriesDir(slug: String, create: Boolean): DocumentFile? {
         val root = child(tree(), ROOT, create) ?: return null
@@ -78,7 +98,7 @@ class SafChapterFolder(
     // alter the display name. Later steps address the file by the exact server
     // name, and the .part to final rename depends on it, so name it again.
     private fun createNamed(dir: DocumentFile, fileName: String): DocumentFile {
-        val created = dir.createFile(BINARY, fileName) ?: throw refusedToCreate(isAvailable(), fileName)
+        val created = dir.createFile(BINARY, fileName) ?: throw refused(fileName)
         if (created.name == fileName) return created
         val renamed = DocumentsContract.renameDocument(resolver, created.uri, fileName)
             ?: throw FolderUnavailable("Cannot name $fileName")

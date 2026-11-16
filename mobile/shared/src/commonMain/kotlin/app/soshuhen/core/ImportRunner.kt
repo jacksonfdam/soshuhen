@@ -34,6 +34,7 @@ data class ImportReport(
 
 private const val FOLDER_GONE = "SD card or folder not available: pick the folder again in Settings"
 private const val DEVICE_FULL = "Device full: free some space or delete read chapters"
+private const val CANNOT_CREATE = "Could not create a file in the chapters folder; will try again next time"
 private const val UNREADABLE = "Some chapters on the server could not be read; they will be tried again later"
 private const val LOST_SERVER = "Lost the server while copying; will continue next time"
 
@@ -233,6 +234,7 @@ class ImportRunner(
     private fun problemFor(e: Exception): String? = when {
         e is FolderUnavailable -> FOLDER_GONE
         e is DeviceFull -> DEVICE_FULL
+        e is CannotCreate -> CANNOT_CREATE
         e is Stop -> e.problem
         e is ApiException || e is Interrupted -> LOST_SERVER
         // A pulled card fails as a missing file or a bare IOException, never

@@ -40,10 +40,23 @@ class ChapterFileMissing : Exception()
  */
 fun writeMode(append: Boolean): String = if (append) "wa" else "wt"
 
+/** A create the provider refused for a reason other than a full disk, or one it did not say. */
+class CannotCreate(val name: String) : Exception("Cannot create $name")
+
+// Under this, the card has no room for even one chapter archive. Above it, a
+// refused create is something else, and "Device full" would send the user
+// deleting chapters for nothing.
+const val LOW_SPACE_BYTES = 64L * 1024 * 1024
+
 /**
- * A provider refuses to create a file or folder on a full card with nothing but
- * a null, which alone reads like a folder that went away; the folder still being
- * there is what tells the two apart, and decides which banner the user sees.
+ * A provider refuses to create a file or folder with nothing but a null, on a
+ * full card and on a card being ejected or swapped alike. The folder still being
+ * there tells it apart from a lost folder; only the free space the volume reports
+ * says whether the card is full. A Galaxy Tab once showed "Device full" with
+ * 109 GB free because the null alone was taken to mean it.
  */
-fun refusedToCreate(folderAvailable: Boolean, name: String): Exception =
-    if (folderAvailable) DeviceFull() else FolderUnavailable("Cannot create $name")
+fun refusedToCreate(folderAvailable: Boolean, freeBytes: Long?, name: String): Exception = when {
+    !folderAvailable -> FolderUnavailable("Cannot create $name")
+    freeBytes != null && freeBytes < LOW_SPACE_BYTES -> DeviceFull()
+    else -> CannotCreate(name)
+}
