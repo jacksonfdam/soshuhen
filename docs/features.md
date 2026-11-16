@@ -447,6 +447,14 @@ column, scrolled like an e-reader, with its illustrations in place.
 - **Your place is kept.** Where you stopped is saved as you scroll and comes back when you open the
   book again, or when you press **Continue**.
 - **Contents** jumps to a chapter of a volume when the book has a table of contents.
+- **Read aloud.** The headphones button reads the book out from where you are, with your browser's
+  own voices. The paragraph being read is highlighted and kept on screen, and your place moves on
+  with it, so stopping and opening the book again later picks up there. A bar at the bottom pauses,
+  steps back or forward a paragraph, and sets the speed and the voice; those two are remembered on
+  that device only, since each browser has its own voices. Reading stops when you leave the book or
+  jump with **Contents**. The voices are whatever the browser and system offer: on a Mac, the
+  Enhanced and Premium voices downloaded in System Settings sound better than the defaults.
+  A phone stops reading when its screen locks. The button is absent in a browser that cannot speak.
 - **At the end**, mark the volume or chapter read, or go straight on to the next one, which marks
   this one read on the way. A light novel volume reaches your lists as a volume read; a web novel
   chapter as a chapter. Either only ever moves them forward.
