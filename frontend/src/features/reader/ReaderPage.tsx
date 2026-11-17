@@ -200,9 +200,12 @@ function ReaderPage({
   const narrating = narration.on
   const pageNow = useRef(page)
   pageNow.current = page
+  // Taken again when the mode changes, not only when narration starts: a
+  // cursor set in a paged mode is the page narration began on, pages ago, and
+  // a switch to the strip would read from there.
   useEffect(() => {
-    setCursor(narrating ? pageNow.current : null)
-  }, [narrating])
+    setCursor(narrating && strip ? pageNow.current : null)
+  }, [narrating, strip])
 
   const changePrefs = useCallback(
     (next: Omit<ReaderPrefs, 'custom'>) => {
