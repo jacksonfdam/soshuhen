@@ -337,6 +337,26 @@ class ImportRunnerTest {
         assertEquals(2, store.importLog().first().size)
     }
 
+    @Test fun aRunWaitingForAnotherShowsWhatTheOtherIsDoing() = runTest {
+        // Opening the app starts a background copy; a Sync started meanwhile
+        // waited behind it saying nothing for as long as that copy took.
+        addSeries(1, "one", downloaded(10, 1.0), downloaded(11, 2.0))
+        serve(10); serve(11)
+        store.mark(1, "one")
+        val runner = runner()
+        val steps = mutableListOf<SyncProgress>()
+        val first = async { runner.run() }
+        runCurrent()
+        val second = async { runner.run(onStep = { steps += it }) }
+        first.await(); second.await()
+        assertEquals(SyncProgress.Waiting(SyncProgress.Starting), steps.first())
+        val waited = steps.takeWhile { it is SyncProgress.Waiting }.map { (it as SyncProgress.Waiting).inner }
+        assertTrue(waited.any { it is SyncProgress.Item && it.copying && it.title == "Title 1" })
+        // Its own run follows, once the other is done.
+        assertTrue(steps.drop(waited.size).isNotEmpty())
+        assertTrue(steps.drop(waited.size).none { it is SyncProgress.Waiting })
+    }
+
     @Test fun anIndexedChapterWithTheSameEtagIsSkipped() = runTest {
         addSeries(1, "one", downloaded(10, 1.0))
         serve(10)
@@ -670,6 +690,24 @@ class ImportRunnerTest {
         // The ETag probe, then the copy itself.
         assertEquals(before + 2, archiveRequests().size)
         assertEquals(path, indexed(10)?.uri)
+    }
+
+    @Test fun theRunSaysWhichSeriesItReadsAndWhichChapterItCopies() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0))
+        addSeries(2, "two", downloaded(20, 4.0))
+        serve(10); serve(20)
+        store.mark(1, "one"); store.mark(2, "two")
+        val steps = mutableListOf<SyncProgress>()
+        runner().run(onStep = { steps += it })
+        assertEquals(SyncProgress.Reading(0, 2), steps.first())
+        assertTrue(SyncProgress.Reading(1, 2) in steps)
+        val firstItem = steps.indexOfFirst { it is SyncProgress.Item }
+        assertTrue(steps.take(firstItem).all { it is SyncProgress.Reading })
+        val copying = steps.filterIsInstance<SyncProgress.Item>().filter { it.copying }
+        assertEquals(listOf("Title 1" to 1.0, "Title 2" to 4.0), copying.map { it.title to it.number })
+        assertEquals(listOf(0, 1), copying.map { it.copied })
+        assertEquals(listOf(0, 1), copying.map { it.done })
+        assertTrue(copying.all { it.total == 2 && it.kind == BookKind.Chapter })
     }
 
     @Test fun aRevokedFolderKeepsItsBannerWhenNothingNeedsCopying() = runTest {

@@ -11,25 +11,32 @@ private const val NOT_HOME = "Not on the home network: syncing needs the server"
  * user is asked whether to delete the server's copies.
  */
 class Sync(
-    private val importRun: suspend (onProgress: (Int, Int) -> Unit) -> ImportReport,
+    private val importRun: suspend (onStep: (SyncProgress) -> Unit) -> ImportReport,
     private val store: LocalStore,
     private val folder: ChapterFolder,
     private val atHome: () -> Boolean,
     private val offload: suspend (OffloadRequest) -> OffloadResult,
 ) {
     /** [scope] null is every marked series; the import itself always covers them all. */
-    suspend fun run(scope: Set<Long>?, onProgress: (Int, Int) -> Unit = { _, _ -> }): SyncReport {
+    suspend fun run(scope: Set<Long>?, onStep: (SyncProgress) -> Unit = {}): SyncReport {
         if (!atHome()) return SyncReport(0, emptyList(), emptyList(), emptyList(), NOT_HOME)
         // The importer's last-byte probe also fills an ETag an older import left out.
-        val imported = importRun(onProgress)
+        val imported = importRun(onStep)
         val ids = scope ?: store.markedIds().first()
         val details = ids.sorted().mapNotNull { store.detailSnapshot(it) }
         val chapters = details.flatMap { d -> d.chapters.mapNotNull { store.deviceChapter(it.id) } }.associateBy { it.chapterId }
         val volumes = details.flatMap { d -> d.volumes.mapNotNull { v -> v.id?.let { store.deviceVolume(it) } } }.associateBy { it.volumeId }
         val slugs = details.associate { it.series.id to it.series.slug }
         val actual = mutableMapOf<String, Long?>()
-        for (c in chapters.values) actual[c.uri] = sizeOf(slugs[c.seriesId], c.fileName, c.uri)
-        for (v in volumes.values) actual[v.uri] = sizeOf(slugs[v.seriesId], v.fileName, v.uri)
+        // Each lookup is a folder listing through SAF, slow enough over a few
+        // hundred files that the dialog has to say it is still working.
+        val files = chapters.values.map { Triple(it.seriesId, it.fileName, it.uri) } +
+            volumes.values.map { Triple(it.seriesId, it.fileName, it.uri) }
+        onStep(SyncProgress.Verifying(0, files.size))
+        for ((i, f) in files.withIndex()) {
+            actual[f.third] = sizeOf(slugs[f.first], f.second, f.third)
+            onStep(SyncProgress.Verifying(i + 1, files.size))
+        }
         return checkSync(details, DeviceState(chapters, volumes, actual)).copy(problem = imported.problem)
     }
 
