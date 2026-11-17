@@ -11,7 +11,13 @@ import {
   type SpeechEngine,
   type SpeechSettings,
 } from '../../../lib/readAloud.ts'
-import { CHAPTER_END, failureScript, pageScript, type ScriptItem } from './narrationScript.ts'
+import {
+  CHAPTER_END,
+  failureScript,
+  pageScript,
+  restsFor,
+  type ScriptItem,
+} from './narrationScript.ts'
 
 /** What narration needs from the reader it is narrating. */
 export interface NarrationHost {
@@ -55,6 +61,7 @@ export class Narration {
   // it is text, so one asked for under the old direction is not kept.
   private era = 0
   private settleMs: number
+  private paced: boolean
   private settling: ReturnType<typeof setTimeout> | null = null
 
   /**
@@ -62,10 +69,20 @@ export class Narration {
    * asked about it. A listener holding an arrow key passes a page every few
    * dozen milliseconds, and each one asked for is a second of the narrator's
    * time spent on a page nobody will hear, ahead of the one they stop on.
+   *
+   * `paced` keeps the script's silences between lines and panels. The reader
+   * always asks for them; the tests mostly do not, so they need not wait.
    */
-  constructor(engine: SpeechEngine, settings: SpeechSettings, host: NarrationHost, settleMs = 0) {
+  constructor(
+    engine: SpeechEngine,
+    settings: SpeechSettings,
+    host: NarrationHost,
+    settleMs = 0,
+    paced = false,
+  ) {
     this.host = host
     this.settleMs = settleMs
+    this.paced = paced
     this.player = new ReadAloudPlayer(
       engine,
       {
@@ -233,6 +250,7 @@ export class Narration {
       this.player.start(
         this.items.map((item) => utterances(item.text)),
         0,
+        this.paced ? restsFor(this.items) : [],
       )
       this.changed()
 

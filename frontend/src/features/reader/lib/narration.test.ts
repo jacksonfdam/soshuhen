@@ -3,7 +3,7 @@ import { test } from 'node:test'
 
 import type { SpeechEngine } from '../../../lib/readAloud.ts'
 import { Narration } from './narration.ts'
-import { CHAPTER_END, UNREADABLE } from './narrationScript.ts'
+import { AFTER_ANNOUNCEMENT, CHAPTER_END, UNREADABLE } from './narrationScript.ts'
 
 /** A transcript with one panel per argument, each holding the given lines. */
 const transcript = (...panels: string[][]) => ({
@@ -59,7 +59,12 @@ type Answer = ReturnType<typeof transcript> | Error
  * a transcript, an Error for a page the narrator cannot read, or absent for a
  * page whose answer the test delivers itself through `deliver`.
  */
-function reader(pages: number, book: Record<number, Answer> = {}, settleMs = 0) {
+function reader(
+  pages: number,
+  book: Record<number, Answer> = {},
+  settleMs = 0,
+  rests = false,
+) {
   const fake = fakeEngine()
   const asked: number[] = []
   const waiting = new Map<number, (answer: Answer) => void>()
@@ -89,6 +94,7 @@ function reader(pages: number, book: Record<number, Answer> = {}, settleMs = 0) 
       },
     },
     settleMs,
+    rests,
   )
   return {
     fake,
@@ -495,4 +501,27 @@ test('forgetting while narration is off only empties what was kept', async () =>
 
   assert.equal(run.narration.transcripts.size, 0)
   assert.equal(run.asked.length, asked)
+})
+
+test('with pauses on, a line waits a moment after the page number', async () => {
+  const run = reader(3, { 0: transcript(['A line.']) }, 0, true)
+  run.narration.show([0])
+  run.narration.toggle()
+  await settle()
+  await run.fake.finish()
+  assert.deepEqual(run.fake.spoken, ['Page 1.'])
+
+  await sleep(AFTER_ANNOUNCEMENT + 80)
+
+  assert.deepEqual(run.fake.spoken, ['Page 1.', 'A line.'])
+})
+
+test('without pauses a line follows the page number at once', async () => {
+  const run = reader(3, { 0: transcript(['A line.']) })
+  run.narration.show([0])
+  run.narration.toggle()
+  await settle()
+  await run.fake.finish()
+
+  assert.deepEqual(run.fake.spoken, ['Page 1.', 'A line.'])
 })

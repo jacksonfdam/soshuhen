@@ -54,6 +54,7 @@ export function useNarration(options: {
           changed: redraw,
         },
         SETTLE_MS,
+        true,
       ),
   )
 

@@ -37,8 +37,12 @@ with the reader turning its own pages.
 - Changing how the prose reader behaves. Its read-aloud code moves so both readers can use it, and
   that is all that changes there.
 - The Android client.
-- A second voice or timed silences to mark panels, which the proof of concept had. A spoken
-  announcement marks a panel; the shared player speaks in one voice.
+- A second voice to mark panels, which the proof of concept had. A spoken announcement marks a
+  panel; the shared player speaks in one voice. (Timed silences were on this list too. The first
+  trial on a real chapter showed a page read without them arrives as one breath, and the user asked
+  for a slower reading, so the player now keeps a silence after each line and a longer one after
+  each panel. Telling characters apart by voice was asked for at the same trial and is not built:
+  it needs to know who is speaking, which text recognition cannot say.)
 - Storing transcripts on the server, correcting them by hand, or searching them.
 - Audio files, downloads of narration, or server-side speech.
 - Replacing the proof of concept. It stays where it is as the record of the first experiment.

@@ -13,6 +13,13 @@ export interface ScriptItem {
   block: number | null
 }
 
+// Silences, in milliseconds. They are how a listener hears the layout: a
+// short one after the narrator's own words, a longer one where a bubble ends,
+// the longest where a panel does. Without them a page arrives as one breath.
+export const AFTER_ANNOUNCEMENT = 400
+export const BETWEEN_LINES = 500
+export const BETWEEN_PANELS = 1200
+
 export const UNREADABLE = 'This page could not be read aloud.'
 export const CHAPTER_END = 'End of chapter.'
 const NO_TEXT = 'No text.'
@@ -57,4 +64,22 @@ export function failureScript(page: number): ScriptItem[] {
     { text: `Page ${page + 1}.`, page, panel: null, block: null },
     { text: UNREADABLE, page, panel: null, block: null },
   ]
+}
+
+/** "Page 3." and "Panel 2.": the narrator's words, never lettering, which
+    always has a block. */
+function announces(item: ScriptItem): boolean {
+  return item.block === null && /^(Page|Panel) \d+\.$/.test(item.text)
+}
+
+/** The silence to keep after each item of a script, by what follows it. */
+export function restsFor(items: ScriptItem[]): number[] {
+  return items.map((item, at) => {
+    const next = items[at + 1]
+    if (!next) return 0
+    if (announces(item)) return AFTER_ANNOUNCEMENT
+    // What a panel says, or that it says nothing, followed by the narrator
+    // again: the panel, or the page, has ended.
+    return announces(next) ? BETWEEN_PANELS : BETWEEN_LINES
+  })
 }

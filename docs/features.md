@@ -446,6 +446,8 @@ who cannot see the page, or would rather listen.
   panel in reading order and the lettering in it. A panel with no lettering is announced as having
   none. A page that is a single panel, as every page of a long strip is, is read without the panel
   being announced.
+- **Silences carry the layout.** A short pause follows the narrator's own words, a longer one
+  ends a bubble, and the longest ends a panel, so a page does not arrive as one breath.
 - **It turns the pages itself** and stops at the end of the chapter, which counts as finishing it:
   your lists move forward exactly as if you had read it. It does not open the next chapter by
   itself. In double page mode it reads both pages of a spread before turning.

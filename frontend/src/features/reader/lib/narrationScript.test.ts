@@ -2,11 +2,15 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import {
+  AFTER_ANNOUNCEMENT,
+  BETWEEN_LINES,
+  BETWEEN_PANELS,
   CHAPTER_END,
   UNREADABLE,
   failureScript,
   narrationDirection,
   pageScript,
+  restsFor,
   type ScriptItem,
 } from './narrationScript.ts'
 
@@ -98,4 +102,46 @@ test('only the right-to-left paged mode reads right to left', () => {
   for (const mode of ['paged_ltr', 'double', 'long_strip'] as const) {
     assert.equal(narrationDirection(mode), 'ltr')
   }
+})
+
+test('the silences say where a line ends and where a panel does', () => {
+  const items = pageScript(0, transcript(['One.', 'Two.'], ['Three.']))
+  assert.deepEqual(said(items), ['Page 1.', 'Panel 1.', 'One.', 'Two.', 'Panel 2.', 'Three.'])
+  assert.deepEqual(restsFor(items), [
+    AFTER_ANNOUNCEMENT,
+    AFTER_ANNOUNCEMENT,
+    BETWEEN_LINES,
+    BETWEEN_PANELS,
+    AFTER_ANNOUNCEMENT,
+    0,
+  ])
+})
+
+test('a page that is one panel rests between its lines only', () => {
+  const items = pageScript(0, transcript(['One.', 'Two.', 'Three.']))
+  assert.deepEqual(restsFor(items), [AFTER_ANNOUNCEMENT, BETWEEN_LINES, BETWEEN_LINES, 0])
+})
+
+test('the second page of a spread is set apart like a new panel', () => {
+  const spread = [...pageScript(1, transcript(['Left.'])), ...pageScript(2, transcript(['Right.']))]
+  assert.deepEqual(said(spread), ['Page 2.', 'Left.', 'Page 3.', 'Right.'])
+  assert.deepEqual(restsFor(spread), [AFTER_ANNOUNCEMENT, BETWEEN_PANELS, AFTER_ANNOUNCEMENT, 0])
+})
+
+test('a wordless panel is followed by the pause that ends a panel', () => {
+  const items = pageScript(0, transcript([], ['Spoken.']))
+  assert.deepEqual(said(items), ['Page 1.', 'Panel 1.', 'No text.', 'Panel 2.', 'Spoken.'])
+  assert.deepEqual(restsFor(items), [
+    AFTER_ANNOUNCEMENT,
+    AFTER_ANNOUNCEMENT,
+    BETWEEN_PANELS,
+    AFTER_ANNOUNCEMENT,
+    0,
+  ])
+})
+
+test('a panel change is the longest silence and a line change the next longest', () => {
+  assert.ok(BETWEEN_PANELS > BETWEEN_LINES)
+  assert.ok(BETWEEN_LINES > AFTER_ANNOUNCEMENT)
+  assert.deepEqual(restsFor([]), [])
 })
