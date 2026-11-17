@@ -9,6 +9,11 @@ import app.soshuhen.db.ImportLogEntity
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -89,6 +94,10 @@ class ImportRunner(
     // chapters would write the same file at once.
     private val running = Mutex()
 
+    // Every run's current step, whoever started it, so a run that has to wait
+    // can show what the one ahead of it is doing.
+    private val current = MutableStateFlow<SyncProgress?>(null)
+
     suspend fun run(
         budget: Duration = 45.minutes,
         // Told once the plan is known and before the first copy: the worker decides
@@ -98,7 +107,22 @@ class ImportRunner(
         // being read and which chapter is being checked or copied.
         onStep: (SyncProgress) -> Unit = {},
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
-    ): ImportReport = running.withLock { runLocked(budget, onPlan, onProgress, onStep) }
+    ): ImportReport = coroutineScope {
+        val mirror = if (running.isLocked) {
+            onStep(SyncProgress.Waiting(SyncProgress.Starting))
+            launch { current.filterNotNull().collect { onStep(SyncProgress.Waiting(it)) } }
+        } else {
+            null
+        }
+        running.withLock {
+            mirror?.cancelAndJoin()
+            try {
+                runLocked(budget, onPlan, onProgress) { step -> current.value = step; onStep(step) }
+            } finally {
+                current.value = null
+            }
+        }
+    }
 
     private suspend fun runLocked(
         budget: Duration,
@@ -119,11 +143,11 @@ class ImportRunner(
         val importedVolumes = linkedMapOf<Long, MutableList<Double>>()
         val titles = linkedMapOf<Long, String>()
         var unreadable = 0
-        var current = 0
+        var position = 0
         var copiedSoFar = 0
 
         fun step(w: Work, copying: Boolean) = onStep(
-            SyncProgress.Item(current, work.size, copiedSoFar, w.detail.series.title, w.ref.kind, w.number, copying),
+            SyncProgress.Item(position, work.size, copiedSoFar, w.detail.series.title, w.ref.kind, w.number, copying),
         )
 
         suspend fun copy(w: Work): Outcome {
@@ -233,7 +257,7 @@ class ImportRunner(
             for ((done, w) in work.withIndex()) {
                 // The next periodic run continues; one run must not eat the day's dataSync time.
                 if (clock() - started >= budget) break
-                current = done
+                position = done
                 step(w, copying = false)
                 w.outcome = copyOne(w)
                 if (w.outcome == Outcome.Copied) copiedSoFar++

@@ -30,4 +30,12 @@ class SyncProgressTest {
     @Test fun verifying_the_device_counts_from_one() {
         assertEquals("Checking files on this device: 120 of 385…", progressText(SyncProgress.Verifying(119, 385)))
     }
+
+    @Test fun waiting_for_a_running_copy_shows_that_copy() {
+        val inner = SyncProgress.Item(4, 20, copied = 3, title = "Gin Tama", kind = BookKind.Chapter, number = 7.0, copying = true)
+        assertEquals(
+            "Waiting for the copy already running\n5 of 20 · 3 copied\nCopying Gin Tama · Ch. 7",
+            progressText(SyncProgress.Waiting(inner)),
+        )
+    }
 }

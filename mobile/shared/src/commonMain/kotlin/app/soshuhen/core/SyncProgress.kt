@@ -22,6 +22,9 @@ sealed interface SyncProgress {
         val copying: Boolean,
     ) : SyncProgress
 
+    /** Another run holds the importer, as the copy opening the app starts; [inner] is what it is doing. */
+    data class Waiting(val inner: SyncProgress) : SyncProgress
+
     /** [done] of [total] files on this device checked against the index. */
     data class Verifying(val done: Int, val total: Int) : SyncProgress
 }
@@ -34,5 +37,6 @@ fun progressText(p: SyncProgress): String = when (p) {
         val verb = if (p.copying) "Copying" else "Checking"
         "${p.done + 1} of ${p.total} · ${p.copied} copied\n$verb ${p.title} · $label ${formatChapter(p.number)}"
     }
+    is SyncProgress.Waiting -> "Waiting for the copy already running\n" + progressText(p.inner)
     is SyncProgress.Verifying -> "Checking files on this device: ${(p.done + 1).coerceAtMost(p.total)} of ${p.total}…"
 }

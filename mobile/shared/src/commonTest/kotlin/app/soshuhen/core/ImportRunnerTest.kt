@@ -337,6 +337,26 @@ class ImportRunnerTest {
         assertEquals(2, store.importLog().first().size)
     }
 
+    @Test fun aRunWaitingForAnotherShowsWhatTheOtherIsDoing() = runTest {
+        // Opening the app starts a background copy; a Sync started meanwhile
+        // waited behind it saying nothing for as long as that copy took.
+        addSeries(1, "one", downloaded(10, 1.0), downloaded(11, 2.0))
+        serve(10); serve(11)
+        store.mark(1, "one")
+        val runner = runner()
+        val steps = mutableListOf<SyncProgress>()
+        val first = async { runner.run() }
+        runCurrent()
+        val second = async { runner.run(onStep = { steps += it }) }
+        first.await(); second.await()
+        assertEquals(SyncProgress.Waiting(SyncProgress.Starting), steps.first())
+        val waited = steps.takeWhile { it is SyncProgress.Waiting }.map { (it as SyncProgress.Waiting).inner }
+        assertTrue(waited.any { it is SyncProgress.Item && it.copying && it.title == "Title 1" })
+        // Its own run follows, once the other is done.
+        assertTrue(steps.drop(waited.size).isNotEmpty())
+        assertTrue(steps.drop(waited.size).none { it is SyncProgress.Waiting })
+    }
+
     @Test fun anIndexedChapterWithTheSameEtagIsSkipped() = runTest {
         addSeries(1, "one", downloaded(10, 1.0))
         serve(10)
