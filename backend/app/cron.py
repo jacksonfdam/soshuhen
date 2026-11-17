@@ -27,6 +27,7 @@ CRON_JOBS: tuple[CronJob, ...] = (
     CronJob("progress_push", settings_store.CRON_PROGRESS_PUSH),
     CronJob("anime_list_sync", settings_store.CRON_ANIME_LIST_SYNC),
     CronJob("jnc_library_sync", settings_store.CRON_JNC_LIBRARY_SYNC),
+    CronJob("library_audit", settings_store.CRON_LIBRARY_AUDIT),
 )
 
 

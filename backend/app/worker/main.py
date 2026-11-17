@@ -30,6 +30,7 @@ from app.handlers import (  # noqa: F401
     jnc_library_sync,
     komga_read_progress,
     komga_scan,
+    library_audit,
     list_sync,
     list_write,
     match_search,
@@ -162,6 +163,13 @@ async def enqueue_jnc_library_sync() -> None:
     log.info("cron: queued J-Novel Club library sync")
 
 
+async def enqueue_library_audit() -> None:
+    async with get_sessionmaker()() as session:
+        await repo.enqueue(session, JobType.LIBRARY_AUDIT, {}, dedupe_key="library_audit")
+        await session.commit()
+    log.info("cron: queued library audit")
+
+
 # Keyed by the ids in app.cron, which is also what the dashboard reports on.
 # A job named there with nothing to run here would be reported as scheduled
 # and never fire.
@@ -171,6 +179,7 @@ ENQUEUERS = {
     "progress_push": enqueue_progress_push,
     "anime_list_sync": enqueue_anime_list_sync,
     "jnc_library_sync": enqueue_jnc_library_sync,
+    "library_audit": enqueue_library_audit,
 }
 
 

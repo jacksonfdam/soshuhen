@@ -66,6 +66,7 @@ class JobType(StrEnum):
     VOLUME_DOWNLOAD = "volume_download"
     IMPORT_FILES = "import_files"
     OFFLOAD = "offload"
+    LIBRARY_AUDIT = "library_audit"
 
 
 class Lane(StrEnum):

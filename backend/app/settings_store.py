@@ -17,6 +17,7 @@ CRON_CHAPTER_DISCOVER = "cron_chapter_discover"
 CRON_PROGRESS_PUSH = "cron_progress_push"
 CRON_ANIME_LIST_SYNC = "cron_anime_list_sync"
 CRON_JNC_LIBRARY_SYNC = "cron_jnc_library_sync"
+CRON_LIBRARY_AUDIT = "cron_library_audit"
 DOWNLOAD_CONCURRENCY = "download_concurrency"
 FETCH_CONCURRENCY = "fetch_concurrency"
 PER_SOURCE_CONCURRENCY = "per_source_concurrency"
@@ -58,6 +59,7 @@ class Defaults:
     # it feeds is expensive.
     cron_anime_list_sync: str = "0 */12 * * *"
     cron_jnc_library_sync: str = "0 */6 * * *"
+    cron_library_audit: str = "30 4 * * *"
     per_source_concurrency: int = 2
     # Four at once against five sites: enough that a match search is one round
     # trip rather than five, low enough that a series never has more sockets
@@ -108,6 +110,8 @@ def _fallback(key: str) -> str:
             return DEFAULTS.cron_anime_list_sync
         case k if k == CRON_JNC_LIBRARY_SYNC:
             return DEFAULTS.cron_jnc_library_sync
+        case k if k == CRON_LIBRARY_AUDIT:
+            return DEFAULTS.cron_library_audit
         case k if k == DOWNLOAD_CONCURRENCY:
             return str(get_settings().download_concurrency)
         case k if k == FETCH_CONCURRENCY:
@@ -203,6 +207,7 @@ async def all_settings(session: AsyncSession) -> dict[str, str]:
         CRON_PROGRESS_PUSH,
         CRON_ANIME_LIST_SYNC,
         CRON_JNC_LIBRARY_SYNC,
+        CRON_LIBRARY_AUDIT,
         DOWNLOAD_CONCURRENCY,
         PER_SOURCE_CONCURRENCY,
         SOURCE_SEARCH_CONCURRENCY,
