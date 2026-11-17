@@ -213,6 +213,16 @@ pre-order that has now been released, becomes a `volumes` notification for its s
 volume whose last part grew becomes a `parts` notification for that volume. A pre-order is not
 announced, and nothing is announced on a series' first sync, when every volume is new to the table.
 
+### `library_audit`
+**Payload** `{}` · **Enqueues** nothing
+
+Sets every `downloaded` chapter and volume whose file is no longer on disk back to `known`, with
+`file_path` and `komga_book_id` cleared. Nothing else notices an archive removed outside the
+pipeline, and such a row otherwise stays `downloaded` for good: the web reader cannot open it, a
+phone copying it gets a 404, and nothing downloads it again. Runs daily on the fetch lane
+(`cron_library_audit`, default `30 4 * * *`). When the library holds no archive at all it does
+nothing, because an unmounted volume looks exactly like that.
+
 ## Adding a job type
 
 1. Add the member to `JobType` in `backend/app/enums.py`.
