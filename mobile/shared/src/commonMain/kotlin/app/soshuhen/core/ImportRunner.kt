@@ -94,13 +94,17 @@ class ImportRunner(
         // Told once the plan is known and before the first copy: the worker decides
         // from it whether the run is long enough to deserve a foreground notification.
         onPlan: (missing: Int) -> Unit = {},
+        // Finer than onProgress, for a sync the user is watching: which series is
+        // being read and which chapter is being checked or copied.
+        onStep: (SyncProgress) -> Unit = {},
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
-    ): ImportReport = running.withLock { runLocked(budget, onPlan, onProgress) }
+    ): ImportReport = running.withLock { runLocked(budget, onPlan, onProgress, onStep) }
 
     private suspend fun runLocked(
         budget: Duration,
         onPlan: (missing: Int) -> Unit,
         onProgress: (done: Int, total: Int) -> Unit,
+        onStep: (SyncProgress) -> Unit,
     ): ImportReport {
         session.refreshLocation()
         val api = session.api.value
@@ -115,6 +119,12 @@ class ImportRunner(
         val importedVolumes = linkedMapOf<Long, MutableList<Double>>()
         val titles = linkedMapOf<Long, String>()
         var unreadable = 0
+        var current = 0
+        var copiedSoFar = 0
+
+        fun step(w: Work, copying: Boolean) = onStep(
+            SyncProgress.Item(current, work.size, copiedSoFar, w.detail.series.title, w.ref.kind, w.number, copying),
+        )
 
         suspend fun copy(w: Work): Outcome {
             if (w.indexed != null) {
@@ -138,6 +148,7 @@ class ImportRunner(
             }
             // Known to be missing from here on, should the run stop mid-copy.
             w.outcome = Outcome.Missing
+            step(w, copying = true)
             val got = try {
                 download(api, w)
             } catch (e: DeviceFull) {
@@ -185,7 +196,9 @@ class ImportRunner(
 
         val problem = try {
             store.saveSeries(api.seriesJson())
-            for (id in store.markedIds().first()) {
+            val marked = store.markedIds().first()
+            for ((read, id) in marked.withIndex()) {
+                onStep(SyncProgress.Reading(read, marked.size))
                 val json = try {
                     api.seriesDetailJson(id)
                 } catch (e: ApiException) {
@@ -220,7 +233,10 @@ class ImportRunner(
             for ((done, w) in work.withIndex()) {
                 // The next periodic run continues; one run must not eat the day's dataSync time.
                 if (clock() - started >= budget) break
+                current = done
+                step(w, copying = false)
                 w.outcome = copyOne(w)
+                if (w.outcome == Outcome.Copied) copiedSoFar++
                 onProgress(done + 1, work.size)
             }
             null

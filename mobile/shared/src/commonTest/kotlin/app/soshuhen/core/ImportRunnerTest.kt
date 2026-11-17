@@ -672,6 +672,24 @@ class ImportRunnerTest {
         assertEquals(path, indexed(10)?.uri)
     }
 
+    @Test fun theRunSaysWhichSeriesItReadsAndWhichChapterItCopies() = runTest {
+        addSeries(1, "one", downloaded(10, 1.0))
+        addSeries(2, "two", downloaded(20, 4.0))
+        serve(10); serve(20)
+        store.mark(1, "one"); store.mark(2, "two")
+        val steps = mutableListOf<SyncProgress>()
+        runner().run(onStep = { steps += it })
+        assertEquals(SyncProgress.Reading(0, 2), steps.first())
+        assertTrue(SyncProgress.Reading(1, 2) in steps)
+        val firstItem = steps.indexOfFirst { it is SyncProgress.Item }
+        assertTrue(steps.take(firstItem).all { it is SyncProgress.Reading })
+        val copying = steps.filterIsInstance<SyncProgress.Item>().filter { it.copying }
+        assertEquals(listOf("Title 1" to 1.0, "Title 2" to 4.0), copying.map { it.title to it.number })
+        assertEquals(listOf(0, 1), copying.map { it.copied })
+        assertEquals(listOf(0, 1), copying.map { it.done })
+        assertTrue(copying.all { it.total == 2 && it.kind == BookKind.Chapter })
+    }
+
     @Test fun aRevokedFolderKeepsItsBannerWhenNothingNeedsCopying() = runTest {
         addSeries(1, "one", downloaded(10, 1.0))
         serve(10)
