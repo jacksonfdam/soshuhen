@@ -238,6 +238,33 @@ export function readerPageUrl(chapterId: number, index: number): string {
   return `/api/reader/chapters/${chapterId}/pages/${index}`
 }
 
+/** How the rows of a page are read: right to left for manga, left to right
+    for everything else. */
+export type NarrationDirection = 'rtl' | 'ltr'
+
+/** Lettering a listener hears as one utterance: a bubble, a caption. */
+export interface TranscriptBlock {
+  /** x, y, width, height in the page's own pixels. */
+  box: number[]
+  text: string
+}
+
+export interface TranscriptPanel {
+  box: number[]
+  /** In reading order. Empty for a panel nobody speaks in. */
+  blocks: TranscriptBlock[]
+}
+
+/** What a page says, as the narrator service read it. */
+export interface PageTranscript {
+  engine: string
+  language: string
+  width: number
+  height: number
+  /** In reading order, and never empty: a page with no borders is one panel. */
+  panels: TranscriptPanel[]
+}
+
 export interface SeriesEntry {
   provider: string
   provider_media_id: string
@@ -1065,6 +1092,11 @@ export const api = {
     request<{ chapter_id: number; page: number }>(`/api/reader/series/${seriesId}/resume`),
   readerChapters: (seriesId: number) =>
     request<ReaderChapter[]>(`/api/series/${seriesId}/chapters`),
+  readerNarration: () => request<{ available: boolean }>('/api/reader/narration'),
+  readerTranscript: (chapterId: number, index: number, direction: NarrationDirection) =>
+    request<PageTranscript>(
+      `/api/reader/chapters/${chapterId}/pages/${index}/transcript?direction=${direction}`,
+    ),
   saveReaderPosition: (seriesId: number, chapterId: number, page: number) =>
     request<{ ok: boolean }>(`/api/reader/series/${seriesId}/position`, {
       method: 'PUT',
