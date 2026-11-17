@@ -19,12 +19,13 @@ class SyncTest {
     private val sent = mutableListOf<OffloadRequest>()
     private var home = true
     private var imports = 0
+    private val scopes = mutableListOf<Set<Long>?>()
 
     private val detailJson = """{"series": {"id": 1, "title": "Frieren", "slug": "frieren"},
         "chapters": [{"id": 1, "number": 1, "state": "downloaded", "file_path": "/manga/frieren/c1.cbz"}]}"""
 
     private fun sync() = Sync(
-        importRun = { _ -> imports++; ImportReport(emptyMap(), emptyMap(), 0, null) },
+        importRun = { scope, _ -> imports++; scopes += scope; ImportReport(emptyMap(), emptyMap(), 0, null) },
         store = store,
         folder = folder,
         atHome = { home },
@@ -57,6 +58,13 @@ class SyncTest {
         val steps = mutableListOf<SyncProgress>()
         sync().run(scope = null) { steps += it }
         assertEquals(listOf(SyncProgress.Verifying(0, 1), SyncProgress.Verifying(1, 1)), steps.filterIsInstance<SyncProgress.Verifying>())
+    }
+
+    @Test fun sync_of_one_series_copies_only_that_series() = runTest {
+        holdChapterOne()
+        sync().run(scope = setOf(1L))
+        sync().run(scope = null)
+        assertEquals(listOf(setOf(1L), null), scopes)
     }
 
     @Test fun sync_away_from_home_does_nothing() = runTest {
