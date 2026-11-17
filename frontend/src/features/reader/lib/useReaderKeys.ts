@@ -8,6 +8,7 @@ export interface ReaderKeyActions {
   previousChapter: () => void
   nextChapter: () => void
   fullscreen: () => void
+  narrate: () => void
   escape: () => void
 }
 
@@ -42,6 +43,9 @@ export function useReaderKeys(actions: ReaderKeyActions): void {
           break
         case 'f':
           run.fullscreen()
+          break
+        case 'n':
+          run.narrate()
           break
         case 'Escape':
           run.escape()

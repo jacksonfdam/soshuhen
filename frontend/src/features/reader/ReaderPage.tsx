@@ -3,11 +3,14 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { api, readerPageUrl, type ReaderPrefs } from '../../lib/api'
 import { useAsyncData } from '../../lib/useAsyncData'
+import { ReadAloudBar } from '../../ui'
 import { ChapterPanel } from './ChapterPanel'
 import { DesktopChrome } from './DesktopChrome'
 import { EndOfChapter } from './EndOfChapter'
+import { narrationDirection } from './lib/narrationScript'
 import { clampPage, spreadOf, spreads } from './lib/spreads'
 import { BACKGROUND } from './lib/styles'
+import { useNarration } from './lib/useNarration'
 import { usePositionSaver } from './lib/usePositionSaver'
 import { usePreload } from './lib/usePreload'
 import { useReaderKeys } from './lib/useReaderKeys'
@@ -18,10 +21,18 @@ import { ReaderMessage } from '../../ui/ReaderMessage'
 import { SettingsPanel } from './SettingsPanel'
 import { StripView } from './StripView'
 import { TabletChrome } from './TabletChrome'
+import { TranscriptPanel } from './TranscriptPanel'
 
 const PRELOAD_AHEAD = 3
 
-export type Panel = 'settings' | 'chapters' | null
+export type Panel = 'settings' | 'chapters' | 'transcript' | null
+
+/** What the chrome needs of narration: whether to offer it, and its switch. */
+export interface NarrationControl {
+  supported: boolean
+  on: boolean
+  onToggle: () => void
+}
 
 /**
  * A fresh reader per chapter.
@@ -33,10 +44,24 @@ export type Panel = 'settings' | 'chapters' | null
  */
 export function ReaderRoute() {
   const { chapterId } = useParams()
-  return <ReaderPage key={chapterId} />
+  // Kept here because the reader below is remounted per chapter: a listener
+  // who opens the next chapter should not have to start narration again.
+  const narrating = useRef(false)
+  const setNarrating = useCallback((on: boolean) => {
+    narrating.current = on
+  }, [])
+  return (
+    <ReaderPage key={chapterId} initiallyNarrating={narrating.current} onNarrating={setNarrating} />
+  )
 }
 
-function ReaderPage() {
+function ReaderPage({
+  initiallyNarrating,
+  onNarrating,
+}: {
+  initiallyNarrating: boolean
+  onNarrating: (on: boolean) => void
+}) {
   const chapterId = Number(useParams().chapterId)
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
@@ -127,6 +152,58 @@ function ReaderPage() {
     else if (manifest.previous) openChapter(manifest.previous.id)
   }, [manifest, strip, atEnd, step, groups, goTo, openChapter])
 
+  const loadNarrator = useCallback(() => api.readerNarration(), [])
+  // A failure reads as no narrator: the control is simply not offered.
+  const narrator = useAsyncData(loadNarrator)
+
+  // Down a strip a page is a place in the scroll, which moves under the
+  // listener's own hand. Narration keeps its place apart from it: the page it
+  // is reading, taken from the screen when it starts and moved on as it goes.
+  const [cursor, setCursor] = useState<number | null>(null)
+  const onScreen = useMemo(() => {
+    if (!manifest) return []
+    if (strip) return [cursor ?? page]
+    return atEnd ? [] : (groups[step] ?? [page])
+  }, [manifest, strip, cursor, page, atEnd, groups, step])
+
+  const pagesDone = useCallback((): 'continue' | 'end' => {
+    if (!manifest) return 'end'
+    if (strip) {
+      const next = (cursor ?? page) + 1
+      if (next >= manifest.page_count) {
+        finish()
+        return 'end'
+      }
+      setCursor(next)
+      document.querySelector(`[data-index="${next}"]`)?.scrollIntoView({ behavior: 'smooth' })
+      return 'continue'
+    }
+    // Asked before turning: after the last spread `forward` shows the end
+    // screen and finishes the chapter, exactly as turning to it by hand does.
+    const last = step + 1 >= groups.length
+    forward()
+    return last ? 'end' : 'continue'
+  }, [manifest, strip, cursor, page, step, groups, forward, finish])
+
+  const narration = useNarration({
+    chapterId,
+    pageCount: manifest?.page_count ?? 0,
+    pages: onScreen,
+    direction: narrationDirection(mode),
+    available: narrator.data?.available ?? false,
+    ready: manifest !== null && prefs !== null,
+    initiallyOn: initiallyNarrating,
+    onChange: onNarrating,
+    onPagesDone: pagesDone,
+  })
+
+  const narrating = narration.on
+  const pageNow = useRef(page)
+  pageNow.current = page
+  useEffect(() => {
+    setCursor(narrating ? pageNow.current : null)
+  }, [narrating])
+
   const changePrefs = useCallback(
     (next: Omit<ReaderPrefs, 'custom'>) => {
       if (!manifest || !prefs) return
@@ -176,6 +253,7 @@ function ReaderPage() {
     previousChapter,
     nextChapter,
     fullscreen: toggleFullscreen,
+    narrate: narration.toggle,
     escape: () => setPanel(null),
   })
 
@@ -215,6 +293,11 @@ function ReaderPage() {
   }
 
   const toggleChrome = () => setChromeVisible((visible) => !visible)
+  const narrationControl: NarrationControl = {
+    supported: narration.supported,
+    on: narration.on,
+    onToggle: narration.toggle,
+  }
   // Down a strip a page is a place in the scroll, not a state to set.
   const seek = (index: number) => {
     if (strip) document.querySelector(`[data-index="${index}"]`)?.scrollIntoView()
@@ -268,6 +351,7 @@ function ReaderPage() {
         onSeek={seek}
         onOpenChapter={openChapter}
         onPanel={setPanel}
+        narration={narrationControl}
       />
       <DesktopChrome
         manifest={manifest}
@@ -278,13 +362,35 @@ function ReaderPage() {
         onOpenChapter={openChapter}
         onPanel={setPanel}
         onFullscreen={toggleFullscreen}
+        narration={narrationControl}
       />
+      {narration.on && (
+        <ReadAloudBar
+          unit="line"
+          state={narration.state}
+          voices={narration.voices}
+          settings={narration.settings}
+          onToggle={narration.playPause}
+          onSkip={narration.skip}
+          onConfigure={narration.configure}
+          onClose={narration.toggle}
+        />
+      )}
       {panel === 'settings' && (
         <SettingsPanel
           prefs={prefs}
           error={prefsError}
           onChange={changePrefs}
           onMakeDefault={makeDefault}
+          onClose={() => setPanel(null)}
+        />
+      )}
+      {panel === 'transcript' && (
+        <TranscriptPanel
+          pages={onScreen}
+          transcripts={narration.transcripts}
+          failed={narration.failed}
+          place={narration.place}
           onClose={() => setPanel(null)}
         />
       )}

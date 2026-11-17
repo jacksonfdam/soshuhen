@@ -4,7 +4,7 @@ import type { ReaderManifest } from '../../lib/api'
 import { formatChapter } from '../../lib/format'
 import { Icon } from '../../ui'
 import { PageSlider } from './PageSlider'
-import type { Panel } from './ReaderPage'
+import type { NarrationControl, Panel } from './ReaderPage'
 
 const ROUND =
   'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-container-highest text-on-surface disabled:opacity-40'
@@ -20,11 +20,13 @@ export function TabletChrome({
   onSeek,
   onOpenChapter,
   onPanel,
+  narration,
 }: {
   manifest: ReaderManifest
   page: number
   rtl: boolean
   visible: boolean
+  narration: NarrationControl
   onSeek: (page: number) => void
   onOpenChapter: (chapterId: number) => void
   onPanel: (panel: Panel) => void
@@ -49,7 +51,13 @@ export function TabletChrome({
           </p>
         </div>
       </header>
-      <footer className="fixed inset-x-0 bottom-0 z-30 flex flex-col gap-space-sm bg-surface-container/95 px-space-md pb-space-md pt-space-sm">
+      {/* Lifted clear of the read-aloud bar while it is up, which is pinned
+          to the same edge. */}
+      <footer
+        className={`fixed inset-x-0 z-30 flex flex-col gap-space-sm bg-surface-container/95 px-space-md pb-space-md pt-space-sm ${
+          narration.on ? 'bottom-prose-bar' : 'bottom-0'
+        }`}
+      >
         {manifest.origin === 'stream' && (
           <p className="text-center text-body-sm text-on-surface-variant">
             Streaming from the source. Saved to the library once every page has loaded.
@@ -88,6 +96,27 @@ export function TabletChrome({
           >
             <Icon name="settings" className="h-6 w-6" />
           </button>
+          {narration.supported && (
+            <>
+              <button
+                type="button"
+                aria-label="Read aloud"
+                aria-pressed={narration.on}
+                onClick={narration.onToggle}
+                className={`${BAR_BUTTON} ${narration.on ? 'bg-primary/20 text-primary' : ''}`}
+              >
+                <Icon name="headphones" className="h-6 w-6" />
+              </button>
+              <button
+                type="button"
+                aria-label="Page transcript"
+                onClick={() => onPanel('transcript')}
+                className={BAR_BUTTON}
+              >
+                <Icon name="notes" className="h-6 w-6" />
+              </button>
+            </>
+          )}
         </div>
       </footer>
     </div>
