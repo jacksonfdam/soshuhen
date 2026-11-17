@@ -709,3 +709,53 @@ async def test_the_manifest_does_not_change_when_narration_is_on(client, tmp_pat
     _narrator(monkeypatch, lambda request: httpx.Response(200, json=TRANSCRIPT))
 
     assert (await client.get(f"/api/reader/chapters/{chapter_id}")).json() == before
+
+
+async def test_what_fetching_a_page_records_is_committed_before_the_narrator_is_asked(
+    client, monkeypatch
+):
+    # The narrator can take a minute. A request that asked it with its
+    # transaction still open would hold a database connection for that minute.
+    streamed = Streamed(_always(200), [PageRef(url="/p1.jpg"), PageRef(url="/p2.jpg")])
+    try:
+        async with get_sessionmaker()() as session:
+            _, chapter_id = await streamed.seed(session)
+        seen: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            # Read through a session of its own, so only committed work shows.
+            seen.append(await _state(chapter_id))
+            return httpx.Response(200, json=TRANSCRIPT)
+
+        _narrator(monkeypatch, handler)
+
+        response = await client.get(f"/api/reader/chapters/{chapter_id}/pages/0/transcript")
+
+        assert response.status_code == 200
+        assert seen == ["streaming"]
+    finally:
+        streamed.close()
+
+
+async def test_a_narrator_failure_does_not_undo_what_fetching_the_page_recorded(
+    client, monkeypatch
+):
+    streamed = Streamed(_always(200), [PageRef(url="/p1.jpg")])
+    try:
+        async with get_sessionmaker()() as session:
+            _, chapter_id = await streamed.seed(session)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("connection refused", request=request)
+
+        _narrator(monkeypatch, handler)
+
+        response = await client.get(f"/api/reader/chapters/{chapter_id}/pages/0/transcript")
+
+        assert response.status_code == 502
+        # The page is in the cache whatever the narrator did, and it was the
+        # chapter's only page: it must still become a download.
+        assert await _state(chapter_id) == "streaming"
+        assert await _assembly_jobs(chapter_id) == 1
+    finally:
+        streamed.close()

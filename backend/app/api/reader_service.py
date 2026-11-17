@@ -204,6 +204,14 @@ async def transcript(
         # not fetch from a source on behalf of a feature it does not have.
         raise NarrationOff("narration is not set up on this installation")
     data, _ = await serve_page(session, row, index)
+    # Committed here, before the narrator is asked, for two reasons. The
+    # narrator may take a minute, and a transaction left open across that
+    # minute holds one of the pool's few connections: pages turned quickly
+    # against a slow narrator would leave none for the rest of the api. And
+    # what fetching the page recorded (the chapter is streaming, its assembly
+    # is queued) is true whether or not the narrator can read it; rolled back
+    # with a failed reading, the cached page would never become a download.
+    await session.commit()
     try:
         async with narrator_client() as client:
             return await narration.transcribe(client, url, data, direction)
