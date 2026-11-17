@@ -357,6 +357,18 @@ class ImportRunnerTest {
         assertTrue(steps.drop(waited.size).none { it is SyncProgress.Waiting })
     }
 
+    @Test fun aRunForOneSeriesLeavesTheOthersAlone() = runTest {
+        // Sync on a series' screen copied every marked series.
+        addSeries(1, "one", downloaded(10, 1.0))
+        addSeries(2, "two", downloaded(20, 1.0))
+        serve(10); serve(20)
+        store.mark(1, "one"); store.mark(2, "two")
+        val report = runner().run(only = setOf(1L))
+        assertEquals(mapOf(1L to listOf(1.0)), report.imported)
+        assertNull(indexed(20))
+        assertTrue(log.none { it.startsWith("GET /api/series/2") || it.startsWith("GET /api/chapters/20/") })
+    }
+
     @Test fun anIndexedChapterWithTheSameEtagIsSkipped() = runTest {
         addSeries(1, "one", downloaded(10, 1.0))
         serve(10)

@@ -11,17 +11,17 @@ private const val NOT_HOME = "Not on the home network: syncing needs the server"
  * user is asked whether to delete the server's copies.
  */
 class Sync(
-    private val importRun: suspend (onStep: (SyncProgress) -> Unit) -> ImportReport,
+    private val importRun: suspend (scope: Set<Long>?, onStep: (SyncProgress) -> Unit) -> ImportReport,
     private val store: LocalStore,
     private val folder: ChapterFolder,
     private val atHome: () -> Boolean,
     private val offload: suspend (OffloadRequest) -> OffloadResult,
 ) {
-    /** [scope] null is every marked series; the import itself always covers them all. */
+    /** [scope] null is every marked series; otherwise only those are copied and checked. */
     suspend fun run(scope: Set<Long>?, onStep: (SyncProgress) -> Unit = {}): SyncReport {
         if (!atHome()) return SyncReport(0, emptyList(), emptyList(), emptyList(), NOT_HOME)
         // The importer's last-byte probe also fills an ETag an older import left out.
-        val imported = importRun(onStep)
+        val imported = importRun(scope, onStep)
         val ids = scope ?: store.markedIds().first()
         val details = ids.sorted().mapNotNull { store.detailSnapshot(it) }
         val chapters = details.flatMap { d -> d.chapters.mapNotNull { store.deviceChapter(it.id) } }.associateBy { it.chapterId }

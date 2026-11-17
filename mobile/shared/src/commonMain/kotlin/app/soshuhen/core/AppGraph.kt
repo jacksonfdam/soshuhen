@@ -42,7 +42,7 @@ class AppGraph(
     val outbox = Outbox(local) { Clock.System.now() }
     val importer = ImportRunner(session, local, folder, outbox, archiveCheck, epubCheck) { Clock.System.now() }
     val sync = Sync(
-        importRun = { step -> importer.run(onStep = step) },
+        importRun = { scope, step -> importer.run(only = scope, onStep = step) },
         store = local,
         folder = folder,
         atHome = { session.atHome.value },

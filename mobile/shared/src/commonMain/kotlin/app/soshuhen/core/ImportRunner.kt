@@ -103,6 +103,9 @@ class ImportRunner(
         // Told once the plan is known and before the first copy: the worker decides
         // from it whether the run is long enough to deserve a foreground notification.
         onPlan: (missing: Int) -> Unit = {},
+        // The marked series to cover, or null for all of them: a Sync started
+        // from one series' screen is about that series alone.
+        only: Set<Long>? = null,
         // Finer than onProgress, for a sync the user is watching: which series is
         // being read and which chapter is being checked or copied.
         onStep: (SyncProgress) -> Unit = {},
@@ -117,7 +120,7 @@ class ImportRunner(
         running.withLock {
             mirror?.cancelAndJoin()
             try {
-                runLocked(budget, onPlan, onProgress) { step -> current.value = step; onStep(step) }
+                runLocked(budget, onPlan, onProgress, only) { step -> current.value = step; onStep(step) }
             } finally {
                 current.value = null
             }
@@ -128,6 +131,7 @@ class ImportRunner(
         budget: Duration,
         onPlan: (missing: Int) -> Unit,
         onProgress: (done: Int, total: Int) -> Unit,
+        only: Set<Long>?,
         onStep: (SyncProgress) -> Unit,
     ): ImportReport {
         session.refreshLocation()
@@ -220,7 +224,7 @@ class ImportRunner(
 
         val problem = try {
             store.saveSeries(api.seriesJson())
-            val marked = store.markedIds().first()
+            val marked = store.markedIds().first().let { ids -> if (only == null) ids else ids intersect only }
             for ((read, id) in marked.withIndex()) {
                 onStep(SyncProgress.Reading(read, marked.size))
                 val json = try {
