@@ -70,6 +70,20 @@ a six-day-old frontend while every service reported itself started. `frontend/.d
 keeps the host's modules out; a cached `npm install` layer from before it can still need
 `--no-cache` once.
 
+`narrator` is a third image, built from `narrator/`, and only exists under its profile. Every
+command that should see it has to name the profile, `ps` included:
+
+```bash
+docker compose build narrator && docker compose --profile narrator up -d --force-recreate narrator
+docker compose --profile narrator ps
+```
+
+Its tests run from `narrator/` with its own virtual environment (`uv venv && uv pip install -e
+".[dev]"`, then `.venv/bin/python -m pytest -q`). One of them loads the real engine; the models are
+inside the wheel, so it needs no network. Importing the `narrator` package sets
+`ORT_DISABLE_TELEMETRY`, because ONNX Runtime reports usage to Microsoft by default: keep that
+import first in anything that loads the runtime.
+
 Read the `ps` output, not just the `up` output: `up` reports only the services it touched. Once,
 `web`, `komga`, `comick` and `flaresolverr` were found stopped after a rebuild that never touched
 them, and the interface was down until `docker compose ps` showed it.

@@ -192,6 +192,12 @@ The container runs as a non-root user, exposes its port to the compose network o
 volume. It decodes images that came from third-party sites, which is one more reason it is a
 separate process with nothing mounted.
 
+*Found while building:* ONNX Runtime 1.31 reports usage to a Microsoft collector by default, on
+Linux and macOS, starting when the runtime loads. That is outbound traffic this design forbids, so
+the service forces the runtime's opt-out on import and in the image, and its compose network is
+marked `internal`, shared only with `api`, so the container has no route off the host whatever a
+dependency attempts.
+
 ### The api
 
 - `Settings.narrator_url`, from `NARRATOR_URL`, empty by default. Empty means the feature is off.

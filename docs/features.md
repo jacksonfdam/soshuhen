@@ -427,7 +427,7 @@ them. Open any chapter from a series page, or **Continue** from Home to land whe
 - **Tablet and desktop.** Below desktop width the controls hide until you tap the middle of the
   page, with a page slider and a settings sheet at the bottom. On a desktop they stay on screen as a
   chapter pill and a tool bar, with the keyboard: arrows turn pages and follow the reading
-  direction, space scrolls, `[` and `]` change chapter, `f` goes fullscreen.
+  direction, space scrolls, `[` and `]` change chapter, `f` goes fullscreen, `n` reads aloud.
 - **A long strip shows how far you are.** A thin rail along the top edge fills as you go down
   the chapter, and covers none of the page.
 - **The strip is as wide as you want it.** Hold Ctrl and turn the wheel (or pinch on a trackpad)
@@ -436,6 +436,37 @@ them. Open any chapter from a series page, or **Continue** from Home to land whe
 
 Finishing a chapter moves your lists forward, never back, and marks the book read in Komga when
 Komga has it.
+
+### Having a chapter read to you
+
+With the optional narrator service running, the reader can read a comic aloud. It is for a reader
+who cannot see the page, or would rather listen.
+
+- **Read aloud** (the headphones button, or `n`) reads the page on screen: its number, then each
+  panel in reading order and the lettering in it. A panel with no lettering is announced as having
+  none. A page that is a single panel, as every page of a long strip is, is read without the panel
+  being announced.
+- **It turns the pages itself** and stops at the end of the chapter, which counts as finishing it:
+  your lists move forward exactly as if you had read it. It does not open the next chapter by
+  itself. In double page mode it reads both pages of a spread before turning.
+- **The same bar as the novel reader** pauses, steps back or forward a line, and sets the speed and
+  the voice. The voice and speed you pick are shared with the novel reader, and remembered on that
+  device only.
+- **Page transcript** shows what is being read as text, with the line being spoken marked. A screen
+  reader or a braille display can read it; it does not announce itself, so it never talks over the
+  narration.
+- **Nothing leaves your machine.** The lettering is recognised by the narrator service on your own
+  host, which has no route to the internet, and spoken by your browser.
+
+What it does not do, yet: it reads English lettering only; it does not describe the artwork or say
+who is speaking; and it makes mistakes. Words set tightly sometimes come back joined, a sound
+effect drawn into the art or a page number is sometimes read as text, a line far from the rest of
+its bubble can be left out, and on a page without clear borders several panels are read as one. A
+page it cannot read at all is said to be so, once, and narration waits there rather than walking
+on through the chapter.
+
+The button is absent when the narrator is not set up, and in a browser that cannot speak. Setting
+it up is in [configuration](configuration.md#narrator-optional).
 
 ### Reading novels
 
