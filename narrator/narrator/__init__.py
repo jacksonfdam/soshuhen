@@ -8,3 +8,10 @@ import os
 # here, in the one module every import of this package passes through, and it is forced rather
 # than defaulted so a stray setting cannot turn reporting back on.
 os.environ["ORT_DISABLE_TELEMETRY"] = "1"
+
+# OpenCV refuses to decode an image of more pixels than this. Its own default is over a thousand
+# million: a file of a few hundred kilobytes, served by a third-party site, can ask for gigabytes
+# of memory and minutes of recognition. The longest strip seen in a real library is thirteen
+# million pixels. Set here for the same reason as the line above: the decoder reads it when it
+# first loads, and this module is imported before anything that loads it.
+os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] = "50000000"

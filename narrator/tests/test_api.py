@@ -2,6 +2,7 @@ import asyncio
 
 import cv2
 import httpx
+import numpy as np
 import pytest
 from fastapi import FastAPI
 
@@ -89,3 +90,23 @@ def test_a_body_over_the_limit_is_413(client, png, monkeypatch):
 
 def test_health(client):
     assert client.get("/healthz").json() == {"ok": True}
+
+
+def test_an_image_that_decodes_to_more_pixels_than_the_limit_is_413(client):
+    # A few hundred kilobytes on the wire, eighty-one million pixels once decoded: the byte
+    # limit above says nothing about what a body turns into.
+    encoded, buffer = cv2.imencode(".png", np.zeros((9000, 9000), np.uint8))
+    assert encoded
+    assert len(buffer) < 1_000_000
+
+    response = client.post("/v1/pages?direction=ltr", content=buffer.tobytes())
+
+    assert response.status_code == 413
+    assert "larger" in response.json()["detail"]
+
+
+def test_the_longest_strip_a_library_holds_is_well_inside_the_limit(client):
+    encoded, buffer = cv2.imencode(".png", np.full((16222, 800, 3), 255, np.uint8))
+    assert encoded
+
+    assert client.post("/v1/pages?direction=ltr", content=buffer.tobytes()).status_code == 200

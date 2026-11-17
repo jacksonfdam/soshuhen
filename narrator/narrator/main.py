@@ -68,8 +68,16 @@ async def _body(request: Request) -> bytes:
 def _decode(data: bytes) -> np.ndarray:
     image = None
     if data:
-        # imdecode answers None for bytes it cannot read, and raises for none at all.
-        image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        try:
+            # imdecode answers None for bytes it cannot read, and raises for none at all.
+            image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        except cv2.error as error:
+            # What it raises for an image over the pixel limit set in the package's __init__.
+            # The limit is checked from the header, so nothing was allocated to find this out.
+            if "pixels" in str(error):
+                raise HTTPException(
+                    status_code=413, detail="the page is larger than this service accepts"
+                ) from error
     if image is None or image.size == 0:
         raise HTTPException(status_code=422, detail="the body is not an image that decodes")
     return image
