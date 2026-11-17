@@ -210,6 +210,23 @@ export function PipelineFields({
         />
       </FieldCard>
       <FieldCard
+        label="Library audit"
+        hint={hoursHint(draft.cron_library_audit ?? '')}
+        description={
+          <>
+            Mark chapters whose file is gone from disk as needing a download (
+            <code className="font-mono text-primary">cron_library_audit</code>).
+          </>
+        }
+      >
+        <CronInput
+          settingKey="cron_library_audit"
+          label="Library audit"
+          value={draft.cron_library_audit ?? ''}
+          onChange={(value) => onChange('cron_library_audit', value)}
+        />
+      </FieldCard>
+      <FieldCard
         label="Anime Sync (suggestions)"
         hint={hoursHint(draft.cron_anime_list_sync ?? '')}
         description={
