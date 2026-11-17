@@ -30,4 +30,12 @@ class ChapterFolderTest {
     @Test fun aRefusedCreateInAFolderThatWentAwayIsTheFolder() {
         assertIs<FolderUnavailable>(refusedToCreate(folderAvailable = false, freeBytes = 0, "Ch 1.cbz"))
     }
+
+    @Test fun usageSumsEachSeriesFolder() = kotlinx.coroutines.test.runTest {
+        val folder = FakeChapterFolder()
+        folder.files[folder.uri("frieren", "c1.cbz")] = ByteArray(100)
+        folder.files[folder.uri("frieren", "c2.cbz.part")] = ByteArray(20)
+        folder.files[folder.uri("gin-tama", "c1.cbz")] = ByteArray(7)
+        assertEquals(mapOf("frieren" to 120L, "gin-tama" to 7L), folder.usage())
+    }
 }
