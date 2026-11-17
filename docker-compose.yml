@@ -85,6 +85,9 @@ services:
       KOMGA_PASS: ${KOMGA_PASS:-}
       KOMGA_LIBRARY_NAME: ${KOMGA_LIBRARY_NAME:-Manga}
       COMICK_API_URL: ${COMICK_API_URL:-http://comick:3000}
+      # Only here, not in x-worker-env: the reader asks for a page to be read
+      # aloud through the api, and no job does.
+      NARRATOR_URL: ${NARRATOR_URL:-}
       READER_CACHE_PATH: /reader-cache
     command: >
       sh -c "alembic upgrade head &&
@@ -95,6 +98,10 @@ services:
     volumes:
       - ${LIBRARY_PATH_HOST:-./data/manga}:/manga:ro
       - reader-cache:/reader-cache
+    networks:
+      # Naming any network drops the implicit one, so it is named too.
+      - default
+      - narrator
     logging: *logging
 
   worker:
@@ -195,6 +202,31 @@ services:
       - "8191"
     logging: *logging
 
+  narrator:
+    # Reads the lettering of a page so the reader can speak it. Optional, and
+    # behind a profile like the two above: the image carries a model runtime
+    # nobody who only reads with their eyes should have to build. Start it
+    # with `docker compose --profile narrator up -d --build` and set
+    # NARRATOR_URL=http://narrator:8000.
+    profiles: ["narrator"]
+    build: ./narrator
+    restart: unless-stopped
+    # It decodes images that came from third-party sites and needs nothing
+    # from the host to do it: no volume, no writable filesystem, no
+    # privileges, and a network with no way out.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    expose:
+      - "8000"
+    networks:
+      - narrator
+    logging: *logging
+
   komga:
     image: gotson/komga:latest
     restart: unless-stopped
@@ -209,6 +241,14 @@ services:
     ports:
       - "25600:25600"
     logging: *logging
+
+networks:
+  # `internal` gives the narrator no route off the host. Its engine's runtime
+  # reports usage to its vendor unless told not to; the service tells it not
+  # to, and this is what makes that a fact rather than a setting. Only `api`
+  # shares the network, which is the one thing that talks to it.
+  narrator:
+    internal: true
 
 volumes:
   pgdata:

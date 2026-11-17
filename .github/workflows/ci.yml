@@ -172,6 +172,33 @@ jobs:
         # testing here is kept free of the DOM so it needs nothing else.
         run: npm test
 
+  narrator:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: narrator
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        # Versions are pinned exactly in pyproject.toml, so this resolves the
+        # same engine the image is built with.
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+
+      - name: Lint
+        run: .venv/bin/ruff check .
+
+      - name: Test
+        # One of these loads the real engine. Its model files ship inside the
+        # wheel, so it needs no download and no network.
+        run: .venv/bin/pytest -q
+
   mobile:
     runs-on: ubuntu-latest
     defaults:
