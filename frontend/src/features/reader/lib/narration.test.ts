@@ -59,7 +59,7 @@ type Answer = ReturnType<typeof transcript> | Error
  * a transcript, an Error for a page the narrator cannot read, or absent for a
  * page whose answer the test delivers itself through `deliver`.
  */
-function reader(pages: number, book: Record<number, Answer> = {}) {
+function reader(pages: number, book: Record<number, Answer> = {}, settleMs = 0) {
   const fake = fakeEngine()
   const asked: number[] = []
   const waiting = new Map<number, (answer: Answer) => void>()
@@ -88,6 +88,7 @@ function reader(pages: number, book: Record<number, Answer> = {}) {
         changes += 1
       },
     },
+    settleMs,
   )
   return {
     fake,
@@ -400,4 +401,98 @@ test('disposing silences it for good', async () => {
   await run.deliver(0, transcript(['After the reader was left.']))
 
   assert.deepEqual(run.fake.spoken, [])
+})
+
+const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms))
+
+test('pages flipped past quickly are never asked of the narrator', async () => {
+  const run = reader(6, {}, 20)
+  run.narration.show([0])
+  run.narration.toggle()
+  run.narration.show([1])
+  run.narration.show([2])
+  run.narration.show([3])
+  await sleep(60)
+
+  assert.deepEqual(run.asked, [0, 3])
+})
+
+test('turning the page silences the page left behind at once', async () => {
+  const run = reader(3, { 0: transcript(['One.']), 1: transcript(['Two.']) }, 20)
+  run.narration.show([0])
+  run.narration.toggle()
+  await settle()
+  assert.equal(run.narration.state, 'playing')
+
+  run.narration.show([1])
+
+  assert.equal(run.narration.state, 'stopped')
+  assert.equal(run.narration.place, null)
+  await sleep(60)
+  assert.equal(run.fake.spoken.at(-1), 'Page 2.')
+})
+
+test('turning narration off while a page turn settles asks for nothing', async () => {
+  const run = reader(6, {}, 20)
+  run.narration.show([0])
+  run.narration.toggle()
+  run.narration.show([4])
+  run.narration.toggle()
+  await sleep(60)
+
+  assert.deepEqual(run.asked, [0])
+  assert.equal(run.narration.on, false)
+})
+
+test('starting narration does not wait for a page turn to settle', () => {
+  const run = reader(3, {}, 20)
+  run.narration.show([0])
+  run.narration.toggle()
+
+  assert.deepEqual(run.asked, [0])
+})
+
+test('after the reading direction changes a page is asked for and read again', async () => {
+  const run = reader(3, { 0: transcript(['Right first.']) })
+  run.narration.show([0])
+  run.narration.toggle()
+  await settle()
+  assert.equal(run.asked.filter((page) => page === 0).length, 1)
+
+  run.narration.forget()
+  await settle()
+
+  assert.equal(run.asked.filter((page) => page === 0).length, 2)
+  assert.equal(run.fake.spoken.at(-1), 'Page 1.')
+  assert.equal(run.fake.spoken.filter((text) => text === 'Page 1.').length, 2)
+})
+
+test('an answer asked for under the old direction is not kept', async () => {
+  const run = reader(3)
+  run.narration.show([0])
+  run.narration.toggle()
+  // Off first, so forgetting does not ask again and the answer delivered
+  // below is the one asked for before the direction changed.
+  run.narration.toggle()
+  run.narration.forget()
+
+  await run.deliver(0, transcript(['Read the old way.']))
+
+  assert.equal(run.narration.transcripts.has(0), false)
+  assert.deepEqual(run.fake.spoken, [])
+})
+
+test('forgetting while narration is off only empties what was kept', async () => {
+  const run = reader(3, { 0: transcript(['One.']) })
+  run.narration.show([0])
+  run.narration.toggle()
+  await settle()
+  run.narration.toggle()
+  const asked = run.asked.length
+
+  run.narration.forget()
+  await settle()
+
+  assert.equal(run.narration.transcripts.size, 0)
+  assert.equal(run.asked.length, asked)
 })

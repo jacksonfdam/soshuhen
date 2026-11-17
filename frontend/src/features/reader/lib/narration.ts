@@ -51,9 +51,21 @@ export class Narration {
   // still the number: pages turned quickly would otherwise be read out one
   // after another, long after they left the screen.
   private turn = 0
+  // Counts changes of reading direction. A transcript is an order as much as
+  // it is text, so one asked for under the old direction is not kept.
+  private era = 0
+  private settleMs: number
+  private settling: ReturnType<typeof setTimeout> | null = null
 
-  constructor(engine: SpeechEngine, settings: SpeechSettings, host: NarrationHost) {
+  /**
+   * `settleMs` is how long a page must stay on screen before the narrator is
+   * asked about it. A listener holding an arrow key passes a page every few
+   * dozen milliseconds, and each one asked for is a second of the narrator's
+   * time spent on a page nobody will hear, ahead of the one they stop on.
+   */
+  constructor(engine: SpeechEngine, settings: SpeechSettings, host: NarrationHost, settleMs = 0) {
     this.host = host
+    this.settleMs = settleMs
     this.player = new ReadAloudPlayer(
       engine,
       {
@@ -93,7 +105,7 @@ export class Narration {
     }
     this.pages = pages
     if (!this.isOn) return
-    if (pages.length > 0) this.read()
+    if (pages.length > 0) this.readSoon()
     // The end screen also appears because narration itself turned the last
     // page; saying the end a second time over the first would cut it off.
     else if (!this.ending) this.end()
@@ -134,6 +146,15 @@ export class Narration {
     this.player.configure(settings)
   }
 
+  /** The reading direction changed: what was read was read in the old order. */
+  forget() {
+    this.era += 1
+    this.transcripts.clear()
+    this.asking.clear()
+    this.changed()
+    if (this.isOn && this.pages.length > 0 && !this.ending) this.read()
+  }
+
   /**
    * The reader is going away: nothing asked for so far is spoken. Not final,
    * because React's strict mode unmounts and remounts a screen once in
@@ -142,12 +163,14 @@ export class Narration {
   dispose() {
     this.isOn = false
     this.turn += 1
+    this.unsettle()
     this.player.stop()
   }
 
   private turnOff() {
     this.isOn = false
     this.turn += 1
+    this.unsettle()
     this.ending = false
     this.failedPage = null
     this.items = []
@@ -155,7 +178,34 @@ export class Narration {
     this.changed()
   }
 
+  /** Read the pages on screen once they have stayed there a moment. */
+  private readSoon() {
+    if (this.settleMs <= 0) {
+      this.read()
+      return
+    }
+    // Silent at once, though: what was being said is about a page that has
+    // left the screen, whether or not the next one stays.
+    this.turn += 1
+    this.unsettle()
+    this.ending = false
+    this.failedPage = null
+    this.items = []
+    this.player.stop()
+    this.changed()
+    this.settling = setTimeout(() => {
+      this.settling = null
+      this.read()
+    }, this.settleMs)
+  }
+
+  private unsettle() {
+    if (this.settling !== null) clearTimeout(this.settling)
+    this.settling = null
+  }
+
   private read() {
+    this.unsettle()
     const mine = ++this.turn
     const pages = this.pages
     this.ending = false
@@ -199,8 +249,13 @@ export class Narration {
     if (known) return Promise.resolve(known)
     const underway = this.asking.get(page)
     if (underway) return underway
+    const era = this.era
     const asked = this.host.transcript(page).then(
       (transcript) => {
+        // An answer from before the direction changed is handed to whoever
+        // asked and kept by nobody; the entry under this page's name by then
+        // belongs to a newer request.
+        if (era !== this.era) return transcript
         this.asking.delete(page)
         this.transcripts.set(page, transcript)
         this.changed()
@@ -209,7 +264,7 @@ export class Narration {
       (failure: unknown) => {
         // Forgotten rather than remembered as a failure, so the next time the
         // page is wanted the narrator is asked again.
-        this.asking.delete(page)
+        if (era === this.era) this.asking.delete(page)
         throw failure
       },
     )
@@ -232,6 +287,7 @@ export class Narration {
 
   private end() {
     this.turn += 1
+    this.unsettle()
     this.ending = true
     this.failedPage = null
     this.items = []

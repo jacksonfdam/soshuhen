@@ -6,6 +6,11 @@ import { loadSpeechSettings, saveSpeechSettings } from '../../../lib/readAloudSe
 import { webSpeechEngine } from '../../../lib/webSpeech'
 import { Narration } from './narration'
 
+// Long enough that a held arrow key asks for one page, the one it stops on;
+// short enough that a page turned on purpose starts speaking without a wait
+// anyone would notice after the narrator's own second.
+const SETTLE_MS = 300
+
 /**
  * Narration bound to the reader screen. Everything it decides is in
  * `Narration`, which has tests; this only hands it the browser's voice, the
@@ -38,13 +43,18 @@ export function useNarration(options: {
   const [narration] = useState(
     () =>
       engine &&
-      new Narration(engine, settings, {
-        pageCount: () => latest.current.pageCount,
-        transcript: (page) =>
-          api.readerTranscript(latest.current.chapterId, page, latest.current.direction),
-        pagesDone: () => latest.current.onPagesDone(),
-        changed: redraw,
-      }),
+      new Narration(
+        engine,
+        settings,
+        {
+          pageCount: () => latest.current.pageCount,
+          transcript: (page) =>
+            api.readerTranscript(latest.current.chapterId, page, latest.current.direction),
+          pagesDone: () => latest.current.onPagesDone(),
+          changed: redraw,
+        },
+        SETTLE_MS,
+      ),
   )
 
   // Voices arrive after the page does, in Chrome only once asked for.
@@ -55,6 +65,17 @@ export function useNarration(options: {
   }, [engine])
 
   useEffect(() => () => narration?.dispose(), [narration])
+
+  // A page read right to left is a different transcript from the same page
+  // read left to right, and a listener who hears the wrong order changes the
+  // reading mode to fix exactly that.
+  const direction = options.direction
+  const readAs = useRef(direction)
+  useEffect(() => {
+    if (readAs.current === direction) return
+    readAs.current = direction
+    narration?.forget()
+  }, [narration, direction])
 
   const { ready, available, initiallyOn } = options
   const shown = options.pages.join(',')
