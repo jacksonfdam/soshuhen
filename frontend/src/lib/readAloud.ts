@@ -100,6 +100,14 @@ export interface PlayerEvents {
   /** The paragraph now being read, or null once nothing is. */
   block(index: number | null): void
   state(state: PlayState): void
+  /**
+   * The last utterance of the last block was spoken to its end. Told apart
+   * from `stopped`, which also follows a stop by hand and an engine that gave
+   * up: a reader that turns its own pages must turn one only for this. Called
+   * after the state has become `stopped`, so the listener may start the
+   * player again from inside it.
+   */
+  finished?(): void
 }
 
 /**
@@ -217,6 +225,7 @@ export class ReadAloudPlayer {
       this.block += 1
       if (this.block >= this.blocks.length) {
         this.stop()
+        this.events.finished?.()
         return
       }
       this.events.block(this.block)

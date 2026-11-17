@@ -201,3 +201,72 @@ test('nothing to read stops straight away', () => {
   assert.deepEqual(states, [])
   assert.equal(fake.spoken.length, 0)
 })
+
+/** A player whose events are kept in the order they arrived, `finished` among them. */
+function watched(blocks: string[][], onFinished: () => void = () => {}) {
+  const fake = fakeEngine()
+  const order: string[] = []
+  const reader = new ReadAloudPlayer(
+    fake.engine,
+    {
+      block: () => {},
+      state: (state) => order.push(state),
+      finished: () => {
+        order.push('finished')
+        onFinished()
+      },
+    },
+    { voice: null, rate: 1 },
+  )
+  reader.start(blocks, 0)
+  return { fake, reader, order }
+}
+
+test('running out of text is reported once, after stopping', () => {
+  const { fake, order } = watched([['a'], ['b']])
+  fake.finish()
+  assert.deepEqual(order, ['playing'])
+  fake.finish()
+  assert.deepEqual(order, ['playing', 'stopped', 'finished'])
+})
+
+test('stopping by hand is not running out', async () => {
+  const { reader, order } = watched([['a'], ['b']])
+  reader.stop()
+  await settle()
+  assert.deepEqual(order, ['playing', 'stopped'])
+})
+
+test('an utterance the engine gave up on is not running out', () => {
+  const fake = fakeEngine()
+  const order: string[] = []
+  const engine: SpeechEngine = { ...fake.engine, speak: (_text, _settings, done) => done(false) }
+  const reader = new ReadAloudPlayer(
+    engine,
+    { block: () => {}, state: (state) => order.push(state), finished: () => order.push('finished') },
+    { voice: null, rate: 1 },
+  )
+  reader.start([['a']], 0)
+  assert.deepEqual(order, ['playing', 'stopped'])
+})
+
+test('skipping past the end is not running out', async () => {
+  const { reader, order } = watched([['a'], ['b']])
+  reader.skip(5)
+  await settle()
+  assert.deepEqual(order, ['playing', 'stopped'])
+})
+
+test('a player started again from finished speaks the new text', () => {
+  let again = true
+  const run = watched([['a']], () => {
+    if (!again) return
+    again = false
+    run.reader.start([['next page']], 0)
+  })
+  run.fake.finish()
+  assert.equal(run.fake.spoken.at(-1)?.text, 'next page')
+  assert.equal(run.reader.state, 'playing')
+  run.fake.finish()
+  assert.deepEqual(run.order, ['playing', 'stopped', 'finished', 'playing', 'stopped', 'finished'])
+})
