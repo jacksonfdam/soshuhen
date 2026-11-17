@@ -10,11 +10,10 @@ import {
   type ProseSection,
 } from '../../lib/api'
 import { useAsyncData } from '../../lib/useAsyncData'
-import { Icon, IconButton, ReaderMessage } from '../../ui'
+import { Icon, IconButton, ReadAloudBar, ReaderMessage } from '../../ui'
 import { EndOfBook } from './EndOfBook'
 import { ProseContentsSheet } from './ProseContentsSheet'
 import { ProseSettings } from './ProseSettings'
-import { ReadAloudBar } from './ReadAloudBar'
 import { PAGE, SIZE } from './theme'
 import { scrollToPlace, useProsePosition } from './useProsePosition'
 import { useReadAloud } from './useReadAloud'
@@ -283,6 +282,7 @@ function ProseReaderPage({ kind, id }: { kind: ProseKind; id: number }) {
 
       {readAloud.state !== 'stopped' && (
         <ReadAloudBar
+          unit="paragraph"
           state={readAloud.state}
           voices={readAloud.voices}
           settings={readAloud.settings}

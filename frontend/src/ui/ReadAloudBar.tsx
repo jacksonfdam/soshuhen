@@ -1,5 +1,5 @@
-import { IconButton } from '../../ui'
-import type { PlayState, SpeechSettings, SpeechVoice } from './readAloud'
+import type { PlayState, SpeechSettings, SpeechVoice } from '../lib/readAloud'
+import { IconButton } from './IconButton'
 
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2]
 
@@ -10,8 +10,12 @@ const SELECT =
  * The player, pinned to the bottom of the page while reading aloud. Apart
  * from the top bar, which steps aside as the text scrolls forward: reading
  * aloud scrolls forward the whole time.
+ *
+ * `unit` is what one step back or forward moves by, in the reader's own word
+ * for it: a paragraph of a novel, a line of a comic.
  */
 export function ReadAloudBar({
+  unit,
   state,
   voices,
   settings,
@@ -20,6 +24,7 @@ export function ReadAloudBar({
   onConfigure,
   onClose,
 }: {
+  unit: string
   state: PlayState
   voices: SpeechVoice[]
   settings: SpeechSettings
@@ -38,13 +43,13 @@ export function ReadAloudBar({
         aria-label="Read aloud"
         className="flex w-full max-w-prose-column flex-wrap items-center gap-space-sm rounded-lg bg-surface-container/95 p-space-sm text-on-surface shadow-card"
       >
-        <IconButton icon="skip_previous" label="Previous paragraph" onClick={() => onSkip(-1)} />
+        <IconButton icon="skip_previous" label={`Previous ${unit}`} onClick={() => onSkip(-1)} />
         <IconButton
           icon={state === 'playing' ? 'pause' : 'play'}
           label={state === 'playing' ? 'Pause' : 'Resume'}
           onClick={onToggle}
         />
-        <IconButton icon="skip_next" label="Next paragraph" onClick={() => onSkip(1)} />
+        <IconButton icon="skip_next" label={`Next ${unit}`} onClick={() => onSkip(1)} />
         <select
           aria-label="Speed"
           value={String(settings.rate)}

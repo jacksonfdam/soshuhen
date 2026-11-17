@@ -7,41 +7,16 @@ import {
   type PlayState,
   type SpeechSettings,
   type SpeechVoice,
-} from './readAloud'
+} from '../../lib/readAloud'
+import { loadSpeechSettings, saveSpeechSettings } from '../../lib/readAloudSettings'
+import { webSpeechEngine } from '../../lib/webSpeech'
 import { anchor, scrollToPlace } from './useProsePosition'
-import { webSpeechEngine } from './webSpeech'
-
-const KEY = 'reader:read-aloud'
-const DEFAULT: SpeechSettings = { voice: null, rate: 1 }
 
 // The book's own tags that hold a paragraph's worth of words. A `div` counts
 // only when nothing in it does: some EPUBs write every paragraph as one.
 const BLOCKS = 'p, li, blockquote, h1, h2, h3, h4, h5, h6, figcaption, th, td, div'
 // Styled from the stylesheet: the book's markup cannot carry classes.
 const SPEAKING = 'data-speaking'
-
-/** Per device rather than per account: voices differ between browsers. */
-function savedSettings(): SpeechSettings {
-  try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(KEY) ?? 'null')
-    if (typeof value !== 'object' || value === null) return DEFAULT
-    const { voice, rate } = value as Record<string, unknown>
-    return {
-      voice: typeof voice === 'string' ? voice : null,
-      rate: typeof rate === 'number' && rate > 0 ? rate : DEFAULT.rate,
-    }
-  } catch {
-    return DEFAULT
-  }
-}
-
-function saveSettings(settings: SpeechSettings) {
-  try {
-    window.localStorage.setItem(KEY, JSON.stringify(settings))
-  } catch {
-    // A private window refuses storage; the choice lasts until the tab closes.
-  }
-}
 
 function readableBlocks(column: HTMLElement) {
   return [...column.querySelectorAll<HTMLElement>(BLOCKS)]
@@ -72,7 +47,7 @@ export function useReadAloud(column: HTMLElement | null) {
   const [engine] = useState(webSpeechEngine)
   const [state, setState] = useState<PlayState>('stopped')
   const [voices, setVoices] = useState<SpeechVoice[]>([])
-  const [settings, setSettings] = useState(savedSettings)
+  const [settings, setSettings] = useState(loadSpeechSettings)
   const elements = useRef<HTMLElement[]>([])
   const lit = useRef<HTMLElement | null>(null)
   const columnRef = useRef(column)
@@ -128,7 +103,7 @@ export function useReadAloud(column: HTMLElement | null) {
   const configure = useCallback(
     (next: SpeechSettings) => {
       setSettings(next)
-      saveSettings(next)
+      saveSpeechSettings(next)
       player?.configure(next)
     },
     [player],
