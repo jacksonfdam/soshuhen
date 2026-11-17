@@ -217,6 +217,10 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    # Several times what it uses reading a page. The service refuses an image
+    # that would decode to more than fifty million pixels; this is the limit
+    # on whatever that check does not foresee.
+    mem_limit: 2g
     cap_drop:
       - ALL
     security_opt:
