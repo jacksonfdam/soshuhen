@@ -4,10 +4,12 @@ import asyncio
 import zipfile
 from decimal import Decimal
 
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
+from app.api import reader_service
 from app.api.main import app
 from app.config import get_settings
 from app.db import get_sessionmaker
@@ -475,3 +477,235 @@ async def test_a_prose_chapter_is_refused_with_a_pointer_to_the_novel_reader(cli
     response = await client.get(f"/api/reader/chapters/{chapter_id}")
     assert response.status_code == 409
     assert "novel reader" in response.json()["detail"]
+
+
+# --- Narration ---------------------------------------------------------------
+
+TRANSCRIPT = {
+    "engine": "fake",
+    "language": "en",
+    "width": 10,
+    "height": 20,
+    "panels": [{"box": [0, 0, 10, 20], "blocks": [{"box": [1, 1, 5, 5], "text": "Hello."}]}],
+}
+
+
+def _narrator(monkeypatch, handler) -> None:
+    """Configure a narrator and answer its calls from `handler` instead of a service."""
+    monkeypatch.setenv("NARRATOR_URL", "http://narrator:8000")
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        reader_service,
+        "narrator_client",
+        lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+
+async def _archived(tmp_path, pages: list[bytes]) -> int:
+    path = _cbz(tmp_path / "manga" / "teto" / "c1.cbz", pages)
+    async with get_sessionmaker()() as session:
+        series_id = await _series(session)
+        return await _chapter(session, series_id, "1", file_path=path, state="downloaded")
+
+
+async def test_narration_is_unavailable_until_configured(client, monkeypatch):
+    assert (await client.get("/api/reader/narration")).json() == {"available": False}
+
+    _narrator(monkeypatch, lambda request: httpx.Response(200, json=TRANSCRIPT))
+
+    assert (await client.get("/api/reader/narration")).json() == {"available": True}
+
+
+async def test_a_transcript_is_read_from_the_archived_page(client, tmp_path, monkeypatch):
+    chapter_id = await _archived(tmp_path, [JPEG + b"1", JPEG + b"2"])
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=TRANSCRIPT)
+
+    _narrator(monkeypatch, handler)
+
+    response = await client.get(
+        f"/api/reader/chapters/{chapter_id}/pages/1/transcript?direction=rtl"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == TRANSCRIPT
+    assert response.headers["cache-control"] == "private, max-age=86400"
+    [request] = seen
+    assert request.content == JPEG + b"2"
+    assert request.url.params["direction"] == "rtl"
+    assert str(request.url).startswith("http://narrator:8000/v1/pages")
+
+
+async def test_a_transcript_reads_left_to_right_unless_told_otherwise(
+    client, tmp_path, monkeypatch
+):
+    chapter_id = await _archived(tmp_path, [JPEG])
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params["direction"])
+        return httpx.Response(200, json=TRANSCRIPT)
+
+    _narrator(monkeypatch, handler)
+
+    await client.get(f"/api/reader/chapters/{chapter_id}/pages/0/transcript")
+
+    assert seen == ["ltr"]
+
+
+async def test_a_transcript_of_a_streamed_page_fetches_and_caches_it_as_showing_it_does(
+    client, monkeypatch
+):
+    streamed = Streamed(_always(200), [PageRef(url="/p1.jpg"), PageRef(url="/p2.jpg")])
+    try:
+        async with get_sessionmaker()() as session:
+            _, chapter_id = await streamed.seed(session)
+        sent: list[bytes] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent.append(request.content)
+            return httpx.Response(200, json=TRANSCRIPT)
+
+        _narrator(monkeypatch, handler)
+
+        heard = await client.get(f"/api/reader/chapters/{chapter_id}/pages/0/transcript")
+        shown = await client.get(f"/api/reader/chapters/{chapter_id}/pages/0")
+
+        assert heard.status_code == 200
+        assert sent == [JPEG]
+        assert shown.content == JPEG
+        # Listening to a page and then looking at it asks the source once.
+        assert streamed.hits.count("/p1.jpg") == 1
+        assert await _state(chapter_id) == "streaming"
+    finally:
+        streamed.close()
+
+
+async def test_a_transcript_without_a_narrator_is_503(client, tmp_path):
+    chapter_id = await _archived(tmp_path, [JPEG])
+
+    response = await client.get(f"/api/reader/chapters/{chapter_id}/pages/0/transcript")
+
+    assert response.status_code == 503
+    assert "not set up" in response.json()["detail"]
+
+
+async def test_a_narrator_that_cannot_be_reached_is_502_and_says_so(
+    client, tmp_path, monkeypatch
+):
+    chapter_id = await _archived(tmp_path, [JPEG])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    _narrator(monkeypatch, handler)
+
+    response = await client.get(f"/api/reader/chapters/{chapter_id}/pages/0/transcript")
+
+    assert response.status_code == 502
+    assert "narrator" in response.json()["detail"]
+
+
+async def test_a_narrator_that_times_out_is_502(client, tmp_path, monkeypatch):
+    chapter_id = await _archived(tmp_path, [JPEG])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("", request=request)
+
+    _narrator(monkeypatch, handler)
+
+    response = await client.get(f"/api/reader/chapters/{chapter_id}/pages/0/transcript")
+
+    assert response.status_code == 502
+    assert "narrator" in response.json()["detail"]
+
+
+async def test_a_page_the_narrator_cannot_decode_is_502(client, tmp_path, monkeypatch):
+    chapter_id = await _archived(tmp_path, [JPEG])
+    _narrator(
+        monkeypatch,
+        lambda request: httpx.Response(
+            422, json={"detail": "the body is not an image that decodes"}
+        ),
+    )
+
+    response = await client.get(f"/api/reader/chapters/{chapter_id}/pages/0/transcript")
+
+    assert response.status_code == 502
+    assert "not an image" in response.json()["detail"]
+
+
+async def test_a_transcript_past_the_last_page_is_404_and_never_asks_the_narrator(
+    client, tmp_path, monkeypatch
+):
+    chapter_id = await _archived(tmp_path, [JPEG])
+    asked: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(request)
+        return httpx.Response(200, json=TRANSCRIPT)
+
+    _narrator(monkeypatch, handler)
+
+    response = await client.get(f"/api/reader/chapters/{chapter_id}/pages/5/transcript")
+
+    assert response.status_code == 404
+    assert asked == []
+
+
+async def test_a_transcript_of_an_unknown_chapter_is_404(client, monkeypatch):
+    _narrator(monkeypatch, lambda request: httpx.Response(200, json=TRANSCRIPT))
+
+    response = await client.get("/api/reader/chapters/999999/pages/0/transcript")
+
+    assert response.status_code == 404
+
+
+async def test_a_transcript_of_a_prose_chapter_is_409(client, monkeypatch):
+    _narrator(monkeypatch, lambda request: httpx.Response(200, json=TRANSCRIPT))
+    async with get_sessionmaker()() as session:
+        series_id = (
+            await session.execute(
+                text(
+                    "insert into series (canonical_title, slug, needs_review, meta, kind)"
+                    " values ('N', 'n', false, '{}'::jsonb, 'prose') returning id"
+                )
+            )
+        ).scalar_one()
+        chapter_id = (
+            await session.execute(
+                text(
+                    "insert into chapter (series_id, number, state)"
+                    " values (:s, 1, 'downloaded') returning id"
+                ),
+                {"s": series_id},
+            )
+        ).scalar_one()
+        await session.commit()
+
+    response = await client.get(f"/api/reader/chapters/{chapter_id}/pages/0/transcript")
+
+    assert response.status_code == 409
+
+
+async def test_an_unknown_direction_is_422(client, tmp_path, monkeypatch):
+    chapter_id = await _archived(tmp_path, [JPEG])
+    _narrator(monkeypatch, lambda request: httpx.Response(200, json=TRANSCRIPT))
+
+    response = await client.get(
+        f"/api/reader/chapters/{chapter_id}/pages/0/transcript?direction=up"
+    )
+
+    assert response.status_code == 422
+
+
+async def test_the_manifest_does_not_change_when_narration_is_on(client, tmp_path, monkeypatch):
+    chapter_id = await _archived(tmp_path, [JPEG])
+    before = (await client.get(f"/api/reader/chapters/{chapter_id}")).json()
+
+    _narrator(monkeypatch, lambda request: httpx.Response(200, json=TRANSCRIPT))
+
+    assert (await client.get(f"/api/reader/chapters/{chapter_id}")).json() == before

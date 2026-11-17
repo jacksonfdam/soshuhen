@@ -8,6 +8,7 @@ from typing import Annotated, Any, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import JSONResponse
 from pydantic import AwareDatetime, BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +18,7 @@ from app.api.progress_queue import progress_bounds, queue_progress_write
 from app.enums import JobType, ProgressSource
 from app.handlers.progress_write import forward_only
 from app.queue import repo
-from app.reader import epub_text
+from app.reader import epub_text, narration
 
 router = APIRouter(prefix="/api/reader", tags=["reader"])
 
@@ -26,6 +27,9 @@ Session = Annotated[AsyncSession, Depends(db_session)]
 # A page of a chapter never changes once fetched, and a reader flipping back
 # and forth should not ask twice.
 IMMUTABLE = "public, max-age=31536000, immutable"
+
+# A day: long enough that paging back and forth never asks twice.
+TRANSCRIPT_CACHE = "private, max-age=86400"
 
 MEDIA_TYPES = {
     "jpg": "image/jpeg",
@@ -61,6 +65,14 @@ def service_errors() -> Iterator[None]:
         raise HTTPException(status_code=410, detail=str(exc)) from exc
     except service.PageFailed as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except service.NarrationOff as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except service.NarrationFailed as exc:
+        # Named, so it cannot be read as the source failing: the page itself
+        # was fetched and is fine.
+        raise HTTPException(
+            status_code=502, detail=f"the narrator could not read this page: {exc}"
+        ) from exc
 
 
 def _chapter_ref(row: service.ChapterRow) -> dict[str, Any]:
@@ -126,6 +138,31 @@ async def page(chapter_id: int, index: int, session: Session) -> Response:
         media_type=MEDIA_TYPES.get(extension, "application/octet-stream"),
         headers={"Cache-Control": IMMUTABLE},
     )
+
+
+@router.get("/narration")
+async def narration_status() -> dict[str, bool]:
+    """Whether pages can be read aloud here. Its own route rather than a field
+    of the manifest, which the Android client decodes."""
+    return {"available": service.narration_available()}
+
+
+@router.get("/chapters/{chapter_id}/pages/{index}/transcript")
+async def page_transcript(
+    chapter_id: int,
+    index: int,
+    session: Session,
+    direction: narration.Direction = "ltr",
+) -> JSONResponse:
+    with service_errors():
+        row = await service.chapter(session, chapter_id)
+        body = await service.transcript(session, row, index, direction)
+    # Committed like the page route: reading a streamed page marks the chapter
+    # as streaming and may queue its assembly.
+    await session.commit()
+    # Not `immutable` like the page itself: the bytes of a page never change,
+    # but a later engine reads the same page differently.
+    return JSONResponse(body, headers={"Cache-Control": TRANSCRIPT_CACHE})
 
 
 @router.put("/series/{series_id}/position")
