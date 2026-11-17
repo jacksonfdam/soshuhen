@@ -150,6 +150,7 @@ async def test_the_cron_block_reports_every_scheduled_job_with_its_next_fire(cli
         "progress_push",
         "anime_list_sync",
         "jnc_library_sync",
+        "library_audit",
     ]
     for entry in body["cron"]:
         assert entry["valid"] is True
