@@ -52,6 +52,13 @@ class SyncTest {
         assertTrue(report.allVerified)
     }
 
+    @Test fun sync_reports_checking_each_held_file() = runTest {
+        holdChapterOne()
+        val steps = mutableListOf<SyncProgress>()
+        sync().run(scope = null) { steps += it }
+        assertEquals(listOf(SyncProgress.Verifying(0, 1), SyncProgress.Verifying(1, 1)), steps.filterIsInstance<SyncProgress.Verifying>())
+    }
+
     @Test fun sync_away_from_home_does_nothing() = runTest {
         holdChapterOne()
         home = false

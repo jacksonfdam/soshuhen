@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import app.soshuhen.core.SyncFlow
 import app.soshuhen.core.SyncUi
+import app.soshuhen.core.progressText
 import app.soshuhen.core.question
 import app.soshuhen.core.reasons
 import app.soshuhen.core.summary
@@ -22,8 +23,7 @@ import app.soshuhen.ui.theme.Tokens
 fun SyncDialog(state: SyncUi, flow: SyncFlow) {
     val (title, body) = when (state) {
         SyncUi.Idle -> return
-        is SyncUi.Running -> "Syncing" to
-            if (state.total > 0) "Copying ${state.done} of ${state.total}…" else "Checking what the server holds…"
+        is SyncUi.Running -> "Syncing" to progressText(state.progress)
         is SyncUi.Ask -> "Everything is on this device" to question(state.report) +
             state.report.revised.takeIf { it.isNotEmpty() }?.let { "\n\n${it.size} removed volumes have a newer revision on J-Novel Club." }.orEmpty()
         is SyncUi.Unverified -> "Not everything is on this device" to

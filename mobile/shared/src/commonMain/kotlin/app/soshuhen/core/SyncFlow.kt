@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 /** Where a sync stands, for the dialog Settings and a series' screen share. */
 sealed interface SyncUi {
     data object Idle : SyncUi
-    data class Running(val done: Int, val total: Int) : SyncUi
+    data class Running(val progress: SyncProgress) : SyncUi
     data class Ask(val report: SyncReport) : SyncUi
     data class Unverified(val report: SyncReport) : SyncUi
     data object Removing : SyncUi
@@ -43,7 +43,7 @@ fun reasons(report: SyncReport): List<String> =
  * nothing, and deleting is only reachable from a fully verified report.
  */
 class SyncFlow(
-    private val run: suspend (onProgress: (Int, Int) -> Unit) -> SyncReport,
+    private val run: suspend (onStep: (SyncProgress) -> Unit) -> SyncReport,
     private val offload: suspend (SyncReport) -> OffloadResult,
     private val scope: CoroutineScope,
 ) {
@@ -52,10 +52,10 @@ class SyncFlow(
 
     fun start() {
         if (_state.value is SyncUi.Running || _state.value == SyncUi.Removing) return
-        _state.value = SyncUi.Running(0, 0)
+        _state.value = SyncUi.Running(SyncProgress.Starting)
         scope.launch {
             _state.value = try {
-                val report = run { done, total -> _state.value = SyncUi.Running(done, total) }
+                val report = run { step -> _state.value = SyncUi.Running(step) }
                 when {
                     report.problem != null -> SyncUi.Failed(report.problem)
                     report.allVerified -> SyncUi.Ask(report)

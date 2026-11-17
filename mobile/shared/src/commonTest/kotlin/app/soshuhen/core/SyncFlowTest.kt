@@ -22,6 +22,20 @@ class SyncFlowTest {
             scope = this,
         )
 
+    @Test fun the_dialog_follows_what_the_run_is_doing() = runTest(StandardTestDispatcher()) {
+        val seen = mutableListOf<SyncUi>()
+        lateinit var f: SyncFlow
+        f = SyncFlow(
+            run = { step -> step(SyncProgress.Reading(0, 3)); seen += f.state.value; verified },
+            offload = { r -> OffloadResult(queued = r.held.size) },
+            scope = this,
+        )
+        f.start()
+        assertEquals(SyncUi.Running(SyncProgress.Starting), f.state.value)
+        advanceUntilIdle()
+        assertEquals(listOf<SyncUi>(SyncUi.Running(SyncProgress.Reading(0, 3))), seen)
+    }
+
     @Test fun a_verified_run_asks_the_question() = runTest(StandardTestDispatcher()) {
         val f = flow(verified)
         f.start()
