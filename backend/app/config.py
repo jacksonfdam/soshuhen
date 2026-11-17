@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     # being got wrong for another service.
     flaresolverr_url: str = ""
 
+    # The narrator service, which reads a page's lettering so the reader can
+    # speak it. Empty by default, and its Compose service sits behind the
+    # `narrator` profile: with this unset the reader shows no narration
+    # control at all, rather than one that fails when pressed.
+    narrator_url: str = ""
+
     @property
     def database_url(self) -> str:
         return (
