@@ -63,6 +63,10 @@ class FakeChapterFolder : ChapterFolder {
 
     override suspend fun exists(uri: String) = uri in files
 
+    override suspend fun usage(): Map<String, Long> =
+        files.entries.groupBy({ it.key.removePrefix("mem://Soshuhen/").substringBefore('/') }, { it.value.size.toLong() })
+            .mapValues { it.value.sum() }
+
     // Every source handed out, so a test can see that each one was closed:
     // on Android each is an open file descriptor.
     val opened = mutableListOf<ClosingSource>()

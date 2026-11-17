@@ -132,6 +132,37 @@ class SafChapterFolder(
         }
     }
 
+    // One listing per folder through the provider, reading each child's size
+    // from the same query. DocumentFile would ask again for every file, which
+    // over a few thousand chapters on a card takes minutes.
+    override suspend fun usage(): Map<String, Long> = withContext(Dispatchers.IO) {
+        val tree = Uri.parse(treeUri.value ?: return@withContext emptyMap())
+        val root = child(tree(), ROOT, create = false) ?: return@withContext emptyMap()
+        children(tree, DocumentsContract.getDocumentId(root.uri))
+            .filter { it.isDir }
+            .associate { dir -> dir.name to children(tree, dir.id).filterNot { it.isDir }.sumOf { it.size } }
+    }
+
+    private class Child(val id: String, val name: String, val isDir: Boolean, val size: Long)
+
+    private fun children(tree: Uri, parentId: String): List<Child> {
+        val uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+        val columns = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+        )
+        return resolver.query(uri, columns, null, null, null)?.use { rows ->
+            buildList {
+                while (rows.moveToNext()) {
+                    val isDir = rows.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR
+                    add(Child(rows.getString(0), rows.getString(1), isDir, if (rows.isNull(3)) 0L else rows.getLong(3)))
+                }
+            }
+        }.orEmpty()
+    }
+
     override suspend fun exists(uri: String): Boolean = withContext(Dispatchers.IO) {
         tree()
         DocumentFile.fromSingleUri(context, Uri.parse(uri))?.exists() == true

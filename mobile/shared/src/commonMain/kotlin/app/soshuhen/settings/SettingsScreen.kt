@@ -245,13 +245,25 @@ private fun StorageBlock(storage: StorageUi) {
         )
         // How full the volume is; the line above says how much of it is ours.
         if (space != null) ProgressBar(value = (space.total - space.free).toFloat(), max = space.total.toFloat())
+        if (storage.notMarked > 0) {
+            Text(
+                "${formatBytes(storage.notMarked)} of it is in series not marked on this device",
+                style = MaterialTheme.typography.bodySmall,
+                color = Tokens.onSurfaceVariant,
+            )
+        }
         if (storage.perSeries.isNotEmpty()) {
             WebButton(if (open) "Hide per series" else "Per series", { open = !open }, small = true, variant = ButtonVariant.Ghost)
         }
         if (open) {
             storage.perSeries.forEach { usage ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(usage.title, style = MaterialTheme.typography.bodySmall, color = Tokens.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    Text(
+                        if (usage.marked) usage.title else "${usage.title} · not marked",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Tokens.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
                     MonoLabel(formatBytes(usage.bytes), Tokens.onSurfaceVariant)
                 }
             }

@@ -235,7 +235,7 @@ private fun Shell(
                 )
             }
             composable<SettingsRoute> {
-                SettingsScreen(viewModel { SettingsViewModel(graph.session.api, graph.store, platform, graph.local, graph.sync) }, appVersion)
+                SettingsScreen(viewModel { SettingsViewModel(graph.session.api, graph.store, platform, graph.local, graph.sync, graph.folder) }, appVersion)
             }
         }
     }

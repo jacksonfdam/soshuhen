@@ -23,6 +23,9 @@ interface ChapterFolder {
     suspend fun exists(uri: String): Boolean
 
     suspend fun read(uri: String): Source
+
+    /** Bytes in each series folder under `Soshuhen/`, by folder name, whoever put the files there. */
+    suspend fun usage(): Map<String, Long>
 }
 
 /** The permission was revoked or the folder is gone: nothing can be read or written. */
