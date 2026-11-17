@@ -4,7 +4,6 @@ from narrator.geometry import Box
 from narrator.lines import TILE_HEIGHT, TILE_OVERLAP, TextLine, is_text, read_lines, tile_tops
 from tests.conftest import FakeEngine, blank
 
-
 ANYWHERE = Box(10, 10, 100, 20)
 
 
