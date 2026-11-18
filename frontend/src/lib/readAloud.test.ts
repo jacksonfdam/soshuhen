@@ -201,3 +201,143 @@ test('nothing to read stops straight away', () => {
   assert.deepEqual(states, [])
   assert.equal(fake.spoken.length, 0)
 })
+
+/** A player whose events are kept in the order they arrived, `finished` among them. */
+function watched(blocks: string[][], onFinished: () => void = () => {}) {
+  const fake = fakeEngine()
+  const order: string[] = []
+  const reader = new ReadAloudPlayer(
+    fake.engine,
+    {
+      block: () => {},
+      state: (state) => order.push(state),
+      finished: () => {
+        order.push('finished')
+        onFinished()
+      },
+    },
+    { voice: null, rate: 1 },
+  )
+  reader.start(blocks, 0)
+  return { fake, reader, order }
+}
+
+test('running out of text is reported once, after stopping', () => {
+  const { fake, order } = watched([['a'], ['b']])
+  fake.finish()
+  assert.deepEqual(order, ['playing'])
+  fake.finish()
+  assert.deepEqual(order, ['playing', 'stopped', 'finished'])
+})
+
+test('stopping by hand is not running out', async () => {
+  const { reader, order } = watched([['a'], ['b']])
+  reader.stop()
+  await settle()
+  assert.deepEqual(order, ['playing', 'stopped'])
+})
+
+test('an utterance the engine gave up on is not running out', () => {
+  const fake = fakeEngine()
+  const order: string[] = []
+  const engine: SpeechEngine = { ...fake.engine, speak: (_text, _settings, done) => done(false) }
+  const reader = new ReadAloudPlayer(
+    engine,
+    { block: () => {}, state: (state) => order.push(state), finished: () => order.push('finished') },
+    { voice: null, rate: 1 },
+  )
+  reader.start([['a']], 0)
+  assert.deepEqual(order, ['playing', 'stopped'])
+})
+
+test('skipping past the end is not running out', async () => {
+  const { reader, order } = watched([['a'], ['b']])
+  reader.skip(5)
+  await settle()
+  assert.deepEqual(order, ['playing', 'stopped'])
+})
+
+test('a player started again from finished speaks the new text', () => {
+  let again = true
+  const run = watched([['a']], () => {
+    if (!again) return
+    again = false
+    run.reader.start([['next page']], 0)
+  })
+  run.fake.finish()
+  assert.equal(run.fake.spoken.at(-1)?.text, 'next page')
+  assert.equal(run.reader.state, 'playing')
+  run.fake.finish()
+  assert.deepEqual(run.order, ['playing', 'stopped', 'finished', 'playing', 'stopped', 'finished'])
+})
+
+const wait = (ms: number) => new Promise((done) => setTimeout(done, ms))
+
+/** A player started with a silence to keep after each block. */
+function rested(blocks: string[][], rests: number[]) {
+  const fake = fakeEngine()
+  const shown: (number | null)[] = []
+  const reader = new ReadAloudPlayer(
+    fake.engine,
+    { block: (index) => shown.push(index), state: () => {} },
+    { voice: null, rate: 1 },
+  )
+  reader.start(blocks, 0, rests)
+  return { fake, reader, shown }
+}
+
+test('a rest after a block holds the next one back', async () => {
+  const { fake } = rested([['a'], ['b']], [40])
+  fake.finish()
+  await wait(10)
+  assert.equal(fake.spoken.length, 1)
+  await wait(60)
+  assert.equal(fake.spoken.at(-1)?.text, 'b')
+})
+
+test('a rest is kept between blocks, not between the pieces of one', () => {
+  const { fake } = rested([['a', 'still a'], ['b']], [40])
+  fake.finish()
+  assert.equal(fake.spoken.at(-1)?.text, 'still a')
+})
+
+test('pausing during a rest keeps the next block unsaid until resumed', async () => {
+  const { fake, reader } = rested([['a'], ['b']], [40])
+  fake.finish()
+  reader.pause()
+  await wait(80)
+  assert.equal(fake.spoken.length, 1)
+  reader.resume()
+  assert.equal(fake.spoken.at(-1)?.text, 'b')
+})
+
+test('stopping during a rest says nothing more', async () => {
+  const { fake, reader } = rested([['a'], ['b']], [40])
+  fake.finish()
+  reader.stop()
+  await wait(80)
+  assert.equal(fake.spoken.length, 1)
+  assert.equal(reader.state, 'stopped')
+})
+
+test('stepping on during a rest speaks the block stepped to at once', async () => {
+  const { fake, reader } = rested([['a'], ['b'], ['c']], [40, 40])
+  fake.finish()
+  reader.skip(1)
+  assert.equal(fake.spoken.at(-1)?.text, 'c')
+  await wait(80)
+  assert.equal(fake.spoken.filter((said) => said.text === 'b').length, 0)
+})
+
+test('there is no rest after the last block: running out is reported at once', () => {
+  const fake = fakeEngine()
+  let finished = 0
+  const reader = new ReadAloudPlayer(
+    fake.engine,
+    { block: () => {}, state: () => {}, finished: () => (finished += 1) },
+    { voice: null, rate: 1 },
+  )
+  reader.start([['a']], 0, [40])
+  fake.finish()
+  assert.equal(finished, 1)
+})

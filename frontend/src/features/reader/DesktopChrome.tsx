@@ -4,7 +4,7 @@ import type { ReaderManifest } from '../../lib/api'
 import { formatChapter } from '../../lib/format'
 import { Icon, type IconName } from '../../ui'
 import { PageSlider } from './PageSlider'
-import type { Panel } from './ReaderPage'
+import type { NarrationControl, Panel } from './ReaderPage'
 
 const TOOL =
   'inline-flex h-10 w-10 items-center justify-center rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface disabled:opacity-40'
@@ -13,11 +13,14 @@ function ToolButton({
   icon,
   label,
   disabled = false,
+  pressed,
   onClick,
 }: {
   icon: IconName
   label: string
   disabled?: boolean
+  /** Only for a button that is a switch; left off, it is an ordinary button. */
+  pressed?: boolean
   onClick: () => void
 }) {
   return (
@@ -25,9 +28,10 @@ function ToolButton({
       type="button"
       aria-label={label}
       title={label}
+      aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
-      className={TOOL}
+      className={`${TOOL} ${pressed ? 'bg-primary/20 text-primary' : ''}`}
     >
       <Icon name={icon} className="h-5 w-5" />
     </button>
@@ -44,11 +48,13 @@ export function DesktopChrome({
   onOpenChapter,
   onPanel,
   onFullscreen,
+  narration,
 }: {
   manifest: ReaderManifest
   page: number
   rtl: boolean
   strip: boolean
+  narration: NarrationControl
   onSeek: (page: number) => void
   onOpenChapter: (chapterId: number) => void
   onPanel: (panel: Panel) => void
@@ -85,6 +91,17 @@ export function DesktopChrome({
         <ToolButton icon="list" label="Chapters" onClick={() => onPanel('chapters')} />
         <ToolButton icon="settings" label="Reader settings" onClick={() => onPanel('settings')} />
         <ToolButton icon="fullscreen" label="Fullscreen (f)" onClick={onFullscreen} />
+        {narration.supported && (
+          <>
+            <ToolButton
+              icon="headphones"
+              label="Read aloud (n)"
+              pressed={narration.on}
+              onClick={narration.onToggle}
+            />
+            <ToolButton icon="notes" label="Page transcript" onClick={() => onPanel('transcript')} />
+          </>
+        )}
       </nav>
 
       {manifest.origin === 'stream' && (
@@ -93,7 +110,9 @@ export function DesktopChrome({
         </p>
       )}
 
-      {!strip && (
+      {/* The read-aloud bar takes the slider's place while it is up; the page
+          being read is said aloud, and the arrow keys still turn it. */}
+      {!strip && !narration.on && (
         <div className="fixed bottom-space-md left-1/2 z-30 w-full max-w-xl -translate-x-1/2">
           <PageSlider page={page} pageCount={manifest.page_count} rtl={rtl} onSeek={onSeek} />
         </div>

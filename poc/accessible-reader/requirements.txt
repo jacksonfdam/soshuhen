@@ -1,0 +1,21 @@
+# Pinned to the versions the proof of concept was run against, on Python 3.12.
+#
+# One thing pip cannot install: ffmpeg, which joins the spoken clips and writes the MP3.
+#   macOS:   brew install ffmpeg
+#   Debian:  sudo apt install ffmpeg
+#   Windows: winget install Gyan.FFmpeg
+
+# Stage 1, OCR. Pulls in torch and transformers, about 1 GB installed, and downloads a 400 MB
+# model from Hugging Face the first time it runs.
+manga-ocr==0.1.16
+pillow==13.0.0
+
+# Stage 2, panels and bubbles. The headless build: nothing here opens a window, and the full
+# build drags in GUI libraries a server does not have.
+opencv-python-headless==5.0.0.93
+numpy==2.5.5
+
+# Stage 3, speech. gTTS is the default and needs the network; pyttsx3 is the offline backend and
+# speaks with the operating system's voices (on Linux it also needs: sudo apt install espeak-ng).
+gTTS==2.5.4
+pyttsx3==2.99

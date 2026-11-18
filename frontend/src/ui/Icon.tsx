@@ -32,6 +32,7 @@ const ICONS = {
   pause: 'M6 19h4V5H6zm8-14v14h4V5z',
   skip_previous: 'M6 6h2v12H6zm3.5 6 8.5 6V6z',
   skip_next: 'M6 18l8.5-6L6 6zM16 6v12h2V6z',
+  notes: 'M3 18h12v-2H3zm0-5h18v-2H3zm0-7v2h18V6z',
   headphones: 'M12 3a9 9 0 0 0-9 9v7a2 2 0 0 0 2 2h3v-8H5v-1a7 7 0 0 1 14 0v1h-3v8h3a2 2 0 0 0 2-2v-7a9 9 0 0 0-9-9z',
 } as const
 

@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 
+import { keptByControl } from './readerKeyOwner'
+
 export interface ReaderKeyActions {
   left: () => void
   right: () => void
@@ -8,6 +10,7 @@ export interface ReaderKeyActions {
   previousChapter: () => void
   nextChapter: () => void
   fullscreen: () => void
+  narrate: () => void
   escape: () => void
 }
 
@@ -20,8 +23,12 @@ export function useReaderKeys(actions: ReaderKeyActions): void {
     function onKey(event: KeyboardEvent) {
       if (event.metaKey || event.ctrlKey || event.altKey) return
       const target = event.target
-      if (target instanceof HTMLInputElement && target.type !== 'range') return
-      if (target instanceof HTMLTextAreaElement) return
+      if (
+        target instanceof HTMLElement &&
+        keptByControl(target.tagName, target.getAttribute('type'), event.key)
+      ) {
+        return
+      }
       const run = latest.current
       switch (event.key) {
         case 'ArrowLeft':
@@ -42,6 +49,9 @@ export function useReaderKeys(actions: ReaderKeyActions): void {
           break
         case 'f':
           run.fullscreen()
+          break
+        case 'n':
+          run.narrate()
           break
         case 'Escape':
           run.escape()

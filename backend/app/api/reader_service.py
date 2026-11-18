@@ -27,7 +27,7 @@ from app.handlers.base import PermanentError
 from app.handlers.download_chapter import load_catalogue_row
 from app.handlers.reader_cache import store_page_list, stored_page_list
 from app.queue import repo
-from app.reader import archive, cache
+from app.reader import archive, cache, narration
 from app.sources import source_for_url
 from app.sources.base import ChapterUnavailable, PageRef
 from app.sources.net import get_client
@@ -51,6 +51,14 @@ class PageFailed(RuntimeError):
 
 class ProseChapter(RuntimeError):
     """A light novel chapter asked of the page routes, which only draw images."""
+
+
+class NarrationOff(RuntimeError):
+    """No narrator is configured on this installation."""
+
+
+class NarrationFailed(RuntimeError):
+    """The narrator is configured and could not read the page."""
 
 
 @dataclass(frozen=True)
@@ -166,6 +174,49 @@ async def serve_page(session: AsyncSession, row: ChapterRow, index: int) -> tupl
     await _mark_streaming(session, row.id)
     await _queue_assembly_when_complete(session, row)
     return data, page_extension(data)
+
+
+def narration_available() -> bool:
+    """Whether a narrator is configured. It is not asked whether it is running:
+    a probe on every chapter opened would be a call to a service most readers
+    never use, and a narrator that is down says so when a page is asked of it."""
+    return bool(get_settings().narrator_url)
+
+
+def narrator_client() -> httpx.AsyncClient:
+    # A function of its own so the route tests can answer for the service.
+    return httpx.AsyncClient(timeout=narration.TIMEOUT)
+
+
+async def transcript(
+    session: AsyncSession, row: ChapterRow, index: int, direction: narration.Direction
+) -> dict[str, Any]:
+    """What a page says, from the narrator.
+
+    The bytes come through `serve_page`, so a page heard before it is seen is
+    fetched, cached and counted towards the chapter's assembly exactly once.
+    Nothing is stored: a page reads in under a second, and the browser keeps
+    the answer.
+    """
+    url = get_settings().narrator_url
+    if not url:
+        # Before the page is touched: an installation without a narrator must
+        # not fetch from a source on behalf of a feature it does not have.
+        raise NarrationOff("narration is not set up on this installation")
+    data, _ = await serve_page(session, row, index)
+    # Committed here, before the narrator is asked, for two reasons. The
+    # narrator may take a minute, and a transaction left open across that
+    # minute holds one of the pool's few connections: pages turned quickly
+    # against a slow narrator would leave none for the rest of the api. And
+    # what fetching the page recorded (the chapter is streaming, its assembly
+    # is queued) is true whether or not the narrator can read it; rolled back
+    # with a failed reading, the cached page would never become a download.
+    await session.commit()
+    try:
+        async with narrator_client() as client:
+            return await narration.transcribe(client, url, data, direction)
+    except narration.NarratorFailed as exc:
+        raise NarrationFailed(str(exc)) from exc
 
 
 async def page_list(

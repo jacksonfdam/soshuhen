@@ -202,6 +202,43 @@ FLARESOLVERR_URL=http://flaresolverr:8191
 With the variable empty, a site that needs a challenge solved fails clearly, saying so — it does
 not look like the site itself being unreachable.
 
+### Narrator (optional)
+
+```
+NARRATOR_URL=
+```
+
+Reads the lettering of a comic page so the reader can [speak it](features.md#having-a-chapter-read-to-you).
+Leave this empty unless you want that: with it empty the reader shows no Read aloud button, and
+nothing else about Soshuhen changes.
+
+It is not started by `docker compose up -d`. Build and start it, then point the api at it and
+recreate the api:
+
+```bash
+docker compose --profile narrator up -d --build
+```
+
+```
+NARRATOR_URL=http://narrator:8000
+```
+
+```bash
+docker compose up -d --force-recreate api
+```
+
+The first build installs a text recognition engine and its models, a few hundred megabytes; nothing
+is downloaded after that. A page takes about a second on a laptop CPU, and no GPU is used.
+
+The service is given as little as it can run on. It has no volume, a read-only filesystem, no
+privileges, and sits on a network of its own with no route off the host, shared only with the api.
+That last part is deliberate: the engine's runtime (ONNX Runtime) reports usage to its vendor by
+default. The service switches that off, and the network is what makes it a fact rather than a
+setting.
+
+To turn narration off again, empty the variable and recreate the api. Nothing is stored, so nothing
+is left behind.
+
 ## Reading on your phone
 
 Komga on port 25600 is what your reader connects to. Install any Komga-compatible reader, point

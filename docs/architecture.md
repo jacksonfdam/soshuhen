@@ -2,7 +2,7 @@
 
 ## Processes
 
-Nine services in `docker-compose.yml`. Seven start with `docker compose up -d`; the last two are
+Ten services in `docker-compose.yml`. Seven start with `docker compose up -d`; the last three are
 gated behind Compose profiles and start only when asked for by name.
 
 | Service | What it is |
@@ -16,14 +16,27 @@ gated behind Compose profiles and start only when asked for by name.
 | `bootstrap` | One-shot: claims Komga if needed, creates the library, exits |
 | `comick` | A second chapter source, built from source. Profile `comick` |
 | `flaresolverr` | Headless Chrome, for sites behind a Cloudflare challenge. Profile `flaresolverr` |
+| `narrator` | Reads the lettering of a page so the reader can speak it. Its own image, built from `narrator/`. Profile `narrator` |
 
-Both optional services are expensive to start — one compiles a third-party program, the other is
-several hundred megabytes of browser — which is why neither is paid for by someone sourcing
-chapters from MangaDex alone:
+The optional services are expensive to start — one compiles a third-party program, one is several
+hundred megabytes of browser, one carries a text recognition engine — which is why none is paid for
+by someone sourcing chapters from MangaDex alone:
 
 ```bash
-docker compose --profile comick --profile flaresolverr up -d
+docker compose --profile comick --profile flaresolverr --profile narrator up -d
 ```
+
+**`narrator` is not the same program as the others.** It lives in `narrator/` with its own
+dependencies, tests and image, imports nothing from `backend/`, and has no database. The engine it
+carries would otherwise land in `soshuhen:local`, which four services run. To the backend it is one
+more pure edge: `app/reader/narration.py` posts a page's bytes and gets back panels and text blocks,
+and `reader_service.transcript` is the only caller. The page is fetched through the same
+`serve_page` that displays it, so a page heard before it is seen is fetched from its source once.
+Nothing is stored; the browser keeps a transcript for a day and speech is made there too.
+
+The service sits on a Compose network marked `internal`, shared only with `api`. It decodes images
+from third-party sites, and its engine's runtime reports usage to its vendor unless told not to; the
+network is what guarantees neither can reach anything.
 
 **`api`, `worker` and `bootstrap` are the same program with different entrypoints**, and declare the
 same `image: soshuhen:local`. Build one and recreate the others, or they run stale code — the

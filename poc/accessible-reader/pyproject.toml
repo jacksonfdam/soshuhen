@@ -1,0 +1,8 @@
+# Tool settings only. The proof of concept is run from this folder, not installed.
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100

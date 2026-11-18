@@ -100,6 +100,14 @@ export interface PlayerEvents {
   /** The paragraph now being read, or null once nothing is. */
   block(index: number | null): void
   state(state: PlayState): void
+  /**
+   * The last utterance of the last block was spoken to its end. Told apart
+   * from `stopped`, which also follows a stop by hand and an engine that gave
+   * up: a reader that turns its own pages must turn one only for this. Called
+   * after the state has become `stopped`, so the listener may start the
+   * player again from inside it.
+   */
+  finished?(): void
 }
 
 /**
@@ -116,6 +124,8 @@ export class ReadAloudPlayer {
   private events: PlayerEvents
   private settings: SpeechSettings
   private blocks: string[][] = []
+  private rests: number[] = []
+  private resting: ReturnType<typeof setTimeout> | null = null
   private block = 0
   private piece = 0
   private turn = 0
@@ -131,9 +141,16 @@ export class ReadAloudPlayer {
     return this.current
   }
 
-  start(blocks: string[][], from: number) {
+  /**
+   * `rests[i]` is the silence, in milliseconds, kept after block `i` before
+   * the next one. A novel needs none: its paragraphs follow each other. A
+   * comic does, because the gap is how a listener hears that one bubble has
+   * ended and another, or another panel, has begun.
+   */
+  start(blocks: string[][], from: number, rests: number[] = []) {
     this.silence()
     this.blocks = blocks
+    this.rests = rests
     if (from >= blocks.length) {
       this.stop()
       return
@@ -189,6 +206,8 @@ export class ReadAloudPlayer {
 
   private silence() {
     this.turn += 1
+    if (this.resting !== null) clearTimeout(this.resting)
+    this.resting = null
     this.engine.cancel()
   }
 
@@ -217,9 +236,21 @@ export class ReadAloudPlayer {
       this.block += 1
       if (this.block >= this.blocks.length) {
         this.stop()
+        this.events.finished?.()
         return
       }
       this.events.block(this.block)
+      const rest = this.rests[this.block - 1] ?? 0
+      if (rest > 0) {
+        // Numbered like an utterance, so a pause, a skip or a stop during the
+        // silence leaves nothing waiting to speak when it would have ended.
+        const turn = ++this.turn
+        this.resting = setTimeout(() => {
+          this.resting = null
+          if (turn === this.turn) this.speak()
+        }, rest)
+        return
+      }
     }
     this.speak()
   }

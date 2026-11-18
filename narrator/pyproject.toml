@@ -1,0 +1,31 @@
+[project]
+name = "soshuhen-narrator"
+version = "0.1.0"
+requires-python = ">=3.12"
+# Pinned exactly, unlike the backend's ranges: this image carries a model runtime, and an
+# engine that changes under it changes what every page reads as.
+dependencies = [
+    "rapidocr==3.10.0",
+    "onnxruntime==1.31.1",
+    "opencv-python-headless==5.0.0.93",
+    "numpy==2.5.4",
+    "fastapi==0.162.0",
+    "uvicorn==0.54.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "httpx==0.28.1",
+    "ruff==0.17.3",
+]
+
+[tool.setuptools.packages.find]
+include = ["narrator*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
