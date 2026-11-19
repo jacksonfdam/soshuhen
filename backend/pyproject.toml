@@ -17,7 +17,7 @@ dependencies = [
     "selectolax>=0.3,<1.0",
     "apscheduler>=3.10",
     "sse-starlette>=2.1",
-    "pillow>=11.0",
+    "pillow>=13.0.0",
     # Reads the bookmarks and page text of a novel PDF a user imports. BSD-3.
     "pypdf>=5.1",
     # pypdf's AES provider: most exported books carry copy protection that opens
