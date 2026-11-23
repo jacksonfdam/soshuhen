@@ -6,6 +6,25 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// A fixed versionCode made every build look the same on a device: the only way
+// to tell whether a phone was current was its install date. The commit count
+// rises with every commit on main, so a newer build always installs over an
+// older one, and the hash in versionName names the exact code. "-dirty" marks a
+// build of uncommitted changes, which shares the commit's number.
+// Only changes under mobile/ count as dirty: a backend edit does not change the
+// app. A shallow clone (CI) counts only its own depth; nothing built there ships.
+fun git(vararg args: String): String? = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", *args)
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim()
+}.getOrNull()?.takeIf { it.isNotEmpty() }
+
+val gitCommitCount = git("rev-list", "--count", "HEAD")?.toIntOrNull() ?: 1
+val gitRevision = (git("rev-parse", "--short=7", "HEAD") ?: "unknown") +
+    if (git("status", "--porcelain", "--untracked-files=no", "--", ".").isNullOrEmpty()) "" else "-dirty"
+
 android {
     namespace = "app.soshuhen"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -14,8 +33,8 @@ android {
         applicationId = "app.soshuhen"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = gitCommitCount
+        versionName = "0.1.0+$gitCommitCount.$gitRevision"
     }
 
     // The key is the app's identity: Android refuses an update signed with
