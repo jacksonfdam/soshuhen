@@ -22,6 +22,13 @@ echo "sdk.dir=$HOME/Library/Android/sdk" > local.properties
 
 The default JDK on a machine may be newer than 21; Gradle and AGP are run on 21.
 
+The version comes from git. `versionCode` is the commit count, so a build of a
+later commit always installs over an earlier one; `versionName` reads
+`0.1.0+<count>.<hash>`, with `-dirty` when `mobile/` has uncommitted changes.
+Settings shows it, and `adb shell dumpsys package app.soshuhen | grep version`
+reads it off a device. A branch can count fewer commits than a newer `main`, and
+Android refuses that as a downgrade: install with `adb install -r -d`.
+
 ## Layout
 
 - `shared/` is Kotlin Multiplatform: every screen, view model, API call and rule
