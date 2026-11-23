@@ -70,5 +70,41 @@ place:
 ```
 
 Without `keystore.properties` a release build is signed with the debug key, so
-it still builds on a fresh clone and in CI; such an APK cannot later be updated
-by one signed with your own key. Release builds are not minified.
+it still builds on a fresh clone and in CI; an update signed with your own key is
+refused over such an install until it is rotated, below. Release builds are not
+minified.
+
+### Moving an install off the debug key
+
+An install signed with the debug key can take your key without being uninstalled,
+through APK Signature Scheme v3 rotation: a lineage file records the debug key
+authorising yours, and one APK carrying it moves the device across. After that,
+ordinary `installRelease` builds install over it. The two devices in use were
+moved this way on 2026-11-23, and `soshuhen.lineage` from that move sits next to
+the keystore, gitignored; back it up with them.
+
+With `BT=~/Library/Android/sdk/build-tools/37.0.0` and the store password in
+`KS_PW`, from `mobile/`:
+
+```bash
+$BT/apksigner rotate --out soshuhen.lineage \
+  --old-signer --ks ~/.android/debug.keystore --ks-pass pass:android \
+  --new-signer --ks soshuhen.keystore --ks-pass env:KS_PW
+```
+
+```bash
+$BT/apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android \
+  --next-signer --ks soshuhen.keystore --ks-pass env:KS_PW \
+  --lineage soshuhen.lineage --rotation-min-sdk-version 28 \
+  --out rotated.apk androidApp/build/outputs/apk/release/androidApp-release.apk
+```
+
+```bash
+adb install -r rotated.apk
+```
+
+`rotate` is only needed once; reuse the existing lineage after that. Keep
+`--rotation-min-sdk-version 28`: apksigner otherwise applies rotation from API 33
+only, and a device below that, such as the Android 11 tablet, keeps the debug key
+and later refuses every build signed with yours. A refused `install -r` changes
+nothing on the device, so it is safe to try.
