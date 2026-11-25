@@ -206,8 +206,10 @@ and block it from ever syncing back. *(Call, from the builder check:)*
 
 ### Server: backup
 
-`routes_backup.py` exports and restores profiles and every new `profile_id` column. A backup
-from before this version restores into the managing profile.
+`routes_backup.py` is the Mihon backup exchange, not a database dump. Export writes the
+requesting profile's list progress and bookmarks; import applies bookmarks to the requesting
+profile. Without the header both act as the managing profile, as today. *(Corrected while
+planning: the first draft took this route for a full database backup.)*
 
 ### Android app
 
