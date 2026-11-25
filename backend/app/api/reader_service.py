@@ -403,7 +403,7 @@ async def save_position(
                    (series_id, chapter_id, volume_id, page, fraction, updated_at)
             values (:s, :c, :v, :p, :f,
                     least(coalesce(cast(:at as timestamptz), now()), now()))
-            on conflict (series_id) do update
+            on conflict (profile_id, series_id) do update
                set chapter_id = excluded.chapter_id, volume_id = excluded.volume_id,
                    page = excluded.page, fraction = excluded.fraction,
                    updated_at = excluded.updated_at
@@ -447,7 +447,7 @@ async def save_prefs(
             """
             insert into series_reader_pref (series_id, mode, scale, background)
             values (:s, :m, :sc, :b)
-            on conflict (series_id) do update
+            on conflict (profile_id, series_id) do update
                set mode = excluded.mode, scale = excluded.scale,
                    background = excluded.background
             """

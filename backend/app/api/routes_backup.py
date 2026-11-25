@@ -116,8 +116,10 @@ async def export_mihon(session: Session) -> Response:
     for row in (
         await session.execute(
             text(
-                "select series_id, number, title, source_url, bookmarked from chapter"
-                " where source_url is not null order by series_id, number"
+                "select c.series_id, c.number, c.title, c.source_url,"
+                " exists (select 1 from chapter_bookmark b where b.chapter_id = c.id"
+                "         and b.profile_id = manager_profile_id()) as bookmarked"
+                " from chapter c where c.source_url is not null order by c.series_id, c.number"
             )
         )
     ).all():
@@ -300,8 +302,9 @@ async def import_mihon(request: Request, session: Session, apply: bool = False) 
         if apply and bookmarked:
             await session.execute(
                 text(
-                    "update chapter set bookmarked = true where series_id = :id"
-                    " and number = any(cast(:numbers as numeric[]))"
+                    "insert into chapter_bookmark (chapter_id) select id from chapter"
+                    " where series_id = :id and number = any(cast(:numbers as numeric[]))"
+                    " on conflict do nothing"
                 ),
                 {"id": series_id, "numbers": bookmarked},
             )

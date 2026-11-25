@@ -64,7 +64,7 @@ async def store_token(
             insert into provider_token (provider, access_token, refresh_token, expires_at,
                                         account_name)
             values (:provider, :access, :refresh, :expires_at, :account)
-            on conflict (provider) do update
+            on conflict (profile_id, provider) do update
                set access_token = excluded.access_token,
                    refresh_token = coalesce(excluded.refresh_token, provider_token.refresh_token),
                    expires_at = excluded.expires_at,

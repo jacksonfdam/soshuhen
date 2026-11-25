@@ -60,7 +60,13 @@ async def record(
         )
     ).scalar_one()
     await session.execute(
-        text("delete from notification where read_at < now() - make_interval(days => :days)"),
+        text(
+            """
+            delete from notification
+             where id in (select notification_id from notification_read
+                           where read_at < now() - make_interval(days => :days))
+            """
+        ),
         {"days": RETENTION.days},
     )
     # A nudge, not the content: the browser re-reads the list, so the API stays

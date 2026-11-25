@@ -96,8 +96,9 @@ async def test_the_export_is_a_backup_mihon_reads(client):
         for number, bookmarked in ((1, False), (2, True), (3, False)):
             await session.execute(
                 text(
-                    "insert into chapter (series_id, number, state, source_url, bookmarked)"
-                    " values (:s, :n, 'known', :u, :b)"
+                    "with c as (insert into chapter (series_id, number, state, source_url)"
+                    " values (:s, :n, 'known', :u) returning id)"
+                    " insert into chapter_bookmark (chapter_id) select id from c where :b"
                 ),
                 {"s": series_id, "n": number, "u": f"https://fake.test/manga/frieren/{number}/",
                  "b": bookmarked},
@@ -181,7 +182,11 @@ async def test_an_import_previews_then_maps_and_bookmarks(client):
         )
         bookmarked = (
             await session.execute(
-                text("select bookmarked from chapter where series_id = :s"), {"s": by_tracker}
+                text(
+                    "select exists (select 1 from chapter_bookmark b join chapter c"
+                    " on c.id = b.chapter_id where c.series_id = :s)"
+                ),
+                {"s": by_tracker},
             )
         ).scalar_one()
         jobs = (

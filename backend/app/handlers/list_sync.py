@@ -430,7 +430,7 @@ async def upsert_entry(session: AsyncSession, dto: ListEntryDTO, series_id: int)
             values (:provider, :media_id, :series_id, :romaji, :english, cast(:synonyms as jsonb),
                     :status, :progress, :total, :progress_volume,
                     cast(:total_volumes as integer), :cover, cast(:raw as jsonb), now())
-            on conflict (provider, provider_media_id) do update
+            on conflict (profile_id, provider, provider_media_id) do update
                set series_id = coalesce(list_entry.series_id, excluded.series_id),
                    title_romaji = excluded.title_romaji,
                    title_english = excluded.title_english,
@@ -480,7 +480,7 @@ async def upsert_entry_status(session: AsyncSession, dto: ListEntryDTO, series_i
                                     total_chapters, cover_url, raw, updated_at)
             values (:provider, :media_id, :series_id, :romaji, :english, cast(:synonyms as jsonb),
                     :status, :progress, :total, :cover, cast(:raw as jsonb), now())
-            on conflict (provider, provider_media_id) do update
+            on conflict (profile_id, provider, provider_media_id) do update
                set series_id = coalesce(list_entry.series_id, excluded.series_id),
                    status = excluded.status,
                    title_english = coalesce(list_entry.title_english, excluded.title_english),

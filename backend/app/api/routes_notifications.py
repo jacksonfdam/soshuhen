@@ -30,9 +30,11 @@ async def list_notifications(
                 """
                 select n.id, n.series_id, s.canonical_title, s.meta ->> 'cover_url' as cover_url,
                        n.kind, n.count, n.first_number, n.last_number, n.volume_number,
-                       n.created_at, n.read_at
+                       n.created_at, r.read_at
                   from notification n
                   join series s on s.id = n.series_id
+                  left join notification_read r
+                    on r.notification_id = n.id and r.profile_id = manager_profile_id()
                  order by n.created_at desc, n.id desc
                  limit :limit
                 """
@@ -43,7 +45,14 @@ async def list_notifications(
     # Counted on its own: the badge is every unread row, not the unread rows
     # that happen to fit on this page.
     unread = (
-        await session.execute(text("select count(*) from notification where read_at is null"))
+        await session.execute(text(
+                """
+                select count(*) from notification n
+                 where not exists (select 1 from notification_read r
+                                    where r.notification_id = n.id
+                                      and r.profile_id = manager_profile_id())
+                """
+            ))
     ).scalar_one()
     return {
         "items": [
@@ -71,14 +80,20 @@ async def mark_read(notification_id: int, session: Session) -> dict[str, bool]:
     found = (
         await session.execute(
             text(
-                "update notification set read_at = coalesce(read_at, now())"
-                " where id = :id returning id"
+                "select id from notification where id = :id"
             ),
             {"id": notification_id},
         )
     ).first()
     if found is None:
         raise HTTPException(status_code=404, detail="no such notification")
+    await session.execute(
+        text(
+            "insert into notification_read (notification_id, read_at) values (:id, now())"
+            " on conflict do nothing"
+        ),
+        {"id": notification_id},
+    )
     await announce_read(session, notification_id)
     await session.commit()
     return {"ok": True}
@@ -88,7 +103,15 @@ async def mark_read(notification_id: int, session: Session) -> dict[str, bool]:
 async def mark_all_read(session: Session) -> dict[str, int]:
     marked = (
         await session.execute(
-            text("update notification set read_at = now() where read_at is null")
+            text(
+                """
+                insert into notification_read (notification_id, read_at)
+                select id, now() from notification n
+                 where not exists (select 1 from notification_read r
+                                    where r.notification_id = n.id
+                                      and r.profile_id = manager_profile_id())
+                """
+            )
         )
     ).rowcount
     await announce_read(session, None)

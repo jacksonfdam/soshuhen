@@ -467,9 +467,12 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
     chapters = await session.execute(
         text(
             """
-            select id, number, title, state, file_path, komga_book_id, available_until,
-                   bookmarked
-              from chapter where series_id = :id order by number
+            select c.id, c.number, c.title, c.state, c.file_path, c.komga_book_id,
+                   c.available_until,
+                   exists (select 1 from chapter_bookmark b
+                            where b.chapter_id = c.id
+                              and b.profile_id = manager_profile_id()) as bookmarked
+              from chapter c where c.series_id = :id order by c.number
             """
         ),
         {"id": series_id},
@@ -917,20 +920,30 @@ async def set_bookmark(
 
     Read is derived from the lists and never stored here; a bookmark is the one
     thing about a chapter only this installation knows, so it is the one mark
-    the chapter row keeps.
+    kept beside the chapter.
     """
-    result = await session.execute(
-        text(
-            """
-            update chapter set bookmarked = :bookmarked
-             where id = :chapter_id and series_id = :series_id
-            returning id
-            """
-        ),
-        {"bookmarked": body.bookmarked, "chapter_id": chapter_id, "series_id": series_id},
+    found = await session.execute(
+        text("select id from chapter where id = :chapter_id and series_id = :series_id"),
+        {"chapter_id": chapter_id, "series_id": series_id},
     )
-    if result.scalar_one_or_none() is None:
+    if found.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="chapter not found in this series")
+    if body.bookmarked:
+        await session.execute(
+            text(
+                "insert into chapter_bookmark (chapter_id) values (:chapter_id)"
+                " on conflict do nothing"
+            ),
+            {"chapter_id": chapter_id},
+        )
+    else:
+        await session.execute(
+            text(
+                "delete from chapter_bookmark"
+                " where chapter_id = :chapter_id and profile_id = manager_profile_id()"
+            ),
+            {"chapter_id": chapter_id},
+        )
     await session.commit()
     return {"ok": True, "bookmarked": body.bookmarked}
 
@@ -1034,7 +1047,7 @@ async def track_local(series_id: int, session: Session) -> dict[str, Any]:
             insert into list_entry (series_id, provider, provider_media_id, status,
                                     user_progress_chapter, title_english, synonyms, raw)
             values (:id, :local, :media_id, :status, 0, :title, '[]'::jsonb, '{}'::jsonb)
-            on conflict (provider, provider_media_id) do nothing
+            on conflict (profile_id, provider, provider_media_id) do nothing
             """
         ),
         {

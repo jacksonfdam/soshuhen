@@ -52,8 +52,10 @@ async def _rows(session):
     return (
         await session.execute(
             text(
-                "select kind, count, first_number, last_number, volume_number, read_at"
-                " from notification order by id"
+                "select n.kind, n.count, n.first_number, n.last_number, n.volume_number,"
+                " r.read_at from notification n"
+                " left join notification_read r on r.notification_id = n.id"
+                " order by n.id"
             )
         )
     ).all()
@@ -114,10 +116,12 @@ async def test_old_read_rows_are_pruned_and_unread_kept():
     async with get_sessionmaker()() as session:
         series_id = await _series(session)
         seed = text(
-            "insert into notification"
-            " (series_id, kind, count, first_number, last_number, created_at, read_at)"
-            " values (:s, 'chapters', 1, :n, :n, now() - make_interval(days => :created),"
-            "         now() - make_interval(days => :read))"
+            "with n as (insert into notification"
+            " (series_id, kind, count, first_number, last_number, created_at)"
+            " values (:s, 'chapters', 1, :n, :n, now() - make_interval(days => :created))"
+            " returning id)"
+            " insert into notification_read (notification_id, read_at)"
+            " select id, now() - make_interval(days => :read) from n"
         )
         await session.execute(seed, {"s": series_id, "n": 1, "created": 40, "read": 31})
         await session.execute(seed, {"s": series_id, "n": 2, "created": 3, "read": 2})
