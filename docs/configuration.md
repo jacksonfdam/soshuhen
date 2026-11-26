@@ -262,6 +262,32 @@ its pages for a week.
 `READER_CACHE_PATH` names the directory inside the containers, `/reader-cache` by default. `api`
 runs as `PUID:PGID` because `worker-download` deletes what it wrote.
 
+## Profiles
+
+One installation can serve a household. Each profile has its own list accounts, its own library
+(the series its own lists hold), reading positions, bookmarks, reading history and which
+notifications it has read. Files, mappings, downloads and settings are shared, so a series two
+people read is downloaded once.
+
+- **The managing profile** is the one the upgrade created, named `Me`. The web interface acts as it
+  and sees every series with `?scope=all`; it confirms mappings, chooses downloads and owns Komga,
+  anime suggestions and the J-Novel Club sign-in. The `MANGABAKA_TOKEN` in `.env` is its key.
+- **Other profiles** are created under `/api/profiles`. Connect their MyAnimeList or AniList account
+  with `GET /api/auth/{provider}/start?profile_id=<id>`; store a MangaBaka key with
+  `PUT /api/profiles/<id>/credentials/mangabaka`. The redirect URL registered with each service does
+  not change.
+- **A client names its profile** with the header `X-Soshuhen-Profile: <id>`. No header means the
+  managing profile, which is why the web interface and the MCP server work unchanged. An id that
+  names no profile is refused with 400.
+- **Komga stays one account.** Reading under another profile moves that profile's lists and never
+  marks anything read in Komga, so it cannot move the manager's lists through `progress_push`.
+- **Deleting a profile** removes its accounts and reading data, and the series only it held.
+
+**The PIN is not security.** A PIN of 4 to 6 digits stops someone opening another person's profile
+by tapping the wrong avatar. It guards the picker, not the API: anyone who can reach the server can
+act as any profile by naming it. The section below applies to profiles exactly as it does to
+everything else.
+
 ## The stack has no authentication of its own
 
 Read this before you forward a port, and before you decide the default is fine.
