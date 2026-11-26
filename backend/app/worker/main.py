@@ -60,14 +60,25 @@ async def enqueue_list_sync() -> None:
     async with sessionmaker() as session:
         # Asked of the providers, not listed here: the local list answers from
         # this database and has nothing to pull, and scheduling it would fail
-        # the same job every hour forever.
-        for provider in syncing_providers():
-            await repo.enqueue(
-                session,
-                JobType.LIST_SYNC,
-                {"provider": str(provider)},
-                dedupe_key=f"list_sync:{provider}",
-            )
+        # the same job every hour forever. A profile with no account on a
+        # provider is skipped for the same reason.
+        connected = {
+            (row.profile_id, row.provider)
+            for row in (
+                await session.execute(text("select profile_id, provider from provider_token"))
+            ).all()
+        }
+        for profile in await profiles.all_profiles(session):
+            keyed = keyed_providers(profile)
+            for provider in syncing_providers():
+                if (profile.id, str(provider)) not in connected and str(provider) not in keyed:
+                    continue
+                await repo.enqueue(
+                    session,
+                    JobType.LIST_SYNC,
+                    {"provider": str(provider), "profile_id": profile.id},
+                    dedupe_key=f"list_sync:{profile.id}:{provider}",
+                )
         await session.commit()
     log.info("cron: queued list sync")
 

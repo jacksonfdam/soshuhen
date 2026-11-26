@@ -400,7 +400,9 @@ async def merge_aliases(session: AsyncSession, series_id: int, dto: ListEntryDTO
     )
 
 
-async def skip_removed(session: AsyncSession, dto: ListEntryDTO) -> bool:
+async def skip_removed(
+    session: AsyncSession, dto: ListEntryDTO, *, profile_id: int | None = None
+) -> bool:
     """Whether the user removed this work and a sync must not bring it back.
 
     Checked before the series is resolved rather than after, so a removed entry
@@ -412,23 +414,28 @@ async def skip_removed(session: AsyncSession, dto: ListEntryDTO) -> bool:
                 """
                 select 1 from removed_entry
                  where provider = :provider and provider_media_id = :media_id
+                   and profile_id = coalesce(cast(:profile_id as bigint), manager_profile_id())
                 """
             ),
-            {"provider": str(dto.provider), "media_id": dto.media_id},
+            {"provider": str(dto.provider), "media_id": dto.media_id, "profile_id": profile_id},
         )
     ).first()
     return row is not None
 
 
-async def upsert_entry(session: AsyncSession, dto: ListEntryDTO, series_id: int) -> None:
+async def upsert_entry(
+    session: AsyncSession, dto: ListEntryDTO, series_id: int, *, profile_id: int | None = None
+) -> None:
     await session.execute(
         text(
             """
-            insert into list_entry (provider, provider_media_id, series_id, title_romaji,
+            insert into list_entry (profile_id, provider, provider_media_id, series_id,
+                                    title_romaji,
                                     title_english, synonyms, status, user_progress_chapter,
                                     total_chapters, user_progress_volume, total_volumes,
                                     cover_url, raw, updated_at)
-            values (:provider, :media_id, :series_id, :romaji, :english, cast(:synonyms as jsonb),
+            values (coalesce(cast(:profile_id as bigint), manager_profile_id()),
+                    :provider, :media_id, :series_id, :romaji, :english, cast(:synonyms as jsonb),
                     :status, :progress, :total, :progress_volume,
                     cast(:total_volumes as integer), :cover, cast(:raw as jsonb), now())
             on conflict (profile_id, provider, provider_media_id) do update
@@ -447,6 +454,7 @@ async def upsert_entry(session: AsyncSession, dto: ListEntryDTO, series_id: int)
             """
         ),
         {
+            "profile_id": profile_id,
             "provider": str(dto.provider),
             "media_id": dto.media_id,
             "series_id": series_id,
@@ -464,7 +472,9 @@ async def upsert_entry(session: AsyncSession, dto: ListEntryDTO, series_id: int)
     )
 
 
-async def upsert_entry_status(session: AsyncSession, dto: ListEntryDTO, series_id: int) -> None:
+async def upsert_entry_status(
+    session: AsyncSession, dto: ListEntryDTO, series_id: int, *, profile_id: int | None = None
+) -> None:
     """Write status onto an entry without touching what the provider owns.
 
     Status flows outward from Discovery; reading progress never does. A DTO built
@@ -476,10 +486,12 @@ async def upsert_entry_status(session: AsyncSession, dto: ListEntryDTO, series_i
     await session.execute(
         text(
             """
-            insert into list_entry (provider, provider_media_id, series_id, title_romaji,
+            insert into list_entry (profile_id, provider, provider_media_id, series_id,
+                                    title_romaji,
                                     title_english, synonyms, status, user_progress_chapter,
                                     total_chapters, cover_url, raw, updated_at)
-            values (:provider, :media_id, :series_id, :romaji, :english, cast(:synonyms as jsonb),
+            values (coalesce(cast(:profile_id as bigint), manager_profile_id()),
+                    :provider, :media_id, :series_id, :romaji, :english, cast(:synonyms as jsonb),
                     :status, :progress, :total, :cover, cast(:raw as jsonb), now())
             on conflict (profile_id, provider, provider_media_id) do update
                set series_id = coalesce(list_entry.series_id, excluded.series_id),
@@ -492,6 +504,7 @@ async def upsert_entry_status(session: AsyncSession, dto: ListEntryDTO, series_i
             """
         ),
         {
+            "profile_id": profile_id,
             "provider": str(dto.provider),
             "media_id": dto.media_id,
             "series_id": series_id,
@@ -515,6 +528,7 @@ async def existing_series_for_entry(
             """
             select series_id from list_entry
              where provider = :provider and provider_media_id = :media_id
+               and series_id is not null
             """
         ),
         {"provider": str(dto.provider), "media_id": dto.media_id},
@@ -563,12 +577,14 @@ select e.series_id, max(own.user_progress_chapter) as chapter
    and e.provider <> :local
  where own.provider = :local
    and own.series_id is not null
+   and own.profile_id = :profile_id
+   and e.profile_id = own.profile_id
    and e.user_progress_chapter < own.user_progress_chapter
  group by e.series_id
 """
 
 
-async def carry_local_progress(ctx: JobContext) -> int:
+async def carry_local_progress(ctx: JobContext, profile_id: int | None = None) -> int:
     """Hand what was read locally to a list that has since appeared.
 
     Tracking locally is what a reader does while nothing else will take the
@@ -579,13 +595,19 @@ async def carry_local_progress(ctx: JobContext) -> int:
     The write goes through the ordinary job, so the forward-only guard still
     decides what actually lands on the provider.
     """
-    rows = (await ctx.session.execute(text(CARRY_SQL), {"local": str(Provider.LOCAL)})).all()
+    if profile_id is None:
+        profile_id = (await profiles.manager(ctx.session)).id
+    rows = (
+        await ctx.session.execute(
+            text(CARRY_SQL), {"local": str(Provider.LOCAL), "profile_id": profile_id}
+        )
+    ).all()
     for row in rows:
         await ctx.enqueue(
             JobType.PROGRESS_WRITE,
-            {"series_id": row.series_id, "chapter": row.chapter},
+            {"series_id": row.series_id, "chapter": row.chapter, "profile_id": profile_id},
             series_id=row.series_id,
-            dedupe_key=f"progress_write:{row.series_id}",
+            dedupe_key=f"progress_write:{profile_id}:{row.series_id}",
         )
     return len(rows)
 
@@ -606,11 +628,11 @@ async def handle(ctx: JobContext) -> None:
     skipped = 0
 
     for index, dto in enumerate(entries, start=1):
-        if await skip_removed(ctx.session, dto):
+        if await skip_removed(ctx.session, dto, profile_id=profile.id):
             skipped += 1
             continue
         series_id, is_new = await resolve_series(ctx.session, dto)
-        await upsert_entry(ctx.session, dto, series_id)
+        await upsert_entry(ctx.session, dto, series_id, profile_id=profile.id)
         await refresh_series_kind(ctx.session, series_id)
         if is_new:
             created += 1
@@ -626,7 +648,7 @@ async def handle(ctx: JobContext) -> None:
                 f"processed {index}/{len(entries)}", pct=10 + 90 * index / max(len(entries), 1)
             )
 
-    carried = await carry_local_progress(ctx)
+    carried = await carry_local_progress(ctx, profile.id)
 
     await ctx.log(
         f"done: {len(entries)} entries, {created} new series"
