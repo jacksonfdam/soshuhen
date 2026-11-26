@@ -7,6 +7,20 @@ import kotlin.time.Instant
 // Only the fields the app reads. The server sends many more, and a field it
 // adds later must not break a phone nobody has updated.
 
+/** A person using the server. The PIN never reaches the phone. */
+@Serializable
+data class Profile(
+    val id: Long,
+    val name: String,
+    val avatar: String,
+    @SerialName("has_pin") val hasPin: Boolean,
+    @SerialName("is_manager") val isManager: Boolean,
+    val position: Int,
+)
+
+/** The key this device stores for a profile: 0 for the manager, its id otherwise. */
+fun Profile.key(): Long = if (isManager) 0 else id
+
 @Serializable
 data class Identity(
     val app: String,
