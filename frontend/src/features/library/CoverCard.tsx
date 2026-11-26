@@ -3,7 +3,8 @@ import { Link, useLocation } from 'react-router-dom'
 import { Icon, QuickIncrement } from '../../ui'
 import { originState } from '../../lib/backTo'
 import { formatChapter, formatProviders, formatSeriesFormat } from '../../lib/format'
-import type { Series } from '../../lib/api'
+import type { Profile, Series } from '../../lib/api'
+import { HolderChip } from './HolderChip'
 import { totalChapters } from './useLibrary'
 
 // Markup reference: the poster cards under "Leitura Ativa" in
@@ -16,6 +17,7 @@ export function CoverCard({
   onIncrement,
   selected = false,
   onToggleSelect,
+  holdersOf,
 }: {
   series: Series
   /** The chapter shown is one the queue took and no worker has written yet. */
@@ -24,8 +26,11 @@ export function CoverCard({
   /** Marked for a bulk action: a violet ring and a badge say so. */
   selected?: boolean
   onToggleSelect?: (id: number) => void
+  /** Who follows a series that is not the manager's; null for none to show. */
+  holdersOf?: (series: Series) => Profile[] | null
 }) {
   const total = totalChapters(series)
+  const holders = holdersOf?.(series) ?? null
   const pct = total ? Math.min(100, Math.round((series.progress / total) * 100)) : null
   const format = formatSeriesFormat(series.format)
   const genre = series.genres[0]
@@ -136,6 +141,7 @@ export function CoverCard({
         <h3 className="truncate text-body-md font-bold text-on-surface transition-colors group-hover:text-primary">
           {series.title}
         </h3>
+        {holders && <HolderChip holders={holders} />}
         {pipeline && (
           <div className={`flex items-center gap-1.5 font-mono text-label-sm ${pipeline.tone}`}>
             <Icon name={pipeline.icon} className="h-3 w-3" />
