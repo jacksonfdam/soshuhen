@@ -359,7 +359,11 @@ async def mark_read_up_to_lists(ctx: JobContext, client, series_id: int, books) 
     furthest = await progress_events.furthest_read(ctx.session, series_id)
     volume_read = (
         await ctx.session.execute(
-            text("select max(user_progress_volume) from list_entry where series_id = :s"),
+            # The manager's lists: Komga's read marks are the manager's.
+            text(
+                "select max(user_progress_volume) from list_entry"
+                " where series_id = :s and profile_id = manager_profile_id()"
+            ),
             {"s": series_id},
         )
     ).scalar_one()

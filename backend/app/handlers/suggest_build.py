@@ -47,8 +47,17 @@ async def anime_rows(session: AsyncSession) -> list:
 
 
 async def already_known(session: AsyncSession) -> set[tuple[str, str]]:
-    """Manga ids already on a reading list. Suggesting those is noise."""
-    result = await session.execute(text("select provider, provider_media_id from list_entry"))
+    """Manga ids already on the manager's lists. Suggesting those is noise.
+
+    Suggestions come from the manager's anime, so they are measured against the
+    manager's reading; another profile holding a title does not make it known.
+    """
+    result = await session.execute(
+        text(
+            "select provider, provider_media_id from list_entry"
+            " where profile_id = manager_profile_id()"
+        )
+    )
     return {(row.provider, row.provider_media_id) for row in result.all()}
 
 

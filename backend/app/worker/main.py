@@ -146,8 +146,10 @@ async def enqueue_progress_push() -> None:
                 select distinct s.id
                   from series s
                   join list_entry e on e.series_id = s.id
-                  left join provider_token t on t.provider = e.provider and t.profile_id = e.profile_id
+                  left join provider_token t
+                    on t.provider = e.provider and t.profile_id = e.profile_id
                  where s.komga_series_id is not null
+                   and e.profile_id = manager_profile_id()
                    and (t.provider is not null
                         or e.provider = any(cast(:keyed as text[])))
                 """
