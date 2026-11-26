@@ -1004,13 +1004,15 @@ class RemoveIn(BaseModel):
 
 
 @router.delete("")
-async def remove_series_endpoint(body: RemoveIn, session: Session) -> dict[str, Any]:
+async def remove_series_endpoint(
+    body: RemoveIn, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """Remove one or many series, and remember that they were removed.
 
     A selection is one decision, so the body takes a list and the single case
     is a list of one rather than a second endpoint that drifts from this one.
     """
-    removed = await remove_series(session, body.ids)
+    removed = await remove_series(session, body.ids, profile_id=profile.id)
     await session.commit()
     return {"ok": True, "removed": removed}
 

@@ -12,6 +12,7 @@ from app.enums import Provider
 from app.profiles import AVATAR_KEYS, hash_pin, valid_pin, verify_pin
 from app.providers import get_source, syncing_providers
 from app.providers.tokens import store_token
+from app.series_removal import delete_profile
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
@@ -157,7 +158,9 @@ async def delete(profile_id: int, session: Session) -> dict[str, Any]:
     row = await _one(session, profile_id)
     if row.is_manager:
         raise HTTPException(status_code=409, detail="the managing profile cannot be deleted")
-    raise HTTPException(status_code=501, detail="deleting a profile is not available yet")
+    removed = await delete_profile(session, profile_id)
+    await session.commit()
+    return {"ok": True, "series_removed": removed}
 
 
 @router.get("/{profile_id}/connections")
