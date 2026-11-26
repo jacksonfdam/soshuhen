@@ -1,4 +1,5 @@
 import type { ListStatus } from './format'
+import { profileHeaders } from './profiles'
 
 /** `local`: no source to download from, but the library already holds some of it. */
 export type SeriesState = 'mapped' | 'needs_review' | 'local' | 'downloading' | 'failed'
@@ -80,9 +81,47 @@ export interface SourceSearch {
   errors: { site: string; detail: string }[]
 }
 
+/** A person using this server. The PIN itself never leaves the server. */
+export interface Profile {
+  id: number
+  name: string
+  avatar: string
+  has_pin: boolean
+  is_manager: boolean
+  position: number
+}
+
+/** `pin: null` clears it; a PIN left out of the patch is left alone. */
+export interface ProfilePatch {
+  name?: string
+  avatar?: string
+  pin?: string | null
+  position?: number
+}
+
+export interface ProfileConnection {
+  provider: string
+  connected: boolean
+  account_name: string | null
+  /** False for a provider that takes a key (MangaBaka) instead of a sign-in. */
+  uses_oauth: boolean
+}
+
+export interface RemovalResult {
+  ok: boolean
+  /** Series that left the console's library. */
+  removed: number
+  /** Of those, series no one follows any more, deleted from the server. */
+  deleted: number
+  /** Ids only someone else follows, left alone. */
+  skipped: number[]
+}
+
 export interface Series {
   id: number
   title: string
+  /** Profiles whose lists hold this series. Empty for an import no list holds. */
+  held_by: number[]
   slug: string
   cover_url: string | null
   source_site: string | null
@@ -1082,8 +1121,13 @@ export const api = {
   statusDestinations: () =>
     request<{ destinations: string[] }>('/api/series/status/destinations'),
   stats: (period: StatsPeriodKey) => request<Stats>(`/api/stats?period=${period}`),
-  series: (state?: string) =>
-    request<Series[]>(`/api/series${state ? `?state=${state}` : ''}`),
+  // The console sees every series on the server, not only the manager's own:
+  // removal, status and downloads for someone else's series live here too.
+  series: (state?: string, scope: 'own' | 'all' = 'all') => {
+    const params = new URLSearchParams({ scope })
+    if (state) params.set('state', state)
+    return request<Series[]>(`/api/series?${params}`)
+  },
   chapters: (id: number) => request<unknown[]>(`/api/series/${id}/chapters`),
   seriesDetail: (id: number) => request<SeriesDetail>(`/api/series/${id}`),
   readerManifest: (chapterId: number) =>
@@ -1243,7 +1287,7 @@ export const api = {
       { method: 'POST' },
     ),
   removeSeries: (ids: number[]) =>
-    request<{ ok: boolean; removed: number }>('/api/series', {
+    request<RemovalResult>('/api/series', {
       method: 'DELETE',
       body: JSON.stringify({ ids }),
     }),
@@ -1271,17 +1315,42 @@ export const api = {
     request<{ ok: boolean; dropped: number }>(`/api/series/${seriesId}/queue`, {
       method: 'DELETE',
     }),
-  sync: (provider: string) =>
-    request<{ ok: boolean }>(`/api/sync/${provider}`, { method: 'POST' }),
+  sync: (provider: string, profileId?: number) =>
+    request<{ ok: boolean }>(`/api/sync/${provider}`, {
+      method: 'POST',
+      headers: profileHeaders(profileId),
+    }),
   settings: () => request<SettingsPayload>('/api/settings'),
   saveSettings: (values: Record<string, string>) =>
     request<SettingsSaved>('/api/settings', {
       method: 'PUT',
       body: JSON.stringify({ values }),
     }),
-  authStart: (provider: string) => request<{ url: string }>(`/api/auth/${provider}/start`),
-  disconnect: (provider: string) =>
-    request<{ ok: boolean }>(`/api/auth/${provider}`, { method: 'DELETE' }),
+  authStart: (provider: string, profileId?: number) =>
+    request<{ url: string }>(
+      `/api/auth/${provider}/start${profileId === undefined ? '' : `?profile_id=${profileId}`}`,
+    ),
+  disconnect: (provider: string, profileId?: number) =>
+    request<{ ok: boolean }>(`/api/auth/${provider}`, {
+      method: 'DELETE',
+      headers: profileHeaders(profileId),
+    }),
+  profiles: () => request<Profile[]>('/api/profiles'),
+  createProfile: (body: { name: string; avatar: string; pin?: string }) =>
+    request<Profile>('/api/profiles', { method: 'POST', body: JSON.stringify(body) }),
+  updateProfile: (id: number, patch: ProfilePatch) =>
+    request<Profile>(`/api/profiles/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteProfile: (id: number) =>
+    request<{ ok: boolean; series_removed: number }>(`/api/profiles/${id}`, {
+      method: 'DELETE',
+    }),
+  profileConnections: (id: number) =>
+    request<ProfileConnection[]>(`/api/profiles/${id}/connections`),
+  storeProfileCredential: (id: number, provider: string, key: string) =>
+    request<{ ok: boolean }>(`/api/profiles/${id}/credentials/${provider}`, {
+      method: 'PUT',
+      body: JSON.stringify({ key }),
+    }),
   sources: (params: {
     q?: string
     lang?: string
