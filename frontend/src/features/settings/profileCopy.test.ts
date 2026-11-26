@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import type { Profile } from '../../lib/api.ts'
-import { connectedNotice, deleteConsequences, pinCaption } from './profileCopy.ts'
+import { connectedNotice, deleteConsequences, pinCaption, signInLabel } from './profileCopy.ts'
 
 const me: Profile = { id: 1, name: 'Me', avatar: 'avatar-01', has_pin: false, is_manager: true, position: 0 }
 const ana: Profile = { id: 7, name: 'Ana', avatar: 'avatar-02', has_pin: true, is_manager: false, position: 1 }
@@ -36,4 +36,9 @@ test('coming back from a sign-in names whose account it was', () => {
 test('the pin caption says whether one is set', () => {
   assert.equal(pinCaption(ana), 'PIN set')
   assert.equal(pinCaption(me), 'No PIN')
+})
+
+test('the sign-in button says whose account it signs in', () => {
+  assert.equal(signInLabel('Ana', 'anilist'), 'Sign in as Ana on AniList')
+  assert.equal(signInLabel('Ana', 'mal'), 'Sign in as Ana on MyAnimeList')
 })

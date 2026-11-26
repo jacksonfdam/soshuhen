@@ -36,3 +36,9 @@ export function connectedNotice(params: URLSearchParams, profiles: Profile[]): s
 export function pinCaption(profile: Profile): string {
   return profile.has_pin ? 'PIN set' : 'No PIN'
 }
+
+/** The connect button for someone else's account. The sign-in happens in this
+    browser, so it says plainly whose account the provider should be shown. */
+export function signInLabel(name: string, provider: string): string {
+  return `Sign in as ${name} on ${providerLabel(provider)}`
+}

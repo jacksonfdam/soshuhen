@@ -69,7 +69,7 @@ export function ProfileEditor({
           {AVATAR_KEYS.map((key) => (
             <label
               key={key}
-              className={`cursor-pointer rounded-full p-0.5 ${draft.avatar === key ? 'ring-2 ring-primary' : 'ring-1 ring-transparent hover:ring-outline'}`}
+              className={`w-fit cursor-pointer justify-self-center rounded-full p-0.5 ${draft.avatar === key ? 'ring-2 ring-primary' : 'ring-1 ring-transparent hover:ring-outline'}`}
             >
               <input
                 type="radio"
