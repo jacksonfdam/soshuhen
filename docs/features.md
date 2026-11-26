@@ -226,6 +226,10 @@ have against how many exist, and its current state. Filter by state or by format
 sort by title, by what was updated most recently or by how far along you are, choose a page size,
 choose a range to download, or follow a series.
 
+The web library is the whole server's: a series only someone else follows shows their avatar and
+name under its title. Removing it from here leaves it alone and says so — remove it from their
+profile instead — and removing one you share takes it out of your library only.
+
 Covers or a table, whichever reads better — the toggle sits with the rest of the controls. Above
 both, the series you are furthest into sit in their own strip, so the thing you came to read is not
 something you have to find first.
@@ -363,6 +367,11 @@ button. What is waiting. Click any job to read its full log — no need to go lo
 container output.
 
 ### Settings
+
+**Profiles** comes first: who reads on this server, each with an avatar and an optional PIN. Add,
+rename, reorder or delete a profile here, and connect each one's own list accounts. Deleting a
+profile says what goes with it before it does anything. The PIN keeps someone from opening the
+wrong profile by accident; it is not a password. See [Profiles](configuration.md#profiles).
 
 Connect your lists and see when each token expires. Tune the pipeline: how many downloads run at
 once, how hard a single source may be hit, batch size, and the schedules.
