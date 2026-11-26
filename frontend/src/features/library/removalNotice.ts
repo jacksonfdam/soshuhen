@@ -9,7 +9,7 @@ export function removalNotice(result: Pick<RemovalResult, 'removed' | 'deleted' 
   const skipped = result.skipped.length
   if (result.removed === 0) {
     if (skipped === 0) return 'Nothing removed.'
-    return `Nothing removed: ${skipped} series ${skipped === 1 ? 'is' : 'are'} only on someone else's lists. Remove ${skipped === 1 ? 'it' : 'them'} from their profile instead.`
+    return `Nothing removed: ${skipped} series ${skipped === 1 ? 'is' : 'are'} only on someone else's lists, so ${skipped === 1 ? 'it stays' : 'they stay'} for them.`
   }
   const removed = `Removed ${result.removed} series from your library.`
   const after =

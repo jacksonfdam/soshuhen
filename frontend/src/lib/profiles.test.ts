@@ -75,3 +75,14 @@ test('a name is trimmed and 1 to 40 characters', () => {
   assert.equal(validName('x'.repeat(41)), false)
   assert.equal(validName(' Ana '), true)
 })
+
+test('reordering with gaps keeps everyone else in place', () => {
+  // Positions left by deleted profiles: M 0, A 3, B 4, C 5. Moving C up must
+  // give M, A, C, B, not drop A to the bottom.
+  const list = [p(1, 0), p(2, 3), p(3, 4), p(4, 5)]
+  assert.deepEqual(reorder(list, 4, -1), [
+    { id: 2, position: 1 },
+    { id: 4, position: 2 },
+    { id: 3, position: 3 },
+  ])
+})

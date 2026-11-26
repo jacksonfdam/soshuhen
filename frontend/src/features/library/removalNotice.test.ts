@@ -20,7 +20,7 @@ test('a series someone else still follows stays for them', () => {
 test('a series only someone else follows is left alone', () => {
   assert.equal(
     removalNotice({ removed: 0, deleted: 0, skipped: [5] }),
-    "Nothing removed: 1 series is only on someone else's lists. Remove it from their profile instead.",
+    "Nothing removed: 1 series is only on someone else's lists, so it stays for them.",
   )
 })
 

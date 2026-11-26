@@ -51,15 +51,15 @@ export function reorder(
 ): { id: number; position: number }[] {
   const sorted = [...profiles].sort((a, b) => a.position - b.position || a.id - b.id)
   const at = sorted.findIndex((profile) => profile.id === id)
-  const other = sorted[at + direction]
-  if (at < 0 || other === undefined) return []
-  // Positions are swapped by index rather than by stored value: two profiles
-  // created at once can share a position, and swapping equal values moves
-  // nothing.
-  return [
-    { id, position: at + direction },
-    { id: other.id, position: at },
-  ]
+  if (at < 0 || sorted[at + direction] === undefined) return []
+  ;[sorted[at], sorted[at + direction]] = [sorted[at + direction], sorted[at]]
+  // Everyone is renumbered to their index, not only the two that swapped:
+  // deleting profiles leaves gaps in the stored positions, and writing indices
+  // to two of them alone sorted the others out of order.
+  return sorted
+    .map((profile, index) => ({ id: profile.id, position: index, before: profile.position }))
+    .filter((change) => change.position !== change.before)
+    .map(({ id: changed, position }) => ({ id: changed, position }))
 }
 
 /** Headers for a request made on another profile's behalf. The console acts

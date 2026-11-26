@@ -6,6 +6,7 @@ import { useAsyncData } from '../../lib/useAsyncData'
 import { useCallback, useEffect, useState } from 'react'
 import { holdersOf } from './holders'
 import { removalNotice } from './removalNotice'
+import { removeConsequences } from './removeConsequences'
 import { ContinueReading } from './ContinueReading'
 import { BatchActionBar } from './BatchActionBar'
 import { SeriesGrid } from './SeriesGrid'
@@ -277,12 +278,10 @@ export function LibraryPage() {
       {confirmingRemove && (
         <ConfirmDialog
           title={`Remove ${selection.count} ${selection.count === 1 ? 'series' : 'series'}?`}
-          consequences={[
-            'Anything queued for them is cancelled.',
-            'Chapters already downloaded stay on disk and in Komga.',
-            'A list sync will not bring them back.',
-            'Your MyAnimeList and AniList entries are left as they are.',
-          ]}
+          consequences={removeConsequences(
+            all.filter((row) => selection.selected.has(row.id)),
+            profiles?.find((profile) => profile.is_manager)?.id ?? null,
+          )}
           confirmLabel={removing ? 'Removing…' : 'Remove'}
           busy={removing}
           onConfirm={() => void removeSelected()}
