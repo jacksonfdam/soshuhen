@@ -47,4 +47,33 @@ class MigrationTest {
             connection.close()
         }
     }
+
+    // Marks and queued reading from before profiles are the managing profile's
+    // (key 0): an upgrade must neither drop them nor strand them unowned.
+    @Test fun marksAndOutboxBelongToTheManagerAfter3To4() {
+        val old = helper.createDatabase(3)
+        old.execSQL("INSERT INTO marked (series_id, slug, marked_at) VALUES (5, 'frieren', 1)")
+        old.execSQL(
+            "INSERT INTO outbox (kind, series_id, chapter_id, page, read_at, body) VALUES ('position', 5, 9, 3, '2026-01-01T00:00:00Z', NULL)",
+        )
+        old.close()
+        val connection = helper.runMigrationsAndValidate(4)
+        try {
+            connection.prepare("SELECT profile_key FROM marked WHERE series_id = 5").use {
+                it.step()
+                assertEquals(0L, it.getLong(0))
+            }
+            connection.prepare("SELECT profile_key FROM outbox WHERE series_id = 5").use {
+                it.step()
+                assertEquals(0L, it.getLong(0))
+            }
+            connection.execSQL("INSERT INTO marked (profile_key, series_id, slug, marked_at) VALUES (7, 5, 'frieren', 2)")
+            connection.prepare("SELECT count(*) FROM marked WHERE series_id = 5").use {
+                it.step()
+                assertEquals(2L, it.getLong(0))
+            }
+        } finally {
+            connection.close()
+        }
+    }
 }

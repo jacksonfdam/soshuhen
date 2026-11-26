@@ -101,4 +101,42 @@ class LocalStoreTest {
         store.logImport(ImportLogEntity(3, 8, "B", 1.0, importedAt = 200))
         assertEquals(listOf(2L, 3L, 1L), store.importLog().first().map { it.chapterId })
     }
+
+    @Test fun marksAreKeptApart() = runTest {
+        var key = 0L
+        store.currentProfile = { key }
+        store.mark(5, "frieren")
+        key = 7
+        assertEquals(emptySet(), store.markedIds().first())
+        assertTrue(store.markedByOthers(5))
+        assertFalse(store.isMarked(5).first())
+        key = 0
+        assertEquals(setOf(5L), store.markedIds().first())
+        assertFalse(store.markedByOthers(5))
+    }
+
+    @Test fun snapshotsAreKeptApart() = runTest {
+        var key = 7L
+        store.currentProfile = { key }
+        store.saveSeries(Fixtures.SERIES)
+        key = 0
+        assertNull(store.seriesSnapshot())
+        store.saveSeries("[]")
+        key = 7
+        assertEquals(2, store.seriesSnapshot()!!.size)
+    }
+
+    @Test fun theManagerKeepsUnprefixedSnapshots() = runTest {
+        // What an install wrote before profiles is under the plain key.
+        store.putValue("series", Fixtures.SERIES)
+        store.currentProfile = { 0L }
+        assertEquals(2, store.seriesSnapshot()!!.size)
+    }
+
+    @Test fun theProfileListIsTheServers() = runTest {
+        store.currentProfile = { 7L }
+        store.putProfiles("""[{"id":1,"name":"Me","avatar":"avatar-01","has_pin":false,"is_manager":true,"position":0}]""")
+        store.currentProfile = { 0L }
+        assertEquals(listOf("Me"), store.profilesSnapshot()!!.map { it.name })
+    }
 }

@@ -39,6 +39,11 @@ class AppGraph(
     val scanner = ServerScanner(probe)
     val library = DeviceLibrary(local, folder)
     val session = Session(store, ServerLocator(probe, scanner), network, client, scope)
+
+    init {
+        // The device's per-person data follows whichever profile the session is on.
+        local.currentProfile = { session.profileKey.value }
+    }
     val outbox = Outbox(local) { Clock.System.now() }
     val importer = ImportRunner(session, local, folder, outbox, archiveCheck, epubCheck) { Clock.System.now() }
     val sync = Sync(

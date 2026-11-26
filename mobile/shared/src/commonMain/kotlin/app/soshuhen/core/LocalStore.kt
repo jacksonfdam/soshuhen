@@ -2,6 +2,7 @@ package app.soshuhen.core
 
 import androidx.room.immediateTransaction
 import androidx.room.useWriterConnection
+import app.soshuhen.api.Profile
 import app.soshuhen.api.ReaderPrefs
 import app.soshuhen.api.Resume
 import app.soshuhen.api.Series
@@ -53,6 +54,8 @@ data class DeviceVolume(
 )
 
 private const val SERIES_KEY = "series"
+// The server's list of people, not one person's: kept unprefixed.
+private const val PROFILES_KEY = "profiles"
 private const val INSTANCE_KEY = "instance"
 
 // Unquoted, so never equal to an ETag a server sends.
@@ -71,34 +74,51 @@ open class LocalStore(
     private val db: SoshuhenDatabase,
     private val clock: () -> Instant = { Clock.System.now() },
 ) {
-    open suspend fun saveSeries(json: String) = save(SERIES_KEY, json)
+    /**
+     * Whose data the screens read and write: 0 for the managing profile.
+     * Set by the app graph to follow the session; a test sets it directly.
+     */
+    var currentProfile: () -> Long = { 0L }
 
-    suspend fun seriesSnapshot(): List<Series>? = read(SERIES_KEY)
+    // Key 0 keeps the names an install wrote before profiles existed, so an
+    // upgraded phone's snapshots are still the manager's. Anyone else's carry
+    // their key, and never collide with the manager's or each other's.
+    private fun own(key: String): String = currentProfile().let { if (it == 0L) key else "p$it/$key" }
 
-    open suspend fun saveDetail(id: Long, json: String) = save(detailKey(id), json)
+    open suspend fun saveSeries(json: String) = save(own(SERIES_KEY), json)
 
-    suspend fun detailSnapshot(id: Long): SeriesDetail? = read(detailKey(id))
+    suspend fun seriesSnapshot(): List<Series>? = read(own(SERIES_KEY))
+
+    open suspend fun saveDetail(id: Long, json: String) = save(own(detailKey(id)), json)
+
+    suspend fun detailSnapshot(id: Long): SeriesDetail? = read(own(detailKey(id)))
 
     suspend fun savePrefs(seriesId: Long, prefs: ReaderPrefs) =
-        save(prefsKey(seriesId), SoshuhenJson.encodeToString(ReaderPrefs.serializer(), prefs))
+        save(own(prefsKey(seriesId)), SoshuhenJson.encodeToString(ReaderPrefs.serializer(), prefs))
 
-    suspend fun prefsSnapshot(seriesId: Long): ReaderPrefs? = read(prefsKey(seriesId))
+    suspend fun prefsSnapshot(seriesId: Long): ReaderPrefs? = read(own(prefsKey(seriesId)))
+
+    suspend fun putProfiles(json: String) = save(PROFILES_KEY, json)
+
+    suspend fun profilesSnapshot(): List<Profile>? = read(PROFILES_KEY)
 
     // Saved when the server has no place too: an older place must not outlive
     // the server saying there is none.
     suspend fun saveResume(seriesId: Long, resume: Resume?) =
-        save(resumeKey(seriesId), SoshuhenJson.encodeToString(Resume.serializer().nullable, resume))
+        save(own(resumeKey(seriesId)), SoshuhenJson.encodeToString(Resume.serializer().nullable, resume))
 
     /**
      * A page turned away from home and not yet told to the server: newer than
      * anything the server said, so it wins wherever the two disagree.
      */
     suspend fun queuedPosition(seriesId: Long): Resume? =
-        db.outbox().all().lastOrNull { it.seriesId == seriesId && it.kind == Outbox.POSITION }
+        db.outbox().all().lastOrNull {
+            it.seriesId == seriesId && it.kind == Outbox.POSITION && it.profileKey == currentProfile()
+        }
             ?.let { queued -> Resume(queued.chapterId ?: return null, queued.page ?: return null) }
 
     /** Where reading of a series stopped, as far as the device knows without the server. */
-    suspend fun resume(seriesId: Long): Resume? = queuedPosition(seriesId) ?: read<Resume?>(resumeKey(seriesId))
+    suspend fun resume(seriesId: Long): Resume? = queuedPosition(seriesId) ?: read<Resume?>(own(resumeKey(seriesId)))
 
     /**
      * A chapter finished away from home shows as read in the library and on the
@@ -106,11 +126,11 @@ open class LocalStore(
      * only ever moves progress forward, and so does this.
      */
     suspend fun raiseProgress(seriesId: Long, progress: Int) {
-        rewrite(SERIES_KEY) { root ->
+        rewrite(own(SERIES_KEY)) { root ->
             if (root !is JsonArray) return@rewrite root
             JsonArray(root.map { if (isSeries(it, seriesId)) raised(it as JsonObject, progress) else it })
         }
-        rewrite(detailKey(seriesId)) { root ->
+        rewrite(own(detailKey(seriesId))) { root ->
             val series = (root as? JsonObject)?.get("series") as? JsonObject ?: return@rewrite root
             JsonObject(root + ("series" to raised(series, progress)))
         }
@@ -145,7 +165,9 @@ open class LocalStore(
      * outlived every correction, and a volume marked read by mistake stayed so.
      */
     suspend fun volumeProgress(seriesId: Long): Int? {
-        val queued = db.outbox().all().filter { it.seriesId == seriesId && it.kind == Outbox.VOLUME_COMPLETE }
+        val queued = db.outbox().all().filter {
+            it.seriesId == seriesId && it.kind == Outbox.VOLUME_COMPLETE && it.profileKey == currentProfile()
+        }
         if (queued.isEmpty()) return null
         val listed = detailSnapshot(seriesId)?.volumes.orEmpty()
         return queued.mapNotNull { e ->
@@ -160,16 +182,26 @@ open class LocalStore(
 
     suspend fun value(key: String): String? = db.snapshots().get(key)?.json
 
-    fun isMarked(seriesId: Long): Flow<Boolean> = db.marked().isMarked(seriesId)
+    fun isMarked(seriesId: Long): Flow<Boolean> = db.marked().isMarked(currentProfile(), seriesId)
 
-    fun markedIds(): Flow<Set<Long>> = db.marked().ids().map { it.toSet() }
+    fun markedIds(): Flow<Set<Long>> = db.marked().ids(currentProfile()).map { it.toSet() }
+
+    /** Whether someone else on this device has the series marked: its files are theirs too. */
+    suspend fun markedByOthers(seriesId: Long): Boolean = db.marked().markedByOthers(currentProfile(), seriesId)
 
     suspend fun mark(seriesId: Long, slug: String) =
-        db.marked().put(MarkedEntity(seriesId, slug, clock().toEpochMilliseconds()))
+        db.marked().put(
+            MarkedEntity(
+                profileKey = currentProfile(),
+                seriesId = seriesId,
+                slug = slug,
+                markedAt = clock().toEpochMilliseconds(),
+            ),
+        )
 
     // Only the mark: the chapters already on the device stay, because the app
     // never deletes what the user did not ask it to.
-    suspend fun unmark(seriesId: Long) = db.marked().delete(seriesId)
+    suspend fun unmark(seriesId: Long) = db.marked().delete(currentProfile(), seriesId)
 
     fun deviceChapters(seriesId: Long): Flow<List<DeviceChapter>> =
         db.deviceChapters().forSeries(seriesId).map { rows -> rows.map { it.toChapter() } }
@@ -240,7 +272,8 @@ open class LocalStore(
 
     suspend fun dequeue(id: Long) = db.outbox().delete(id)
 
-    suspend fun dropQueued(seriesId: Long, kind: String) = db.outbox().deleteKind(seriesId, kind)
+    suspend fun dropQueued(seriesId: Long, kind: String) =
+        db.outbox().deleteKind(seriesId, kind, currentProfile())
 
     suspend fun logImport(entry: ImportLogEntity) = db.importLog().put(entry)
 
