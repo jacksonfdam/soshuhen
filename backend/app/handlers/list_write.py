@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import profiles
 from app.enums import JobType, ListStatus, Provider
 from app.handlers.base import JobContext, PermanentError, register
 from app.providers import get_source
@@ -123,7 +124,9 @@ async def handle(ctx: JobContext) -> None:
                 await get_site("mangadex").set_reading_status(media_id, status)
             else:
                 provider = Provider(target)
-                token = await access_token_for(ctx.session, provider)
+                token = await access_token_for(
+                    ctx.session, await profiles.manager(ctx.session), provider
+                )
                 await get_source(provider).set_status(token, media_id, status)
         except NotConfigured as exc:
             await record_result(

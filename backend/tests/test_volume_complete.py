@@ -154,7 +154,7 @@ async def test_rereading_an_earlier_volume_lowers_no_list(monkeypatch):
     monkeypatch.setattr(progress_push, "from_settings", lambda: FakeKomgaClient([_book("V3")]))
     monkeypatch.setattr(progress_push, "get_source", lambda p: provider)
 
-    async def token(session, p):
+    async def token(session, profile, p):
         return "t"
 
     monkeypatch.setattr(progress_push, "access_token_for", token)

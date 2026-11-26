@@ -17,6 +17,7 @@ from dataclasses import asdict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import profiles
 from app.enums import JobType, Provider
 from app.handlers.base import JobContext, register
 from app.handlers.list_sync import load_access_token
@@ -92,7 +93,8 @@ async def upsert_anime(session: AsyncSession, dto: AnimeEntryDTO) -> None:
 @register(JobType.ANIME_LIST_SYNC)
 async def handle(ctx: JobContext) -> None:
     provider = Provider(ctx.payload["provider"])
-    token = await load_access_token(ctx.session, provider)
+    # Anime discovery is the managing profile's; no other profile's anime list is read.
+    token = await load_access_token(ctx.session, await profiles.manager(ctx.session), provider)
     source = get_source(provider)
 
     await ctx.log(f"fetching {provider} anime list")

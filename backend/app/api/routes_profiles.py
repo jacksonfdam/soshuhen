@@ -8,7 +8,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentProfile, db_session
+from app.enums import Provider
 from app.profiles import AVATAR_KEYS, hash_pin, valid_pin, verify_pin
+from app.providers import get_source, syncing_providers
+from app.providers.tokens import store_token
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
@@ -50,6 +53,10 @@ class ProfilePatch(BaseModel):
 
 class UnlockIn(BaseModel):
     pin: str
+
+
+class CredentialIn(BaseModel):
+    key: str = Field(min_length=1)
 
 
 def _out(row: Any) -> dict[str, Any]:
@@ -151,3 +158,52 @@ async def delete(profile_id: int, session: Session) -> dict[str, Any]:
     if row.is_manager:
         raise HTTPException(status_code=409, detail="the managing profile cannot be deleted")
     raise HTTPException(status_code=501, detail="deleting a profile is not available yet")
+
+
+@router.get("/{profile_id}/connections")
+async def connections(profile_id: int, session: Session) -> list[dict[str, Any]]:
+    """Which of a profile's lists are connected. The local list is not one."""
+    row = await _one(session, profile_id)
+    stored = {
+        r.provider: r.account_name
+        for r in (
+            await session.execute(
+                text("select provider, account_name from provider_token where profile_id = :id"),
+                {"id": profile_id},
+            )
+        ).all()
+    }
+    result = []
+    for provider in syncing_providers():
+        source = get_source(provider)
+        # The manager's key-based providers answer from the environment.
+        configured = row.is_manager and bool(source.static_credential())
+        result.append(
+            {
+                "provider": str(provider),
+                "connected": str(provider) in stored or configured,
+                "account_name": stored.get(str(provider)),
+                "uses_oauth": source.uses_oauth,
+            }
+        )
+    return result
+
+
+@router.put("/{profile_id}/credentials/{provider}")
+async def store_credential(
+    profile_id: int, provider: Provider, body: CredentialIn, session: Session
+) -> dict[str, bool]:
+    """A key for a provider that takes one instead of a sign-in, for one profile."""
+    row = await _one(session, profile_id)
+    if get_source(provider).uses_oauth:
+        raise HTTPException(status_code=400, detail=f"{provider} is connected by signing in")
+    if row.is_manager:
+        raise HTTPException(
+            status_code=400,
+            detail=f"the managing profile's {provider} key is set in the environment",
+        )
+    await store_token(
+        session, profile_id, provider, access_token=body.key, refresh_token=None, expires_in=None
+    )
+    await session.commit()
+    return {"ok": True}

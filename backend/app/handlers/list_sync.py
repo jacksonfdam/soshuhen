@@ -11,9 +11,10 @@ from itertools import groupby
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import settings_store
+from app import profiles, settings_store
 from app.enums import JobType, Provider
 from app.handlers.base import JobContext, PermanentError, register
+from app.profiles import Profile
 from app.providers import ListEntryDTO, get_source
 from app.providers.base import MANGA_FORMATS, PROSE_FORMATS
 from app.providers.mal import MEDIA_TYPE_MAP as MAL_KIND_MAP
@@ -115,9 +116,9 @@ async def refresh_series_kind(session: AsyncSession, series_id: int) -> None:
     )
 
 
-async def load_access_token(session: AsyncSession, provider: Provider) -> str:
+async def load_access_token(session: AsyncSession, profile: Profile, provider: Provider) -> str:
     try:
-        return await access_token_for(session, provider)
+        return await access_token_for(session, profile, provider)
     except NotConnected as exc:
         raise PermanentError(str(exc)) from exc
 
@@ -592,7 +593,8 @@ async def carry_local_progress(ctx: JobContext) -> int:
 @register(JobType.LIST_SYNC)
 async def handle(ctx: JobContext) -> None:
     provider = Provider(ctx.payload["provider"])
-    token = await load_access_token(ctx.session, provider)
+    profile = await profiles.of_job(ctx.session, ctx.payload)
+    token = await load_access_token(ctx.session, profile, provider)
 
     await ctx.log(f"fetching {provider} list")
     entries = await get_source(provider).fetch_list(token)

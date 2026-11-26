@@ -9,6 +9,7 @@ from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import profiles
 from app.api.deps import db_session
 from app.discovery.seeds import Origin, Seed, rank_score
 from app.discovery.unmatched import (
@@ -728,7 +729,7 @@ async def search_unmatched(anime_id: int, session: Session) -> dict[str, Any]:
             # Asked before the token is: a query the provider cannot accept is
             # settled here, without a request and without a renewal spent on one.
             query = source.search_query(anime.search_titles)
-            token = await access_token_for(session, provider)
+            token = await access_token_for(session, await profiles.manager(session), provider)
             results = await source.search_manga(token, query)
         except Exception as exc:  # noqa: BLE001 - one provider down is half an answer
             # Reported rather than swallowed: half a result set that looks whole

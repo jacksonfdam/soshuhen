@@ -163,7 +163,7 @@ def _answer(monkeypatch, fixture, slug: str):
         Provider.MANGABAKA: _UnsearchableFakeSource(),
     }
 
-    async def token(session, provider):
+    async def token(session, profile, provider):
         return "token"
 
     monkeypatch.setattr("app.api.routes_discovery.access_token_for", token)
@@ -619,7 +619,7 @@ async def test_a_search_persists_nothing(client, providers_answer):
 async def test_a_provider_that_fails_is_reported_rather_than_silently_dropped(
     client, monkeypatch, providers_answer
 ):
-    async def refuse(session, provider):
+    async def refuse(session, profile, provider):
         if provider is Provider.ANILIST:
             raise RuntimeError("something went wrong")
         return "token"
@@ -638,7 +638,7 @@ async def test_a_disconnected_provider_says_so_and_the_other_still_answers(
 ):
     """`not_connected` is a trip to Settings; the other two codes are not."""
 
-    async def refuse(session, provider):
+    async def refuse(session, profile, provider):
         if provider is Provider.ANILIST:
             raise NotConnected("anilist is not connected; authorise it in Settings")
         return "token"
@@ -665,7 +665,7 @@ async def test_a_provider_without_search_is_never_asked(client, monkeypatch):
     """
     asked: list[Provider] = []
 
-    async def record(session, provider):
+    async def record(session, profile, provider):
         asked.append(provider)
         raise NotConnected(f"{provider} is not connected")
 
@@ -688,7 +688,7 @@ async def test_a_rate_limited_provider_is_told_apart_from_a_broken_one(
 ):
     """AniList's 90 a minute is the failure the user can simply wait out."""
 
-    async def refuse(session, provider):
+    async def refuse(session, profile, provider):
         if provider is Provider.ANILIST:
             raise httpx.HTTPStatusError(
                 "429 Too Many Requests",

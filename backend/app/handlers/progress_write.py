@@ -13,6 +13,7 @@ from datetime import datetime
 
 from sqlalchemy import text
 
+from app import profiles
 from app.enums import JobType, ProgressSource, Provider
 from app.handlers import progress_events
 from app.handlers.base import JobContext, PermanentError, register
@@ -78,6 +79,7 @@ async def handle(ctx: JobContext) -> None:
     if newest is not None and newest[0] >= chapter:
         chapter, at = newest
 
+    profile = await profiles.of_job(ctx.session, ctx.payload)
     # A left join, so an entry whose provider has no stored token is still
     # seen. Joining it away made the job report "1 list updated" and never say
     # that the other provider was not even attempted.
@@ -88,11 +90,12 @@ async def handle(ctx: JobContext) -> None:
                    (t.provider is not null
                     or e.provider = any(cast(:keyed as text[]))) as connected
               from list_entry e
-              left join provider_token t on t.provider = e.provider
-             where e.series_id = :series_id
+              left join provider_token t on t.provider = e.provider and t.profile_id = e.profile_id
+             where e.series_id = :series_id and e.profile_id = :profile_id
+             order by e.id
             """
         ),
-        {"series_id": series_id, "keyed": keyed_providers()},
+        {"series_id": series_id, "profile_id": profile.id, "keyed": keyed_providers(profile)},
     )
     entries = result.all()
     if not any(entry.connected for entry in entries):
@@ -109,7 +112,7 @@ async def handle(ctx: JobContext) -> None:
             await ctx.log(f"{entry.provider}: already at chapter {entry.user_progress_chapter}")
             continue
         provider = Provider(entry.provider)
-        token = await access_token_for(ctx.session, provider)
+        token = await access_token_for(ctx.session, profile, provider)
         await get_source(provider).push_progress(token, entry.provider_media_id, target)
         await ctx.session.execute(
             text("update list_entry set user_progress_chapter = :n where id = :id"),

@@ -11,6 +11,7 @@ from typing import Any
 
 from sqlalchemy import text
 
+from app import profiles
 from app.enums import JobType, Provider
 from app.handlers.base import JobContext, PermanentError, latest_payload, register
 from app.providers import get_source
@@ -35,6 +36,7 @@ async def handle(ctx: JobContext) -> None:
     notes = str(latest.get("notes") or "")
     tags = [str(tag) for tag in latest.get("tags") or []]
 
+    profile = await profiles.of_job(ctx.session, ctx.payload)
     result = await ctx.session.execute(
         text(
             """
@@ -42,11 +44,11 @@ async def handle(ctx: JobContext) -> None:
                    (t.provider is not null
                     or e.provider = any(cast(:keyed as text[]))) as connected
               from list_entry e
-              left join provider_token t on t.provider = e.provider
-             where e.series_id = :series_id
+              left join provider_token t on t.provider = e.provider and t.profile_id = e.profile_id
+             where e.series_id = :series_id and e.profile_id = :profile_id
             """
         ),
-        {"series_id": series_id, "keyed": keyed_providers()},
+        {"series_id": series_id, "profile_id": profile.id, "keyed": keyed_providers(profile)},
     )
     entries = result.all()
     if not any(entry.connected for entry in entries):
@@ -58,7 +60,7 @@ async def handle(ctx: JobContext) -> None:
             await ctx.log(f"{entry.provider} is not connected; skipped", level="warning")
             continue
         try:
-            token = await access_token_for(ctx.session, Provider(entry.provider))
+            token = await access_token_for(ctx.session, profile, Provider(entry.provider))
         except NotConnected as failure:
             await ctx.log(f"{entry.provider}: {failure}", level="warning")
             continue

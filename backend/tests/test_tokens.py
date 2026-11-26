@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from app.db import get_sessionmaker
 from app.enums import Provider
+from app.profiles import manager
 from app.providers import tokens as token_store
 from app.providers.base import TokenSet
 
@@ -44,16 +45,22 @@ def test_a_token_with_time_left_is_left_alone():
 async def test_an_unconnected_provider_is_reported_as_such():
     async with get_sessionmaker()() as session:
         with pytest.raises(token_store.NotConnected):
-            await token_store.access_token_for(session, Provider.MAL)
+            await token_store.access_token_for(session, await manager(session), Provider.MAL)
 
 
 async def test_a_live_token_is_returned_untouched():
     async with get_sessionmaker()() as session:
         await token_store.store_token(
-            session, Provider.MAL, access_token="live", refresh_token="r", expires_in=3600
+            session,
+            (await manager(session)).id,
+            Provider.MAL,
+            access_token="live",
+            refresh_token="r",
+            expires_in=3600,
         )
         await session.commit()
-        assert await token_store.access_token_for(session, Provider.MAL) == "live"
+        owner = await manager(session)
+        assert await token_store.access_token_for(session, owner, Provider.MAL) == "live"
 
 
 async def test_an_expiring_token_is_renewed_and_persisted(monkeypatch):
@@ -72,11 +79,17 @@ async def test_an_expiring_token_is_renewed_and_persisted(monkeypatch):
 
     async with get_sessionmaker()() as session:
         await token_store.store_token(
-            session, Provider.MAL, access_token="stale", refresh_token="old-refresh", expires_in=60
+            session,
+            (await manager(session)).id,
+            Provider.MAL,
+            access_token="stale",
+            refresh_token="old-refresh",
+            expires_in=60,
         )
         await session.commit()
 
-        assert await token_store.access_token_for(session, Provider.MAL) == "fresh"
+        owner = await manager(session)
+        assert await token_store.access_token_for(session, owner, Provider.MAL) == "fresh"
         await session.commit()
 
         result = await session.execute(
@@ -102,19 +115,35 @@ async def test_a_provider_that_cannot_refresh_keeps_using_its_token(monkeypatch)
 
     async with get_sessionmaker()() as session:
         await token_store.store_token(
-            session, Provider.ANILIST, access_token="long-lived", refresh_token="r", expires_in=10
+            session,
+            (await manager(session)).id,
+            Provider.ANILIST,
+            access_token="long-lived",
+            refresh_token="r",
+            expires_in=10,
         )
         await session.commit()
-        assert await token_store.access_token_for(session, Provider.ANILIST) == "long-lived"
+        owner = await manager(session)
+        assert await token_store.access_token_for(session, owner, Provider.ANILIST) == "long-lived"
 
 
 async def test_storing_again_without_a_refresh_token_keeps_the_stored_one():
     async with get_sessionmaker()() as session:
         await token_store.store_token(
-            session, Provider.MAL, access_token="a", refresh_token="keep-me", expires_in=3600
+            session,
+            (await manager(session)).id,
+            Provider.MAL,
+            access_token="a",
+            refresh_token="keep-me",
+            expires_in=3600,
         )
         await token_store.store_token(
-            session, Provider.MAL, access_token="b", refresh_token=None, expires_in=3600
+            session,
+            (await manager(session)).id,
+            Provider.MAL,
+            access_token="b",
+            refresh_token=None,
+            expires_in=3600,
         )
         await session.commit()
         result = await session.execute(

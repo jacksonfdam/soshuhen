@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.enums import Provider
+from app.profiles import Profile
 from app.providers import get_source
 
 log = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class NotConnected(Exception):
     """No usable token is stored for this provider."""
 
 
-def keyed_providers() -> list[str]:
+def keyed_providers(profile: Profile) -> list[str]:
     """Providers that are usable without a row in `provider_token`.
 
     A provider authenticating with a configured key never stores a token, so
@@ -36,7 +37,13 @@ def keyed_providers() -> list[str]:
     Empty configuration is the same answer as no row: a key provider nobody set
     up is not connected, and must be skipped exactly as an unauthorised OAuth
     one is.
+
+    The configured key is the managing profile's. Anyone else's key for the
+    same provider is stored in `provider_token` like a token, so for them this
+    list is empty and the join answers instead.
     """
+    if not profile.is_manager:
+        return []
     return [str(p) for p in Provider if get_source(p).static_credential()]
 
 
@@ -48,6 +55,7 @@ def is_expiring(expires_at: datetime | None, *, now: datetime | None = None) -> 
 
 async def store_token(
     session: AsyncSession,
+    profile_id: int,
     provider: Provider,
     *,
     access_token: str,
@@ -61,9 +69,9 @@ async def store_token(
     await session.execute(
         text(
             """
-            insert into provider_token (provider, access_token, refresh_token, expires_at,
-                                        account_name)
-            values (:provider, :access, :refresh, :expires_at, :account)
+            insert into provider_token (profile_id, provider, access_token, refresh_token,
+                                        expires_at, account_name)
+            values (:profile_id, :provider, :access, :refresh, :expires_at, :account)
             on conflict (profile_id, provider) do update
                set access_token = excluded.access_token,
                    refresh_token = coalesce(excluded.refresh_token, provider_token.refresh_token),
@@ -72,6 +80,7 @@ async def store_token(
             """
         ),
         {
+            "profile_id": profile_id,
             "provider": str(provider),
             "access": access_token,
             "refresh": refresh_token,
@@ -81,13 +90,13 @@ async def store_token(
     )
 
 
-async def access_token_for(session: AsyncSession, provider: Provider) -> str:
+async def access_token_for(session: AsyncSession, profile: Profile, provider: Provider) -> str:
     """Return a usable access token, renewing it first when it is about to expire.
 
     A provider that authenticates with a configured key has nothing stored and
     nothing to refresh, so it is answered before the token table is consulted.
     """
-    static = get_source(provider).static_credential()
+    static = get_source(provider).static_credential() if profile.is_manager else None
     if static:
         return static
 
@@ -95,14 +104,16 @@ async def access_token_for(session: AsyncSession, provider: Provider) -> str:
         text(
             """
             select access_token, refresh_token, expires_at
-              from provider_token where provider = :provider
+              from provider_token where profile_id = :profile_id and provider = :provider
             """
         ),
-        {"provider": str(provider)},
+        {"profile_id": profile.id, "provider": str(provider)},
     )
     row = result.first()
     if row is None:
         source = get_source(provider)
+        if not source.uses_oauth and not profile.is_manager:
+            raise NotConnected(f"{provider} has no key for this profile; add one in its settings")
         if not source.uses_oauth:
             raise NotConnected(
                 f"{provider} is not configured; set its key in the environment"
@@ -119,6 +130,7 @@ async def access_token_for(session: AsyncSession, provider: Provider) -> str:
 
     await store_token(
         session,
+        profile.id,
         provider,
         access_token=renewed.access_token,
         refresh_token=renewed.refresh_token,
