@@ -38,6 +38,7 @@ select extract(isodow from (created_at at time zone 'utc'))::int - 1 as weekday,
        sum(delta) as chapters
   from progress_event
  where series_id = :series_id
+   and profile_id = coalesce(cast(:profile_id as bigint), manager_profile_id())
  group by 1
 """
 
@@ -49,12 +50,16 @@ select min(created_at) as first_event_at,
        count(distinct (created_at at time zone 'utc')::date) as active_days
   from progress_event
  where series_id = :series_id
+   and profile_id = coalesce(cast(:profile_id as bigint), manager_profile_id())
 """
 
 
-async def reading_frequency(session: AsyncSession, series_id: int) -> dict[str, Any]:
-    weekday_rows = (await session.execute(text(WEEKDAY_SQL), {"series_id": series_id})).all()
-    summary = (await session.execute(text(SUMMARY_SQL), {"series_id": series_id})).one()
+async def reading_frequency(
+    session: AsyncSession, series_id: int, profile_id: int | None = None
+) -> dict[str, Any]:
+    bound = {"series_id": series_id, "profile_id": profile_id}
+    weekday_rows = (await session.execute(text(WEEKDAY_SQL), bound)).all()
+    summary = (await session.execute(text(SUMMARY_SQL), bound)).one()
     return _assemble(
         weekday_rows, first_event_at=summary.first_event_at, active_days=summary.active_days
     )

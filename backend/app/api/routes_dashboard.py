@@ -73,7 +73,9 @@ select s.id,
        -- before the click rather than after the job fails.
        coalesce(bool_or(e.provider = any(cast(:writable as text[]))), false) as writable
   from series s
-  join list_entry e on e.series_id = s.id
+  -- Inner join on the requester's own entries: what someone is reading is
+  -- what their lists say, and nobody else's.
+  join list_entry e on e.series_id = s.id and e.profile_id = :profile_id
  group by s.id
 having (array_agg(e.status order by
            (e.provider = any(cast(:writable as text[]))) desc,

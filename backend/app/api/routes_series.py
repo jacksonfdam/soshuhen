@@ -11,9 +11,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import rhythm, settings_store
-from app.api import reader_service
+from app.api import library_scope, reader_service
 from app.api.deps import CurrentProfile, db_session
 from app.api.library_content import HOLDS_FILES
+from app.api.library_scope import IN_LIBRARY
 from app.api.list_raw import display_fields, metadata_of
 from app.api.progress_queue import progress_bounds, queue_progress_write
 from app.api.reading_frequency import reading_frequency
@@ -113,10 +114,15 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        coalesce(max(e.user_progress_chapter), 0) as progress,
        max(e.updated_at) as updated_at,
        {LAST_READ_AT} as last_read_at,
-       (array_agg(e.raw order by e.updated_at desc))[1] as raw
+       (array_agg(e.raw order by e.updated_at desc))[1] as raw,
+       -- Who holds the series on a list, for the console that sees them all.
+       array(select distinct h.profile_id from list_entry h
+              where h.series_id = s.id order by h.profile_id) as held_by
   from series s
   left join source_mapping m on m.series_id = s.id and m.active
-  left join list_entry e on e.series_id = s.id
+  -- The requester's own entries: progress and status are a person's, and a
+  -- series another profile holds shows this one's view of it, or none.
+  left join list_entry e on e.series_id = s.id and e.profile_id = :profile_id
   left join (
       -- Chapter stats grouped on their own, one row per series, so joining
       -- them alongside list_entry (also one-to-many on series) never lets the
@@ -140,6 +146,7 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
         from chapter
        group by series_id
   ) ch on ch.series_id = s.id
+ where cast(:scope_all as boolean) or {IN_LIBRARY}
  group by s.id, m.source_site, m.source_url
  order by s.canonical_title
 """
@@ -179,10 +186,15 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        coalesce(max(e.user_progress_chapter), 0) as progress,
        max(e.updated_at) as updated_at,
        {LAST_READ_AT} as last_read_at,
-       (array_agg(e.raw order by e.updated_at desc))[1] as raw
+       (array_agg(e.raw order by e.updated_at desc))[1] as raw,
+       -- Who holds the series on a list, for the console that sees them all.
+       array(select distinct h.profile_id from list_entry h
+              where h.series_id = s.id order by h.profile_id) as held_by
   from series s
   left join source_mapping m on m.series_id = s.id and m.active
-  left join list_entry e on e.series_id = s.id
+  -- The requester's own entries: progress and status are a person's, and a
+  -- series another profile holds shows this one's view of it, or none.
+  left join list_entry e on e.series_id = s.id and e.profile_id = :profile_id
   left join (
       -- The same per-series chapter stats as LIST_SQL, for the same reason:
       -- joined straight to series beside list_entry, a series on two
@@ -295,6 +307,8 @@ def _row_to_series(row: Any) -> dict[str, Any]:
         # Absent from rows built by queries other than LIST_SQL, which never
         # order by reading.
         "last_read_at": _iso_or_none(row._mapping.get("last_read_at")),
+        # Likewise only LIST_SQL knows who holds the series.
+        "held_by": list(row._mapping.get("held_by") or []),
         # The reader lives in Komga, not here, so the screen needs Komga's own
         # id to link to it. Null until a scan has matched the series there.
         "komga_series_id": row.komga_series_id,
@@ -360,9 +374,20 @@ async def list_series(
     session: Session,
     profile: CurrentProfile,
     state: Annotated[str | None, Query()] = None,
+    scope: Annotated[Literal["own", "all"], Query()] = "own",
 ) -> list[dict[str, Any]]:
+    """The requester's library, or with `scope=all` every series on the server.
+
+    `all` is the web console's view: removing, bulk status and download ranges
+    live there, and a series only another profile reads still needs them.
+    """
     result = await session.execute(
-        text(LIST_SQL), {"writable": writable_providers(), "profile_id": profile.id}
+        text(LIST_SQL),
+        {
+            "writable": writable_providers(),
+            "scope_all": scope == "all",
+            **library_scope.params(profile),
+        },
     )
     series = []
     for row in result.all():
@@ -498,21 +523,27 @@ async def series_detail(
     entries = await session.execute(
         text(
             """
-            select e.provider, e.provider_media_id, e.status, e.user_progress_chapter,
-                   e.user_progress_volume, e.updated_at, e.raw,
+            select e.profile_id, e.provider, e.provider_media_id, e.status,
+                   e.user_progress_chapter, e.user_progress_volume, e.updated_at, e.raw,
+                   -- Enrichment runs on the manager's AniList account, whoever asks.
                    exists (
-                       select 1 from provider_token t where t.provider = 'anilist'
+                       select 1 from provider_token t
+                        where t.provider = 'anilist' and t.profile_id = manager_profile_id()
                    ) as anilist_connected
               from list_entry e
              where e.series_id = :id
-             order by e.updated_at desc nulls last, e.provider
+             order by (e.profile_id = :profile_id) desc, e.updated_at desc nulls last,
+                      e.provider
             """
         ),
-        {"id": series_id},
+        {"id": series_id, "profile_id": profile.id},
     )
-    # Newest first, because metadata_of resolves a field both providers report
-    # in favour of the first raw that answers.
+    # The requester's own first, then newest first, because metadata_of
+    # resolves a field both providers report in favour of the first raw that
+    # answers. Every profile's entries describe the same work, so all of them
+    # feed the metadata; only the requester's are listed as theirs.
     entry_rows = entries.all()
+    own_rows = [e for e in entry_rows if e.profile_id == profile.id]
     enrichment = (row.meta or {}).get("enrichment")
 
     days = await rhythm.release_days(session, [series_id])
@@ -571,7 +602,7 @@ async def series_detail(
                 "user_progress_volume": e.user_progress_volume,
                 "updated_at": e.updated_at.isoformat() if e.updated_at else None,
             }
-            for e in entry_rows
+            for e in own_rows
         ],
         # The detail screen derives "chapters left, about Nh" from this. Served
         # here rather than fetched from /api/settings, which would cost the
@@ -587,7 +618,7 @@ async def series_detail(
         "komga_public_url": (
             await settings_store.get(session, settings_store.KOMGA_PUBLIC_URL)
         ).rstrip("/"),
-        "reading_frequency": await reading_frequency(session, series_id),
+        "reading_frequency": await reading_frequency(session, series_id, profile.id),
     }
 
     await _resolve_similar(session, result["metadata"])

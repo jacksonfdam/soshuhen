@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import settings_store
-from app.api.deps import db_session
+from app.api.deps import CurrentProfile, db_session
 from app.api.list_raw import display_fields, publication_year
 from app.enums import ListStatus
 
@@ -36,6 +36,7 @@ TOP_GENRES = 10
 COLLAPSED_ENTRIES_SQL = """
 select distinct on (coalesce(e.series_id, -e.id)) e.status, e.raw
   from list_entry e
+ where e.profile_id = :profile_id
  order by coalesce(e.series_id, -e.id), e.updated_at desc
 """
 
@@ -48,6 +49,7 @@ select (select count(*) from series) as series,
           from (
               select max(user_progress_chapter) as progress
                 from list_entry
+               where profile_id = :profile_id
                group by coalesce(series_id, -id)
           ) furthest) as chapters_read
 """
@@ -61,6 +63,7 @@ select (created_at at time zone 'utc')::date as day,
        sum(delta) as chapters
   from progress_event
  where created_at >= cast(:since as timestamptz)
+   and profile_id = :profile_id
  group by 1, 2
 """
 
@@ -68,6 +71,7 @@ HISTORY_SQL = """
 select min(created_at) as first_event,
        coalesce(sum(delta), 0) as chapters
   from progress_event
+ where profile_id = :profile_id
 """
 
 
@@ -165,16 +169,21 @@ def _velocity(
 @router.get("/stats")
 async def stats(
     session: Session,
+    profile: CurrentProfile,
     period: Annotated[Period, Query()] = "30d",
 ) -> dict[str, Any]:
     today = datetime.now(UTC).date()
     period_from, period_to = window(period, today=today)
 
-    entries = (await session.execute(text(COLLAPSED_ENTRIES_SQL))).all()
-    totals = (await session.execute(text(TOTALS_SQL))).one()
-    history = (await session.execute(text(HISTORY_SQL))).one()
+    # Reading figures are the requester's; what the server holds is shared.
+    mine = {"profile_id": profile.id}
+    entries = (await session.execute(text(COLLAPSED_ENTRIES_SQL), mine)).all()
+    totals = (await session.execute(text(TOTALS_SQL), mine)).one()
+    history = (await session.execute(text(HISTORY_SQL), mine)).one()
     buckets = (
-        await session.execute(text(VELOCITY_SQL), {"since": _midnight(period_from)})
+        await session.execute(
+            text(VELOCITY_SQL), {"since": _midnight(period_from), **mine}
+        )
     ).all()
 
     statuses: Counter[str] = Counter()

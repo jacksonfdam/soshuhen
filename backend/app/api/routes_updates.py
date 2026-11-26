@@ -18,7 +18,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import db_session
+from app.api import library_scope
+from app.api.deps import CurrentProfile, db_session
+from app.api.library_scope import IN_LIBRARY
 
 router = APIRouter(prefix="/api/updates", tags=["updates"])
 
@@ -30,17 +32,20 @@ MAX_ROWS = 500
 
 
 @router.get("")
-async def updates(session: Session, days: Annotated[int, Query(ge=1, le=90)] = 30) -> dict[str, Any]:
+async def updates(
+    session: Session, profile: CurrentProfile, days: Annotated[int, Query(ge=1, le=90)] = 30
+) -> dict[str, Any]:
     since = datetime.now(UTC) - timedelta(days=days)
     rows = (
         await session.execute(
             text(
-                """
+                f"""
                 select c.id, c.number, c.title, c.state, c.discovered_at,
                        s.id as series_id, s.canonical_title, s.kind
                   from chapter c
                   join series s on s.id = c.series_id
                  where c.discovered_at >= :since
+                   and {IN_LIBRARY}
                    and c.discovered_at > (
                        select min(m.discovered_at) from source_mapping m
                         where m.series_id = c.series_id
@@ -54,7 +59,7 @@ async def updates(session: Session, days: Annotated[int, Query(ge=1, le=90)] = 3
                  limit :limit
                 """
             ),
-            {"since": since, "limit": MAX_ROWS + 1},
+            {"since": since, "limit": MAX_ROWS + 1, **library_scope.params(profile)},
         )
     ).all()
 

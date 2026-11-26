@@ -22,7 +22,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import db_session
+from app.api import library_scope
+from app.api.deps import CurrentProfile, db_session
+from app.api.library_scope import IN_LIBRARY
 from app.enums import JobType, Provider
 from app.handlers.match_search import series_kind
 from app.mihon.backup import (
@@ -97,19 +99,22 @@ def soshuhen_url(site: str, base_url: str, url: str) -> str:
 
 
 @router.get("/mihon")
-async def export_mihon(session: Session) -> Response:
+async def export_mihon(session: Session, profile: CurrentProfile) -> Response:
+    # A backup is one reader's library: their series, progress and bookmarks.
     series = (
         await session.execute(
             text(
-                """
+                f"""
                 select s.id, s.canonical_title, s.meta->>'cover_url' as cover_url,
                        m.source_site, m.source_url, c.name, c.lang
                   from series s
                   join source_mapping m on m.series_id = s.id and m.active
                   left join site_catalogue c on c.key = m.source_site
+                 where {IN_LIBRARY}
                  order by s.canonical_title
                 """
-            )
+            ),
+            library_scope.params(profile),
         )
     ).all()
     chapters: dict[int, list[Any]] = {}
@@ -118,9 +123,10 @@ async def export_mihon(session: Session) -> Response:
             text(
                 "select c.series_id, c.number, c.title, c.source_url,"
                 " exists (select 1 from chapter_bookmark b where b.chapter_id = c.id"
-                "         and b.profile_id = manager_profile_id()) as bookmarked"
+                "         and b.profile_id = :profile_id) as bookmarked"
                 " from chapter c where c.source_url is not null order by c.series_id, c.number"
-            )
+            ),
+            {"profile_id": profile.id},
         )
     ).all():
         chapters.setdefault(row.series_id, []).append(row)
@@ -129,8 +135,9 @@ async def export_mihon(session: Session) -> Response:
         await session.execute(
             text(
                 "select series_id, provider, provider_media_id, status, user_progress_chapter"
-                " from list_entry"
-            )
+                " from list_entry where profile_id = :profile_id"
+            ),
+            {"profile_id": profile.id},
         )
     ).all():
         entries.setdefault(row.series_id, []).append(row)
@@ -233,8 +240,11 @@ async def _match(session: AsyncSession, manga: MihonManga, titles: dict[str, int
         found = (
             await session.execute(
                 text(
+                    # Any profile's entry names the same work; two profiles holding
+                    # it would otherwise be two rows.
                     "select series_id from list_entry"
                     " where provider = :provider and provider_media_id = :media_id"
+                    " and series_id is not null limit 1"
                 ),
                 {"provider": str(provider), "media_id": str(track.media_id)},
             )
@@ -246,7 +256,9 @@ async def _match(session: AsyncSession, manga: MihonManga, titles: dict[str, int
 
 
 @router.post("/mihon")
-async def import_mihon(request: Request, session: Session, apply: bool = False) -> dict[str, Any]:
+async def import_mihon(
+    request: Request, session: Session, profile: CurrentProfile, apply: bool = False
+) -> dict[str, Any]:
     data = await request.body()
     if not data:
         raise HTTPException(status_code=400, detail="no file in the request")
@@ -302,11 +314,12 @@ async def import_mihon(request: Request, session: Session, apply: bool = False) 
         if apply and bookmarked:
             await session.execute(
                 text(
-                    "insert into chapter_bookmark (chapter_id) select id from chapter"
+                    "insert into chapter_bookmark (profile_id, chapter_id)"
+                    " select :profile_id, id from chapter"
                     " where series_id = :id and number = any(cast(:numbers as numeric[]))"
                     " on conflict do nothing"
                 ),
-                {"id": series_id, "numbers": bookmarked},
+                {"id": series_id, "numbers": bookmarked, "profile_id": profile.id},
             )
 
     if apply:

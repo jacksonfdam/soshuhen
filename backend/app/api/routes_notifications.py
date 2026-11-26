@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import db_session
+from app.api import library_scope
+from app.api.deps import CurrentProfile, db_session
+from app.api.library_scope import IN_LIBRARY
 from app.notifications import announce_read
 
 router = APIRouter(prefix="/api", tags=["notifications"])
@@ -22,37 +24,44 @@ def _number(value: Any) -> float | None:
 
 @router.get("/notifications")
 async def list_notifications(
-    session: Session, limit: Annotated[int, Query(ge=1, le=100)] = 30
+    session: Session,
+    profile: CurrentProfile, limit: Annotated[int, Query(ge=1, le=100)] = 30
 ) -> dict[str, Any]:
     rows = (
         await session.execute(
             text(
-                """
+                f"""
                 select n.id, n.series_id, s.canonical_title, s.meta ->> 'cover_url' as cover_url,
                        n.kind, n.count, n.first_number, n.last_number, n.volume_number,
                        n.created_at, r.read_at
                   from notification n
                   join series s on s.id = n.series_id
                   left join notification_read r
-                    on r.notification_id = n.id and r.profile_id = manager_profile_id()
+                    on r.notification_id = n.id and r.profile_id = :profile_id
+                 where {IN_LIBRARY}
                  order by n.created_at desc, n.id desc
                  limit :limit
                 """
             ),
-            {"limit": limit},
+            {"limit": limit, **library_scope.params(profile)},
         )
     ).all()
     # Counted on its own: the badge is every unread row, not the unread rows
     # that happen to fit on this page.
     unread = (
-        await session.execute(text(
-                """
+        await session.execute(
+            text(
+                f"""
                 select count(*) from notification n
+                  join series s on s.id = n.series_id
                  where not exists (select 1 from notification_read r
                                     where r.notification_id = n.id
-                                      and r.profile_id = manager_profile_id())
+                                      and r.profile_id = :profile_id)
+                   and {IN_LIBRARY}
                 """
-            ))
+            ),
+            library_scope.params(profile),
+        )
     ).scalar_one()
     return {
         "items": [
@@ -76,7 +85,9 @@ async def list_notifications(
 
 
 @router.post("/notifications/{notification_id}/read")
-async def mark_read(notification_id: int, session: Session) -> dict[str, bool]:
+async def mark_read(
+    notification_id: int, session: Session, profile: CurrentProfile
+) -> dict[str, bool]:
     found = (
         await session.execute(
             text(
@@ -89,10 +100,10 @@ async def mark_read(notification_id: int, session: Session) -> dict[str, bool]:
         raise HTTPException(status_code=404, detail="no such notification")
     await session.execute(
         text(
-            "insert into notification_read (notification_id, read_at) values (:id, now())"
-            " on conflict do nothing"
+            "insert into notification_read (profile_id, notification_id, read_at)"
+            " values (:profile_id, :id, now()) on conflict do nothing"
         ),
-        {"id": notification_id},
+        {"id": notification_id, "profile_id": profile.id},
     )
     await announce_read(session, notification_id)
     await session.commit()
@@ -100,18 +111,21 @@ async def mark_read(notification_id: int, session: Session) -> dict[str, bool]:
 
 
 @router.post("/notifications/read-all")
-async def mark_all_read(session: Session) -> dict[str, int]:
+async def mark_all_read(session: Session, profile: CurrentProfile) -> dict[str, int]:
     marked = (
         await session.execute(
             text(
-                """
-                insert into notification_read (notification_id, read_at)
-                select id, now() from notification n
+                f"""
+                insert into notification_read (profile_id, notification_id, read_at)
+                select :profile_id, n.id, now() from notification n
+                  join series s on s.id = n.series_id
                  where not exists (select 1 from notification_read r
                                     where r.notification_id = n.id
-                                      and r.profile_id = manager_profile_id())
+                                      and r.profile_id = :profile_id)
+                   and {IN_LIBRARY}
                 """
-            )
+            ),
+            library_scope.params(profile),
         )
     ).rowcount
     await announce_read(session, None)
