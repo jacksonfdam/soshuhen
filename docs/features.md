@@ -523,6 +523,15 @@ home network, and never to a source site or a list provider: covers come from th
   what answers. If none does, type its address (`192.168.1.20` or `192.168.1.20:8080`). The phone
   reaches the server by its LAN IP, not by a name like `soshuhen.test`, which only your computer
   knows. If the server's address changes later, the app finds it again by itself.
+- **Profiles.** When the server has more than one profile, the app opens on a picker of avatars
+  and names on every start at home; with one it goes straight in. A profile with a PIN asks for it,
+  and the server checks it — a wrong one shakes and clears. Each person sees their own library, and
+  what they read goes to their own lists. Away from home the app opens the last profile used, since
+  a PIN cannot be checked there; "Switch profile" in Settings still lists everyone, with PIN profiles
+  shown but shut until the server is back. On a shared tablet two people keep their marks apart,
+  and a chapter one of them has marked is never deleted by the other's cleanup. Only the managing
+  profile is asked whether to delete the server's copies after a sync, because those files are
+  everyone's. The PIN keeps someone out of the wrong profile by a wrong tap; it is not a lock.
 - **The library.** The same layout as the web: Continue reading, the list-status tabs, and the
   cover grid with unread counts. Pull down to refresh. If the server stops answering, what was
   loaded stays on screen with a notice.
