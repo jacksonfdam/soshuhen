@@ -263,7 +263,11 @@ async def dashboard(
         text(CONTINUE_READING_SQL),
         {"limit": continue_limit, "writable": writable, "profile_id": profile.id},
     )
-    highlights = await session.execute(text(HIGHLIGHTS_SQL), {"limit": suggestion_limit})
+    # Suggestions come from the manager's anime. Shown to anyone else they are
+    # someone else's reading, which a profile's screens never show.
+    highlights = await session.execute(
+        text(HIGHLIGHTS_SQL), {"limit": suggestion_limit if profile.is_manager else 0}
+    )
     running = await session.execute(text(RUNNING_JOBS_SQL), {"limit": RUNNING_LIMIT})
     recent = await session.execute(text(RECENT_JOBS_SQL), {"limit": RECENT_LIMIT})
 

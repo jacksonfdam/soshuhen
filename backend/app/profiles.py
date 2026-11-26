@@ -73,8 +73,11 @@ async def of_job(session: AsyncSession, payload: dict[str, Any]) -> Profile:
         return await manager(session)
     found = await by_id(session, int(profile_id))
     if found is None:
-        # Deleted while the job waited: nothing it could write still belongs to anyone.
-        raise LookupError(f"profile {profile_id} no longer exists")
+        # Deleted while the job waited: nothing it could write still belongs to
+        # anyone, so it fails now rather than climbing the retry ladder.
+        from app.handlers.base import PermanentError
+
+        raise PermanentError(f"profile {profile_id} no longer exists")
     return found
 
 

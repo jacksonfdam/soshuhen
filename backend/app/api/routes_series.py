@@ -552,7 +552,11 @@ async def series_detail(
         # Observed, not stated: how often chapters have turned up here. None
         # until enough have, which is most series for their first month.
         "rhythm_days": rhythm.rhythm_days(days.get(series_id, [])),
-        "metadata": metadata_of([entry.raw for entry in entry_rows], enrichment),
+        "metadata": metadata_of(
+            [entry.raw for entry in entry_rows],
+            enrichment,
+            own_raws=[entry.raw for entry in own_rows],
+        ),
         "mapping": {"source_site": row.source_site, "source_url": row.source_url}
         if row.source_url
         else None,
@@ -1012,9 +1016,14 @@ async def remove_series_endpoint(
     A selection is one decision, so the body takes a list and the single case
     is a list of one rather than a second endpoint that drifts from this one.
     """
-    removed = await remove_series(session, body.ids, profile_id=profile.id)
+    result = await remove_series(session, body.ids, profile_id=profile.id)
     await session.commit()
-    return {"ok": True, "removed": removed}
+    return {
+        "ok": True,
+        "removed": result.removed,
+        "deleted": result.deleted,
+        "skipped": result.skipped,
+    }
 
 
 @router.post("/{series_id}/queue/top")

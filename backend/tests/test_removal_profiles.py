@@ -89,7 +89,8 @@ async def test_owner_removing_a_shared_series_keeps_it_for_the_kid(client, peopl
 
     response = await client.request("DELETE", "/api/series", json={"ids": [shared]})
     assert response.status_code == 200
-    assert response.json()["removed"] == 0
+    assert response.json()["removed"] == 1
+    assert response.json()["deleted"] == 0
 
     async with get_sessionmaker()() as session:
         assert await count(session, "select count(*) from series where id = :s", s=shared) == 1

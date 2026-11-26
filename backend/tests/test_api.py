@@ -881,7 +881,7 @@ async def test_removing_a_series_over_http(client):
     response = await client.request("DELETE", "/api/series", json={"ids": [series_id]})
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "removed": 1}
+    assert response.json() == {"ok": True, "removed": 1, "deleted": 1, "skipped": []}
 
     async with get_sessionmaker()() as db:
         assert (
