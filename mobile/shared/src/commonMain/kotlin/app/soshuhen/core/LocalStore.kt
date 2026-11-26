@@ -266,7 +266,9 @@ open class LocalStore(
         else db.problems().put(ProblemEntity(ProblemEntity.ONLY_ROW, message, at = clock().toEpochMilliseconds()))
     }
 
-    open suspend fun enqueue(entry: OutboxEntity) = db.outbox().put(entry)
+    // Stamped with whoever is reading now: the event is theirs even if the
+    // device has switched profile by the time it is sent.
+    open suspend fun enqueue(entry: OutboxEntity) = db.outbox().put(entry.copy(profileKey = currentProfile()))
 
     suspend fun outbox(): List<OutboxEntity> = db.outbox().all()
 

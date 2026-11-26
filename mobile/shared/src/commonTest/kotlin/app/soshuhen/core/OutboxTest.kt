@@ -32,7 +32,7 @@ class OutboxTest {
     private var now = Instant.parse("2026-10-21T08:10:00Z")
     private lateinit var outbox: Outbox
 
-    private class Sent(val method: HttpMethod, val path: String, val body: String)
+    private class Sent(val method: HttpMethod, val path: String, val body: String, val profile: String? = null)
 
     @BeforeTest fun setUp() {
         db = testDatabase()
@@ -51,7 +51,12 @@ class OutboxTest {
             MockEngineConfig().apply {
                 dispatcher = StandardTestDispatcher(testScheduler)
                 addHandler { request ->
-                    sent += Sent(request.method, request.url.encodedPath, String(request.body.toByteArray()))
+                    sent += Sent(
+                        request.method,
+                        request.url.encodedPath,
+                        String(request.body.toByteArray()),
+                        request.headers["X-Soshuhen-Profile"],
+                    )
                     respond("{}", answer(n++, request), headersOf(HttpHeaders.ContentType, "application/json"))
                 }
             },
@@ -181,5 +186,39 @@ class OutboxTest {
         val sent = mutableListOf<Sent>()
         outbox.drain(apiAnswering(sent) { _, _ -> HttpStatusCode.OK })
         assertTrue(sent[0].body.contains("\"read_at\":\"2026-10-21T08:10:00Z\""), sent[0].body)
+    }
+
+    @Test fun anEventIsSentAsTheProfileThatRecordedIt() = runTest {
+        var key = 7L
+        store.currentProfile = { key }
+        outbox.position(1, 10, 3)
+        key = 0
+        outbox.position(2, 20, 1)
+        val sent = mutableListOf<Sent>()
+        outbox.drain(apiAnswering(sent) { _, _ -> HttpStatusCode.OK })
+        assertEquals(listOf("7", null), sent.map { it.profile })
+    }
+
+    @Test fun anUpgradedQueueDrainsAsTheManager() = runTest {
+        // A row written before profiles has the column default, 0.
+        db.outbox().put(
+            app.soshuhen.db.OutboxEntity(
+                kind = Outbox.COMPLETE, seriesId = 1, chapterId = 10, page = null,
+                readAt = "2026-10-21T08:00:00Z", body = null,
+            ),
+        )
+        store.currentProfile = { 7L }
+        val sent = mutableListOf<Sent>()
+        outbox.drain(apiAnswering(sent) { _, _ -> HttpStatusCode.OK })
+        assertEquals(listOf<String?>(null), sent.map { it.profile })
+    }
+
+    @Test fun positionsCoalescePerProfile() = runTest {
+        var key = 7L
+        store.currentProfile = { key }
+        outbox.position(1, 10, 3)
+        key = 0
+        outbox.position(1, 11, 5)
+        assertEquals(2, store.outbox().size)
     }
 }
