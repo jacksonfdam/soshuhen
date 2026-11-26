@@ -17,6 +17,7 @@ from app.enums import Lane, Provider, types_for
 from app.handlers import status_write
 from app.handlers.base import JobContext
 from app.queue import repo
+from tests.profiles_fixture import manager_id
 
 pytestmark = pytest.mark.asyncio
 
@@ -120,7 +121,9 @@ async def test_thirty_series_queue_thirty_jobs_one_each(client):
     # series must not strand the other twenty-nine, and each retries alone.
     assert len(queued) == 30
     assert {job_type for job_type, _, _ in queued} == {"status_write"}
-    assert [key for _, _, key in queued] == [f"status_write:{i}" for i in ids]
+    async with get_sessionmaker()() as session:
+        owner = await manager_id(session)
+    assert [key for _, _, key in queued] == [f"status_write:{owner}:{i}" for i in ids]
     assert [payload["series_id"] for _, payload, _ in queued] == ids
     assert {payload["status"] for _, payload, _ in queued} == {"completed"}
 

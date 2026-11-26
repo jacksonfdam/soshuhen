@@ -13,7 +13,7 @@ from pydantic import AwareDatetime, BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import reader_service as service
-from app.api.deps import db_session
+from app.api.deps import CurrentProfile, db_session
 from app.api.progress_queue import progress_bounds, queue_progress_write
 from app.enums import JobType, ProgressSource
 from app.handlers.progress_write import forward_only
@@ -108,7 +108,7 @@ class PrefsIn(BaseModel):
 
 
 @router.get("/chapters/{chapter_id}")
-async def manifest(chapter_id: int, session: Session) -> dict[str, Any]:
+async def manifest(chapter_id: int, session: Session, profile: CurrentProfile) -> dict[str, Any]:
     with service_errors():
         row = await service.chapter(session, chapter_id)
         origin, count = await service.page_count(session, row)
@@ -120,8 +120,8 @@ async def manifest(chapter_id: int, session: Session) -> dict[str, Any]:
         "page_count": count,
         "previous": previous,
         "next": following,
-        "position": await service.position_in(session, row),
-        "prefs": await service.effective_prefs(session, row.series_id),
+        "position": await service.position_in(session, row, profile.id),
+        "prefs": await service.effective_prefs(session, row.series_id, profile.id),
     }
     await session.commit()
     return body
@@ -166,7 +166,9 @@ async def page_transcript(
 
 
 @router.put("/series/{series_id}/position")
-async def save_position(series_id: int, body: PositionIn, session: Session) -> dict[str, bool]:
+async def save_position(
+    series_id: int, body: PositionIn, session: Session, profile: CurrentProfile
+) -> dict[str, bool]:
     with service_errors():
         applied = await service.save_position(
             session,
@@ -176,23 +178,28 @@ async def save_position(series_id: int, body: PositionIn, session: Session) -> d
             page=body.page,
             fraction=body.fraction,
             read_at=body.read_at,
+            profile_id=profile.id,
         )
     await session.commit()
     return {"ok": True, "applied": applied}
 
 
 @router.get("/series/{series_id}/prefs")
-async def prefs(series_id: int, session: Session) -> dict[str, Any]:
-    return await service.effective_prefs(session, series_id)
+async def prefs(series_id: int, session: Session, profile: CurrentProfile) -> dict[str, Any]:
+    return await service.effective_prefs(session, series_id, profile.id)
 
 
 @router.put("/series/{series_id}/prefs")
-async def save_prefs(series_id: int, body: PrefsIn, session: Session) -> dict[str, Any]:
+async def save_prefs(
+    series_id: int, body: PrefsIn, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     if not await service.series_exists(session, series_id):
         raise HTTPException(status_code=404, detail="series not found")
-    await service.save_prefs(session, series_id, body.mode, body.scale, body.background)
+    await service.save_prefs(
+        session, series_id, body.mode, body.scale, body.background, profile.id
+    )
     await session.commit()
-    return await service.effective_prefs(session, series_id)
+    return await service.effective_prefs(session, series_id, profile.id)
 
 
 @router.put("/defaults")
@@ -203,14 +210,14 @@ async def save_defaults(body: PrefsIn, session: Session) -> dict[str, bool]:
 
 
 @router.get("/series/{series_id}/resume")
-async def resume(series_id: int, session: Session) -> dict[str, int]:
+async def resume(series_id: int, session: Session, profile: CurrentProfile) -> dict[str, int]:
     with service_errors():
-        return await service.resume(session, series_id)
+        return await service.resume(session, series_id, profile.id)
 
 
 @router.post("/chapters/{chapter_id}/complete")
 async def complete(
-    chapter_id: int, session: Session, body: CompleteIn | None = None
+    chapter_id: int, session: Session, profile: CurrentProfile, body: CompleteIn | None = None
 ) -> dict[str, bool]:
     """Finishing a chapter here says the same thing finishing it in Komga does.
 
@@ -224,7 +231,7 @@ async def complete(
 
     # Lists count whole chapters. 23.5 finished means 23 is, and 24 is not.
     chapter = math.floor(row.number)
-    bounds = await progress_bounds(session, row.series_id)
+    bounds = await progress_bounds(session, row.series_id, profile.id)
     # No ceiling here, unlike the progress button. The ceiling counts chapter
     # rows to catch a mistyped number; a chapter someone just finished reading
     # exists, and a source listing only chapters 100 to 120 has 21 rows.
@@ -238,12 +245,16 @@ async def complete(
             session,
             row.series_id,
             chapter,
+            profile_id=profile.id,
             source=ProgressSource.READER,
             read_at=body.read_at if body else None,
         )
 
     komga_queued = False
-    if row.komga_book_id is not None:
+    # Komga is one account, the manager's. Another profile finishing a chapter
+    # there would mark it read for the manager and, through progress_push,
+    # move the manager's lists.
+    if row.komga_book_id is not None and profile.is_manager:
         await repo.enqueue(
             session,
             JobType.KOMGA_READ_PROGRESS,
@@ -259,7 +270,7 @@ async def complete(
 
 @router.post("/volumes/{volume_id}/complete")
 async def complete_volume(
-    volume_id: int, session: Session, body: CompleteIn | None = None
+    volume_id: int, session: Session, profile: CurrentProfile, body: CompleteIn | None = None
 ) -> dict[str, bool]:
     """A light novel volume finished in the novel reader.
 
@@ -271,7 +282,10 @@ async def complete_volume(
     del body
     with service_errors():
         book = await service.prose_volume_row(session, volume_id)
-    if book.komga_book_id is None:
+    # A volume reaches the lists only through Komga, which is the manager's.
+    # Another profile's finished volume moves nothing rather than the
+    # manager's lists; a direct volume write for them is a later change.
+    if book.komga_book_id is None or not profile.is_manager:
         # Nothing Komga knows, so nothing progress_push could ever read back.
         return {"progress_queued": False, "komga_queued": False}
     await repo.enqueue(
@@ -319,13 +333,17 @@ async def save_prose_prefs(body: ProsePrefsIn, session: Session) -> dict[str, An
 
 
 @router.get("/prose/series/{series_id}/resume")
-async def prose_resume(series_id: int, session: Session) -> dict[str, Any]:
+async def prose_resume(
+    series_id: int, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     with service_errors():
-        return await service.prose_resume(session, series_id)
+        return await service.prose_resume(session, series_id, profile.id)
 
 
 @router.get("/prose/{kind}/{book_id}")
-async def prose_manifest(kind: ProseKind, book_id: int, session: Session) -> dict[str, Any]:
+async def prose_manifest(
+    kind: ProseKind, book_id: int, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     with service_errors():
         book = await service.prose_book(session, kind, book_id)
         sections = await asyncio.to_thread(epub_text.sections, book.path)
@@ -340,7 +358,7 @@ async def prose_manifest(kind: ProseKind, book_id: int, session: Session) -> dic
         "sections": [{"index": s.index, "title": s.title} for s in sections],
         "previous": previous,
         "next": following,
-        "position": await service.prose_position(session, book),
+        "position": await service.prose_position(session, book, profile.id),
         "prefs": await service.prose_prefs(session),
     }
 

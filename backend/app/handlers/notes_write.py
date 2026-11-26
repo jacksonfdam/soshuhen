@@ -19,11 +19,11 @@ from app.providers.base import NotSupported
 from app.providers.tokens import NotConnected, access_token_for, keyed_providers
 
 
-async def latest_requested(ctx: JobContext, series_id: int) -> dict[str, Any] | None:
+async def latest_requested(ctx: JobContext, series_id: int, profile_id: int) -> dict[str, Any] | None:
     """The note and tags the most recently queued or leased write for this
     series carries. See base.latest_payload for why "latest" is the right
     rule."""
-    payload = await latest_payload(ctx, JobType.NOTES_WRITE, series_id)
+    payload = await latest_payload(ctx, JobType.NOTES_WRITE, series_id, profile_id)
     if payload is None:
         return None
     return {"notes": payload.get("notes"), "tags": payload.get("tags") or []}
@@ -32,11 +32,11 @@ async def latest_requested(ctx: JobContext, series_id: int) -> dict[str, Any] | 
 @register(JobType.NOTES_WRITE)
 async def handle(ctx: JobContext) -> None:
     series_id = int(ctx.payload["series_id"])
-    latest = await latest_requested(ctx, series_id) or ctx.payload
+    profile = await profiles.of_job(ctx.session, ctx.payload)
+    latest = await latest_requested(ctx, series_id, profile.id) or ctx.payload
     notes = str(latest.get("notes") or "")
     tags = [str(tag) for tag in latest.get("tags") or []]
 
-    profile = await profiles.of_job(ctx.session, ctx.payload)
     result = await ctx.session.execute(
         text(
             """

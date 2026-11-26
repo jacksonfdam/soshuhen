@@ -32,7 +32,9 @@ def read_at(payload: dict) -> datetime | None:
     return datetime.fromisoformat(raw) if raw else None
 
 
-async def newest_requested(ctx: JobContext, series_id: int) -> tuple[int, datetime | None] | None:
+async def newest_requested(
+    ctx: JobContext, series_id: int, profile_id: int
+) -> tuple[int, datetime | None] | None:
     """The highest chapter any queued write for this series is carrying, and
     when it was read.
 
@@ -58,11 +60,12 @@ async def newest_requested(ctx: JobContext, series_id: int) -> tuple[int, dateti
               from job
              where type = :type and series_id = :series_id
                and state in ('pending', 'leased')
+               and coalesce(cast(payload->>'profile_id' as bigint), manager_profile_id()) = :profile_id
              order by (payload->>'chapter')::int desc
              limit 1
             """
         ),
-        {"type": str(JobType.PROGRESS_WRITE), "series_id": series_id},
+        {"type": str(JobType.PROGRESS_WRITE), "series_id": series_id, "profile_id": profile_id},
     )
     row = result.first()
     if row is None:
@@ -75,11 +78,11 @@ async def handle(ctx: JobContext) -> None:
     series_id = int(ctx.payload["series_id"])
     chapter = int(ctx.payload["chapter"])
     at = read_at(ctx.payload)
-    newest = await newest_requested(ctx, series_id)
+    profile = await profiles.of_job(ctx.session, ctx.payload)
+    newest = await newest_requested(ctx, series_id, profile.id)
     if newest is not None and newest[0] >= chapter:
         chapter, at = newest
 
-    profile = await profiles.of_job(ctx.session, ctx.payload)
     # A left join, so an entry whose provider has no stored token is still
     # seen. Joining it away made the job report "1 list updated" and never say
     # that the other provider was not even attempted.
@@ -101,7 +104,7 @@ async def handle(ctx: JobContext) -> None:
     if not any(entry.connected for entry in entries):
         raise PermanentError(f"series {series_id} has no connected list entry")
 
-    before = await progress_events.furthest_read(ctx.session, series_id)
+    before = await progress_events.furthest_read(ctx.session, series_id, profile_id=profile.id)
     pushed = 0
     for entry in entries:
         if not entry.connected:
@@ -127,6 +130,7 @@ async def handle(ctx: JobContext) -> None:
         await progress_events.record(
             ctx.session,
             series_id,
+            profile_id=profile.id,
             before=before,
             chapter=chapter,
             # Payloads queued before the reader existed carry no source, and

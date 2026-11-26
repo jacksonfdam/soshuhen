@@ -12,6 +12,7 @@ from app.handlers import status_write
 from app.handlers.base import JobContext
 from app.providers.mangabaka import MangaBakaSource
 from app.queue import repo
+from tests.profiles_fixture import manager_id
 
 pytestmark = pytest.mark.asyncio
 
@@ -110,7 +111,9 @@ async def test_a_status_change_queues_one_job(client):
     async with get_sessionmaker()() as session:
         rows = (await session.execute(text("select type, payload from job"))).all()
     assert [row.type for row in rows] == ["status_write"]
-    assert rows[0].payload == {"series_id": 1, "status": "completed"}
+    async with get_sessionmaker()() as session:
+        owner = await manager_id(session)
+    assert rows[0].payload == {"series_id": 1, "status": "completed", "profile_id": owner}
 
 
 async def test_a_second_click_raises_the_queued_job_rather_than_adding_one(client):

@@ -356,10 +356,20 @@ async def neighbours(
     return previous, following
 
 
-async def position_in(session: AsyncSession, row: ChapterRow) -> int | None:
+# Reading state is per profile. A caller that names none is the manager, the
+# same rule a request without a profile header follows.
+_OWNER = "coalesce(cast(:profile_id as bigint), manager_profile_id())"
+
+
+async def position_in(
+    session: AsyncSession, row: ChapterRow, profile_id: int | None = None
+) -> int | None:
     result = await session.execute(
-        text("select chapter_id, page from reading_position where series_id = :s"),
-        {"s": row.series_id},
+        text(
+            "select chapter_id, page from reading_position"
+            f" where series_id = :s and profile_id = {_OWNER}"
+        ),
+        {"s": row.series_id, "profile_id": profile_id},
     )
     found = result.first()
     return found.page if found is not None and found.chapter_id == row.id else None
@@ -374,6 +384,7 @@ async def save_position(
     page: int,
     fraction: float | None = None,
     read_at: datetime | None = None,
+    profile_id: int | None = None,
 ) -> bool:
     """Store where reading stands. Returns whether the row was written.
 
@@ -400,8 +411,8 @@ async def save_position(
         text(
             f"""
             insert into reading_position
-                   (series_id, chapter_id, volume_id, page, fraction, updated_at)
-            values (:s, :c, :v, :p, :f,
+                   (profile_id, series_id, chapter_id, volume_id, page, fraction, updated_at)
+            values ({_OWNER}, :s, :c, :v, :p, :f,
                     least(coalesce(cast(:at as timestamptz), now()), now()))
             on conflict (profile_id, series_id) do update
                set chapter_id = excluded.chapter_id, volume_id = excluded.volume_id,
@@ -411,15 +422,28 @@ async def save_position(
             returning 1
             """
         ),
-        {"s": series_id, "c": chapter_id, "v": volume_id, "p": page, "f": fraction, "at": read_at},
+        {
+            "s": series_id,
+            "c": chapter_id,
+            "v": volume_id,
+            "p": page,
+            "f": fraction,
+            "at": read_at,
+            "profile_id": profile_id,
+        },
     )
     return result.first() is not None
 
 
-async def effective_prefs(session: AsyncSession, series_id: int) -> dict[str, Any]:
+async def effective_prefs(
+    session: AsyncSession, series_id: int, profile_id: int | None = None
+) -> dict[str, Any]:
     result = await session.execute(
-        text("select mode, scale, background from series_reader_pref where series_id = :s"),
-        {"s": series_id},
+        text(
+            "select mode, scale, background from series_reader_pref"
+            f" where series_id = :s and profile_id = {_OWNER}"
+        ),
+        {"s": series_id, "profile_id": profile_id},
     )
     found = result.first()
     if found is not None:
@@ -440,19 +464,24 @@ async def effective_prefs(session: AsyncSession, series_id: int) -> dict[str, An
 
 
 async def save_prefs(
-    session: AsyncSession, series_id: int, mode: str, scale: str, background: str
+    session: AsyncSession,
+    series_id: int,
+    mode: str,
+    scale: str,
+    background: str,
+    profile_id: int | None = None,
 ) -> None:
     await session.execute(
         text(
-            """
-            insert into series_reader_pref (series_id, mode, scale, background)
-            values (:s, :m, :sc, :b)
+            f"""
+            insert into series_reader_pref (profile_id, series_id, mode, scale, background)
+            values ({_OWNER}, :s, :m, :sc, :b)
             on conflict (profile_id, series_id) do update
                set mode = excluded.mode, scale = excluded.scale,
                    background = excluded.background
             """
         ),
-        {"s": series_id, "m": mode, "sc": scale, "b": background},
+        {"s": series_id, "m": mode, "sc": scale, "b": background, "profile_id": profile_id},
     )
 
 
@@ -462,16 +491,18 @@ async def save_defaults(session: AsyncSession, mode: str, scale: str, background
     await settings_store.set_value(session, settings_store.READER_DEFAULT_BACKGROUND, background)
 
 
-async def resume(session: AsyncSession, series_id: int) -> dict[str, int]:
+async def resume(
+    session: AsyncSession, series_id: int, profile_id: int | None = None
+) -> dict[str, int]:
     saved = await session.execute(
         text(
-            """
+            f"""
             select p.chapter_id, p.page from reading_position p
               join chapter c on c.id = p.chapter_id
-             where p.series_id = :s
+             where p.series_id = :s and p.profile_id = {_OWNER}
             """
         ),
-        {"s": series_id},
+        {"s": series_id, "profile_id": profile_id},
     )
     found = saved.first()
     if found is not None:
@@ -479,7 +510,7 @@ async def resume(session: AsyncSession, series_id: int) -> dict[str, int]:
 
     # The first chapter past the furthest one read, or the first chapter at
     # all when none is past it, so a series read to the end still opens.
-    furthest = await progress_events.furthest_read(session, series_id)
+    furthest = await progress_events.furthest_read(session, series_id, profile_id=profile_id)
     result = await session.execute(
         text(
             """
@@ -606,12 +637,17 @@ async def prose_neighbours(
     return previous, following
 
 
-async def prose_position(session: AsyncSession, book: ProseBook) -> dict[str, Any] | None:
+async def prose_position(
+    session: AsyncSession, book: ProseBook, profile_id: int | None = None
+) -> dict[str, Any] | None:
     column = "chapter_id" if book.kind == "chapter" else "volume_id"
     row = (
         await session.execute(
-            text(f"select page, fraction from reading_position where series_id = :s and {column} = :b"),
-            {"s": book.series_id, "b": book.id},
+            text(
+                "select page, fraction from reading_position"
+                f" where series_id = :s and {column} = :b and profile_id = {_OWNER}"
+            ),
+            {"s": book.series_id, "b": book.id, "profile_id": profile_id},
         )
     ).first()
     if row is None:
@@ -631,15 +667,17 @@ async def save_prose_prefs(session: AsyncSession, font_size: int, theme: str) ->
     await settings_store.set_value(session, settings_store.READER_PROSE_THEME, theme)
 
 
-async def prose_resume(session: AsyncSession, series_id: int) -> dict[str, Any]:
+async def prose_resume(
+    session: AsyncSession, series_id: int, profile_id: int | None = None
+) -> dict[str, Any]:
     """Where to open a novel: the saved place, else the first book not yet read."""
     saved = (
         await session.execute(
             text(
                 "select chapter_id, volume_id, page, fraction from reading_position"
-                " where series_id = :s"
+                f" where series_id = :s and profile_id = {_OWNER}"
             ),
-            {"s": series_id},
+            {"s": series_id, "profile_id": profile_id},
         )
     ).first()
     if saved is not None:
@@ -660,12 +698,12 @@ async def prose_resume(session: AsyncSession, series_id: int) -> dict[str, Any]:
         await session.execute(
             text(
                 "select coalesce(max(user_progress_volume), 0) from list_entry"
-                " where series_id = :s"
+                f" where series_id = :s and profile_id = {_OWNER}"
             ),
-            {"s": series_id},
+            {"s": series_id, "profile_id": profile_id},
         )
     ).scalar_one()
-    chapter_read = await progress_events.furthest_read(session, series_id)
+    chapter_read = await progress_events.furthest_read(session, series_id, profile_id=profile_id)
     volumes = (
         await session.execute(
             text(

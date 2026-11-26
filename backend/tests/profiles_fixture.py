@@ -35,7 +35,8 @@ def as_profile(profile_id: int) -> dict[str, str]:
 
 async def run_one(session: AsyncSession, job_type, payload: dict) -> None:
     """Enqueue one job, lease it, and run its handler inside `session`."""
-    import app.handlers  # noqa: F401 - registers every handler
+    import importlib
+
     from app.enums import Lane, types_for
     from app.handlers.base import JobContext, get_handler
     from app.queue import repo
@@ -47,6 +48,8 @@ async def run_one(session: AsyncSession, job_type, payload: dict) -> None:
         session, types=[*types_for(Lane.FETCH), *types_for(Lane.DOWNLOAD)]
     )
     await session.commit()
+    # A handler registers itself when its module is imported, as the worker does.
+    importlib.import_module(f"app.handlers.{job_type.value}")
     handler = get_handler(job_type)
     assert handler is not None and job is not None
     await handler(JobContext(session=session, job=job))

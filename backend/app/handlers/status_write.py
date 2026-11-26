@@ -17,19 +17,21 @@ from app.providers import get_source
 from app.providers.tokens import NotConnected, access_token_for, keyed_providers
 
 
-async def latest_requested(ctx: JobContext, series_id: int) -> str | None:
+async def latest_requested(ctx: JobContext, series_id: int, profile_id: int) -> str | None:
     """The status the most recently queued or leased write for this series
     carries. See base.latest_payload for why "latest" is the right rule."""
-    payload = await latest_payload(ctx, JobType.STATUS_WRITE, series_id)
+    payload = await latest_payload(ctx, JobType.STATUS_WRITE, series_id, profile_id)
     return payload.get("status") if payload else None
 
 
 @register(JobType.STATUS_WRITE)
 async def handle(ctx: JobContext) -> None:
     series_id = int(ctx.payload["series_id"])
-    status = ListStatus(await latest_requested(ctx, series_id) or ctx.payload["status"])
-
     profile = await profiles.of_job(ctx.session, ctx.payload)
+    status = ListStatus(
+        await latest_requested(ctx, series_id, profile.id) or ctx.payload["status"]
+    )
+
     # A left join, so an entry whose provider has no stored token is still seen:
     # joining it away would let the job report success while never attempting
     # half of the user's lists.

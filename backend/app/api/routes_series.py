@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import rhythm, settings_store
 from app.api import reader_service
-from app.api.deps import db_session
+from app.api.deps import CurrentProfile, db_session
 from app.api.library_content import HOLDS_FILES
 from app.api.list_raw import display_fields, metadata_of
 from app.api.progress_queue import progress_bounds, queue_progress_write
@@ -358,9 +358,12 @@ def _state_of(row: Any) -> str:
 @router.get("")
 async def list_series(
     session: Session,
+    profile: CurrentProfile,
     state: Annotated[str | None, Query()] = None,
 ) -> list[dict[str, Any]]:
-    result = await session.execute(text(LIST_SQL), {"writable": writable_providers()})
+    result = await session.execute(
+        text(LIST_SQL), {"writable": writable_providers(), "profile_id": profile.id}
+    )
     series = []
     for row in result.all():
         item = _row_to_series(row)
@@ -456,9 +459,12 @@ async def cover(series_id: int, request: Request, session: Session) -> Response:
 
 
 @router.get("/{series_id}")
-async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
+async def series_detail(
+    series_id: int, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     result = await session.execute(
-        text(LIST_SQL_ONE), {"id": series_id, "writable": writable_providers()}
+        text(LIST_SQL_ONE),
+        {"id": series_id, "writable": writable_providers(), "profile_id": profile.id},
     )
     row = result.first()
     if row is None:
@@ -471,11 +477,11 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
                    c.available_until,
                    exists (select 1 from chapter_bookmark b
                             where b.chapter_id = c.id
-                              and b.profile_id = manager_profile_id()) as bookmarked
+                              and b.profile_id = :profile_id) as bookmarked
               from chapter c where c.series_id = :id order by c.number
             """
         ),
-        {"id": series_id},
+        {"id": series_id, "profile_id": profile.id},
     )
     volumes = await session.execute(
         text(
@@ -914,7 +920,7 @@ class BookmarkIn(BaseModel):
 
 @router.put("/{series_id}/chapters/{chapter_id}/bookmark")
 async def set_bookmark(
-    series_id: int, chapter_id: int, body: BookmarkIn, session: Session
+    series_id: int, chapter_id: int, body: BookmarkIn, session: Session, profile: CurrentProfile
 ) -> dict[str, Any]:
     """Mark a chapter to come back to, or clear the mark.
 
@@ -931,18 +937,18 @@ async def set_bookmark(
     if body.bookmarked:
         await session.execute(
             text(
-                "insert into chapter_bookmark (chapter_id) values (:chapter_id)"
-                " on conflict do nothing"
+                "insert into chapter_bookmark (profile_id, chapter_id)"
+                " values (:profile_id, :chapter_id) on conflict do nothing"
             ),
-            {"chapter_id": chapter_id},
+            {"chapter_id": chapter_id, "profile_id": profile.id},
         )
     else:
         await session.execute(
             text(
                 "delete from chapter_bookmark"
-                " where chapter_id = :chapter_id and profile_id = manager_profile_id()"
+                " where chapter_id = :chapter_id and profile_id = :profile_id"
             ),
-            {"chapter_id": chapter_id},
+            {"chapter_id": chapter_id, "profile_id": profile.id},
         )
     await session.commit()
     return {"ok": True, "bookmarked": body.bookmarked}
@@ -999,7 +1005,9 @@ async def cancel_queue(series_id: int, session: Session) -> dict[str, Any]:
 
 
 @router.post("/{series_id}/track-local")
-async def track_local(series_id: int, session: Session) -> dict[str, Any]:
+async def track_local(
+    series_id: int, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """Give a series nothing else will take a chapter for somewhere to keep one.
 
     Every remote provider here is writable, so this is reachable only while a
@@ -1024,12 +1032,18 @@ async def track_local(series_id: int, session: Session) -> dict[str, Any]:
             """
             select provider from list_entry
              where series_id = :id
+               and profile_id = :profile_id
                and provider <> :local
                and provider = any(cast(:writable as text[]))
              limit 1
             """
         ),
-        {"id": series_id, "local": str(Provider.LOCAL), "writable": writable_providers()},
+        {
+            "id": series_id,
+            "profile_id": profile.id,
+            "local": str(Provider.LOCAL),
+            "writable": writable_providers(),
+        },
     )
     existing = held.scalar_one_or_none()
     if existing is not None:
@@ -1044,14 +1058,16 @@ async def track_local(series_id: int, session: Session) -> dict[str, Any]:
     await session.execute(
         text(
             """
-            insert into list_entry (series_id, provider, provider_media_id, status,
+            insert into list_entry (profile_id, series_id, provider, provider_media_id, status,
                                     user_progress_chapter, title_english, synonyms, raw)
-            values (:id, :local, :media_id, :status, 0, :title, '[]'::jsonb, '{}'::jsonb)
+            values (:profile_id, :id, :local, :media_id, :status, 0, :title,
+                    '[]'::jsonb, '{}'::jsonb)
             on conflict (profile_id, provider, provider_media_id) do nothing
             """
         ),
         {
             "id": series_id,
+            "profile_id": profile.id,
             "local": str(Provider.LOCAL),
             "media_id": str(series_id),
             # Tracking a series by hand is something a reader does because they
@@ -1065,7 +1081,9 @@ async def track_local(series_id: int, session: Session) -> dict[str, Any]:
 
 
 @router.post("/{series_id}/progress")
-async def set_progress(series_id: int, body: ProgressIn, session: Session) -> dict[str, Any]:
+async def set_progress(
+    series_id: int, body: ProgressIn, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """The forward-only guard is enforced here too, not only in the handler.
 
     Rejecting a backward chapter before it is even queued means the library
@@ -1079,7 +1097,7 @@ async def set_progress(series_id: int, body: ProgressIn, session: Session) -> di
         raise HTTPException(status_code=404, detail="series not found")
 
     # min(), not max(), lives in progress_bounds: see the comment there.
-    bounds = await progress_bounds(session, series_id)
+    bounds = await progress_bounds(session, series_id, profile.id)
     if forward_only(bounds.current, body.chapter) is None:
         raise HTTPException(status_code=409, detail="progress cannot move backwards")
 
@@ -1089,12 +1107,16 @@ async def set_progress(series_id: int, body: ProgressIn, session: Session) -> di
             detail=f"this series is only known to have {bounds.ceiling} chapters",
         )
 
-    await queue_progress_write(session, series_id, body.chapter, source=ProgressSource.MANUAL)
+    await queue_progress_write(
+        session, series_id, body.chapter, profile_id=profile.id, source=ProgressSource.MANUAL
+    )
     await session.commit()
     return {"progress": body.chapter, "queued": True}
 
 
-async def queue_status_write(session: AsyncSession, series_id: int, status: ListStatus) -> None:
+async def queue_status_write(
+    session: AsyncSession, series_id: int, status: ListStatus, profile_id: int
+) -> None:
     """Queue one status write, carrying the status last asked for.
 
     A second click while the first is queued raises that job rather than adding
@@ -1108,10 +1130,10 @@ async def queue_status_write(session: AsyncSession, series_id: int, status: List
     await repo.enqueue(
         session,
         JobType.STATUS_WRITE,
-        {"series_id": series_id, "status": str(status)},
+        {"series_id": series_id, "status": str(status), "profile_id": profile_id},
         priority=0,
         series_id=series_id,
-        dedupe_key=f"status_write:{series_id}",
+        dedupe_key=f"status_write:{profile_id}:{series_id}",
     )
     await session.execute(
         text(
@@ -1120,9 +1142,16 @@ async def queue_status_write(session: AsyncSession, series_id: int, status: List
                set payload = jsonb_set(payload, '{status}', to_jsonb(cast(:status as text)))
              where type = :type and series_id = :series_id
                and state in ('pending', 'leased')
+               and coalesce(cast(payload->>'profile_id' as bigint), manager_profile_id())
+                   = :profile_id
             """
         ),
-        {"status": str(status), "type": str(JobType.STATUS_WRITE), "series_id": series_id},
+        {
+            "status": str(status),
+            "type": str(JobType.STATUS_WRITE),
+            "series_id": series_id,
+            "profile_id": profile_id,
+        },
     )
 
 
@@ -1156,7 +1185,9 @@ def status_write_destinations() -> list[str]:
 
 
 @router.post("/{series_id}/status")
-async def set_list_status(series_id: int, body: StatusIn, session: Session) -> dict[str, Any]:
+async def set_list_status(
+    series_id: int, body: StatusIn, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """Validated here as well as in the handler, so the screen learns of a
     refusal on the click rather than from a job that failed minutes later."""
     exists = await session.execute(
@@ -1166,14 +1197,15 @@ async def set_list_status(series_id: int, body: StatusIn, session: Session) -> d
         raise HTTPException(status_code=404, detail="series not found")
 
     entries = await session.execute(
-        text("select count(*) from list_entry where series_id = :id"), {"id": series_id}
+        text("select count(*) from list_entry where series_id = :id and profile_id = :profile"),
+        {"id": series_id, "profile": profile.id},
     )
     if entries.scalar_one() == 0:
         raise HTTPException(
             status_code=409, detail="this series is not on any reading list"
         )
 
-    await queue_status_write(session, series_id, body.status)
+    await queue_status_write(session, series_id, body.status, profile.id)
     await session.commit()
     return {"ok": True, "status": str(body.status), "queued": True}
 
@@ -1186,7 +1218,9 @@ async def list_status_destinations() -> dict[str, Any]:
 
 
 @router.post("/status")
-async def set_list_status_batch(body: BatchStatusIn, session: Session) -> dict[str, Any]:
+async def set_list_status_batch(
+    body: BatchStatusIn, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """Apply one status to many series.
 
     One job per series rather than one job for the batch: a provider failing for
@@ -1222,12 +1256,12 @@ async def set_list_status_batch(body: BatchStatusIn, session: Session) -> dict[s
             select s.id,
                    count(e.id) as entries
               from series s
-              left join list_entry e on e.series_id = s.id
+              left join list_entry e on e.series_id = s.id and e.profile_id = :profile
              where s.id = any(cast(:ids as bigint[]))
              group by s.id
             """
         ),
-        {"ids": ids},
+        {"ids": ids, "profile": profile.id},
     )
     listed = {row.id: row.entries for row in rows.all()}
 
@@ -1235,7 +1269,7 @@ async def set_list_status_batch(body: BatchStatusIn, session: Session) -> dict[s
     skipped: list[int] = []
     for series_id in ids:
         if listed.get(series_id):
-            await queue_status_write(session, series_id, body.status)
+            await queue_status_write(session, series_id, body.status, profile.id)
             queued.append(series_id)
         else:
             skipped.append(series_id)
@@ -1251,7 +1285,9 @@ async def set_list_status_batch(body: BatchStatusIn, session: Session) -> dict[s
 
 
 @router.post("/{series_id}/notes")
-async def save_notes(series_id: int, body: NotesIn, session: Session) -> dict[str, Any]:
+async def save_notes(
+    series_id: int, body: NotesIn, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """Validated here as well as in the handler, so the screen learns of a
     refusal on the click rather than from a job that failed minutes later."""
     exists = await session.execute(
@@ -1261,7 +1297,8 @@ async def save_notes(series_id: int, body: NotesIn, session: Session) -> dict[st
         raise HTTPException(status_code=404, detail="series not found")
 
     entries = await session.execute(
-        text("select count(*) from list_entry where series_id = :id"), {"id": series_id}
+        text("select count(*) from list_entry where series_id = :id and profile_id = :profile"),
+        {"id": series_id, "profile": profile.id},
     )
     if entries.scalar_one() == 0:
         raise HTTPException(
@@ -1271,10 +1308,15 @@ async def save_notes(series_id: int, body: NotesIn, session: Session) -> dict[st
     await repo.enqueue(
         session,
         JobType.NOTES_WRITE,
-        {"series_id": series_id, "notes": body.notes, "tags": body.tags},
+        {
+            "series_id": series_id,
+            "notes": body.notes,
+            "tags": body.tags,
+            "profile_id": profile.id,
+        },
         priority=0,
         series_id=series_id,
-        dedupe_key=f"notes_write:{series_id}",
+        dedupe_key=f"notes_write:{profile.id}:{series_id}",
     )
     # One job per series, carrying the note last asked for. A second save
     # while the first is queued raises that job rather than adding one, or the
@@ -1291,14 +1333,22 @@ async def save_notes(series_id: int, body: NotesIn, session: Session) -> dict[st
                set payload = cast(:payload as jsonb)
              where type = :type and series_id = :series_id
                and state in ('pending', 'leased')
+               and coalesce(cast(payload->>'profile_id' as bigint), manager_profile_id())
+                   = :profile_id
             """
         ),
         {
             "payload": json.dumps(
-                {"series_id": series_id, "notes": body.notes, "tags": body.tags}
+                {
+                    "series_id": series_id,
+                    "notes": body.notes,
+                    "tags": body.tags,
+                    "profile_id": profile.id,
+                }
             ),
             "type": str(JobType.NOTES_WRITE),
             "series_id": series_id,
+            "profile_id": profile.id,
         },
     )
     await session.commit()
