@@ -115,4 +115,18 @@ class SessionTest {
         runCurrent()
         assertEquals(1, probes)
     }
+
+    @Test fun apiFollowsTheChosenProfile() = runTest {
+        val store = FakeServerStore(SavedServer(ServerAddress("http", "10.0.0.5", 8080), "abc"))
+        val s = session(store, emptyMap(), null, backgroundScope)
+        runCurrent()
+        assertEquals(0L, s.api.value!!.profileKey)
+        store.selectProfile(7)
+        runCurrent()
+        assertEquals(7L, s.api.value!!.profileKey)
+        assertEquals(7L, s.profileKey.value)
+        store.selectProfile(null)
+        runCurrent()
+        assertEquals(0L, s.api.value!!.profileKey)
+    }
 }

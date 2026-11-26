@@ -27,4 +27,12 @@ interface ServerStore {
      */
     val setupOffered: Flow<Set<String>>
     suspend fun markSetupOffered(step: String)
+
+    /**
+     * The profile this device reads as: 0 for the managing profile, its id
+     * otherwise. Null until one has been chosen here. It belongs to the saved
+     * server, since a profile id means nothing on another one.
+     */
+    val profileKey: Flow<Long?>
+    suspend fun selectProfile(key: Long?)
 }

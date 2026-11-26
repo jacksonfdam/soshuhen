@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import app.soshuhen.server.SavedServer
@@ -43,6 +44,13 @@ class DataStoreServerStore(context: Context) : ServerStore {
 
     override val folder: Flow<String?> = store.data.map { it[FOLDER] }
 
+    // Not in DEVICE: clear() drops it with the server, which is the point.
+    override val profileKey: Flow<Long?> = store.data.map { it[PROFILE_KEY] }
+
+    override suspend fun selectProfile(key: Long?) {
+        store.edit { if (key == null) it.remove(PROFILE_KEY) else it[PROFILE_KEY] = key }
+    }
+
     override suspend fun saveFolder(uri: String) {
         store.edit { it[FOLDER] = uri }
     }
@@ -74,6 +82,7 @@ class DataStoreServerStore(context: Context) : ServerStore {
         val VOLUME_KEYS = booleanPreferencesKey("volume_keys")
         val VOLUME_INVERT = booleanPreferencesKey("volume_invert")
         val SETUP_OFFERED = stringSetPreferencesKey("setup_offered")
+        val PROFILE_KEY = longPreferencesKey("profile_key")
 
         // Permissions and battery settings are the phone's too: a new server
         // does not make "Not now" worth asking again.
