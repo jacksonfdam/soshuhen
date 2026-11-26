@@ -121,4 +121,39 @@ class DeviceLibraryTest {
         assertFailsWith<FolderUnavailable> { library.deleteChapter(1) }
         assertEquals(setOf(1L), indexed())
     }
+
+    @Test fun unmarkingKeepsFilesAnotherProfileHasMarked() = runTest {
+        var key = 0L
+        store.currentProfile = { key }
+        library.mark(series)
+        key = 7
+        library.mark(series)
+        onDevice(1, 1.0)
+        onDevice(2, 2.0)
+        library.unmark(7, deleteFiles = true)
+        assertEquals(setOf(1L, 2L), indexed())
+        assertFalse(store.isMarked(7).first())
+        key = 0
+        assertTrue(store.isMarked(7).first())
+    }
+
+    @Test fun deletingReadKeepsFilesAnotherProfileHasMarked() = runTest {
+        var key = 0L
+        store.currentProfile = { key }
+        library.mark(series)
+        key = 7
+        library.mark(series)
+        onDevice(1, 1.0)
+        onDevice(2, 2.0)
+        library.deleteRead(SeriesDetail(series.copy(progress = 2), emptyList()))
+        assertEquals(setOf(1L, 2L), indexed())
+    }
+
+    @Test fun filesNoOneElseMarkedAreDeleted() = runTest {
+        store.currentProfile = { 7L }
+        library.mark(series)
+        onDevice(1, 1.0)
+        library.unmark(7, deleteFiles = true)
+        assertEquals(emptySet(), indexed())
+    }
 }

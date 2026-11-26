@@ -16,6 +16,8 @@ class Sync(
     private val folder: ChapterFolder,
     private val atHome: () -> Boolean,
     private val offload: suspend (OffloadRequest) -> OffloadResult,
+    /** Whether this profile may be asked to delete the server's copies: they are everyone's. */
+    val canOffload: () -> Boolean = { true },
 ) {
     /** [scope] null is every marked series; otherwise only those are copied and checked. */
     suspend fun run(scope: Set<Long>?, onStep: (SyncProgress) -> Unit = {}): SyncReport {

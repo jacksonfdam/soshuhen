@@ -14,6 +14,8 @@ sealed interface SyncUi {
     data class Running(val progress: SyncProgress) : SyncUi
     data class Ask(val report: SyncReport) : SyncUi
     data class Unverified(val report: SyncReport) : SyncUi
+    /** All on the device, for a profile that is not asked about the server's copies. */
+    data class Synced(val report: SyncReport) : SyncUi
     data object Removing : SyncUi
     data class Done(val queued: Int) : SyncUi
     data class Failed(val message: String) : SyncUi
@@ -22,6 +24,9 @@ sealed interface SyncUi {
 fun question(report: SyncReport): String =
     "All ${report.held.size} chapters of ${report.seriesCount} series are on this device. " +
         "Free ${formatBytes(report.bytes)} on the server?"
+
+fun synced(report: SyncReport): String =
+    "All ${report.held.size} chapters of ${report.seriesCount} series are on this device."
 
 fun summary(report: SyncReport): String =
     "${report.held.size} of ${report.total} on device · ${report.missing.size} could not be copied"
@@ -46,6 +51,7 @@ class SyncFlow(
     private val run: suspend (onStep: (SyncProgress) -> Unit) -> SyncReport,
     private val offload: suspend (SyncReport) -> OffloadResult,
     private val scope: CoroutineScope,
+    private val canOffload: () -> Boolean = { true },
 ) {
     private val _state = MutableStateFlow<SyncUi>(SyncUi.Idle)
     val state: StateFlow<SyncUi> = _state
@@ -58,7 +64,8 @@ class SyncFlow(
                 val report = run { step -> _state.value = SyncUi.Running(step) }
                 when {
                     report.problem != null -> SyncUi.Failed(report.problem)
-                    report.allVerified -> SyncUi.Ask(report)
+                    report.allVerified && canOffload() -> SyncUi.Ask(report)
+                    report.allVerified -> SyncUi.Synced(report)
                     else -> SyncUi.Unverified(report)
                 }
             } catch (e: CancellationException) {

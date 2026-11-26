@@ -66,7 +66,12 @@ class SettingsViewModel(
 
     /** Every marked series: copy what is missing, then ask about the server's copies. */
     val sync: SyncFlow? = sync?.let { s ->
-        SyncFlow(run = { progress -> s.run(null, progress) }, offload = s::offload, scope = viewModelScope)
+        SyncFlow(
+            run = { progress -> s.run(null, progress) },
+            offload = s::offload,
+            scope = viewModelScope,
+            canOffload = s.canOffload,
+        )
     }
 
     private val _server = MutableStateFlow<ServerCard?>(null)

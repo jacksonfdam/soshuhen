@@ -85,6 +85,7 @@ class SeriesDetailViewModel(
             run = { progress -> s.run(setOf(seriesId), progress) },
             offload = { report -> s.offload(report).also { refresh() } },
             scope = viewModelScope,
+            canOffload = s.canOffload,
         )
     }
 

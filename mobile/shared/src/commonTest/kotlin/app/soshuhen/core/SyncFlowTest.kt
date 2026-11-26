@@ -72,4 +72,22 @@ class SyncFlowTest {
         assertEquals(listOf(verified), sent)
         assertEquals(SyncUi.Done(1), f.state.value)
     }
+
+    // The files the question would delete are every profile's, so only the
+    // managing profile is asked.
+    @Test fun a_verified_run_for_another_profile_does_not_ask() = runTest(StandardTestDispatcher()) {
+        val sent = mutableListOf<SyncReport>()
+        val f = SyncFlow(
+            run = { _ -> verified },
+            offload = { r -> sent += r; OffloadResult(queued = r.held.size) },
+            scope = this,
+            canOffload = { false },
+        )
+        f.start()
+        advanceUntilIdle()
+        assertIs<SyncUi.Synced>(f.state.value)
+        f.deleteFromServer()
+        advanceUntilIdle()
+        assertEquals(emptyList(), sent)
+    }
 }

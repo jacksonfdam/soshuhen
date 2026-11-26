@@ -51,6 +51,8 @@ class AppGraph(
         store = local,
         folder = folder,
         atHome = { session.atHome.value },
+        // The server's copies are every profile's files; only the manager is asked.
+        canOffload = { session.profileKey.value == 0L },
         offload = { request ->
             val api = session.api.value ?: throw IllegalStateException("no server configured")
             api.offload(request)
