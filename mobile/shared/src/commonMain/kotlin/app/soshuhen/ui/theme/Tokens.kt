@@ -109,6 +109,12 @@ object Tokens {
 
     // Fixed boxes from frontend/src/features/ and frontend/src/ui/.
     object box {
+        // A profile's face: the settings row, and the picker's grid.
+        val avatarSm = 40.dp
+        val avatarLg = 96.dp
+        // The PIN pad's entry dots and its digit keys.
+        val pinDot = 14.dp
+        val pinKey = 72.dp
         // The cover's progress strip (h-1) and every ProgressBar.
         val bar = 4.dp
         // A status pill's dot (h-1.5) and an unread dot (h-2).

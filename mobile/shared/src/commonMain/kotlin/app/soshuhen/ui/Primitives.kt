@@ -52,6 +52,7 @@ enum class Tone(val color: Color, val container: Color, val onContainer: Color) 
 
 /** The web's Icon.tsx paths, drawn on the same 24-unit box; Book is the one recorded exception. */
 enum class WebIcon(val path: String) {
+    Lock("M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v3H9V6zm3 8a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"),
     Sync("M12 4V1L8 5l4 4V6a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"),
     Check("M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"),
     Search("M15.5 14h-.8l-.3-.3a6.5 6.5 0 1 0-.7.7l.3.3v.8l5 5 1.5-1.5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"),

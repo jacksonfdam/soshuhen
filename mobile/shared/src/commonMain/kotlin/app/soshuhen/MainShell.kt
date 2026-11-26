@@ -1,5 +1,6 @@
 package app.soshuhen
 
+import app.soshuhen.api.Profile
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -93,6 +94,8 @@ fun MainShell(
     // A series asked for from outside the app, by tapping its notification.
     requestedSeries: StateFlow<Long?>,
     onRequestHandled: () -> Unit,
+    profile: Profile? = null,
+    onSwitchProfile: (() -> Unit)? = null,
 ) {
     val root = rememberNavController()
     var opening by remember { mutableStateOf<Long?>(null) }
@@ -110,6 +113,8 @@ fun MainShell(
             Shell(
                 graph, platform, appVersion, importNow, opening, { opening = it },
                 onReadBook = { seriesId, kind, id, title -> root.navigate(ProseRoute(seriesId, kind.key, id, title)) },
+                profile = profile,
+                onSwitchProfile = onSwitchProfile,
             ) { seriesId, chapterId, page, title ->
                 root.navigate(ReaderRoute(seriesId, chapterId, page ?: SAVED_PLACE, title))
             }
@@ -160,6 +165,8 @@ private fun Shell(
     opening: Long?,
     setOpening: (Long?) -> Unit,
     onReadBook: ReadBook,
+    profile: Profile?,
+    onSwitchProfile: (() -> Unit)?,
     onRead: (seriesId: Long, chapterId: Long, page: Int?, title: String) -> Unit,
 ) {
     val nav = rememberNavController()
@@ -235,7 +242,12 @@ private fun Shell(
                 )
             }
             composable<SettingsRoute> {
-                SettingsScreen(viewModel { SettingsViewModel(graph.session.api, graph.store, platform, graph.local, graph.sync, graph.folder) }, appVersion)
+                SettingsScreen(
+                    viewModel { SettingsViewModel(graph.session.api, graph.store, platform, graph.local, graph.sync, graph.folder) },
+                    appVersion,
+                    profile,
+                    onSwitchProfile,
+                )
             }
         }
     }

@@ -1,5 +1,10 @@
 package app.soshuhen
 
+import androidx.compose.runtime.key
+import app.soshuhen.api.key
+import app.soshuhen.profiles.ProfilePickerScreen
+import app.soshuhen.profiles.ProfilesViewModel
+import app.soshuhen.profiles.StartRoute
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -74,7 +79,26 @@ fun App(
                             // The shell does not open without a folder: every screen
                             // after this one assumes there is somewhere to copy to.
                             step != null -> SetupScreen(setup)
-                            else -> MainShell(graph, platform, appVersion, importNow, requestedSeries, onRequestHandled)
+                            else -> {
+                                val profiles = viewModel {
+                                    ProfilesViewModel(graph.session.api, graph.session.atHome, graph.store, graph.local)
+                                }
+                                val route by profiles.route.collectAsState()
+                                val people by profiles.state.collectAsState()
+                                when (val r = route) {
+                                    StartRoute.Picker -> ProfilePickerScreen(profiles)
+                                    is StartRoute.Open -> {
+                                        // Keyed by profile, so every screen's state starts over as the new person.
+                                        key(r.key) {
+                                            MainShell(
+                                                graph, platform, appVersion, importNow, requestedSeries, onRequestHandled,
+                                                profile = people.profiles.firstOrNull { it.key() == r.key },
+                                                onSwitchProfile = profiles::switchProfile.takeIf { people.profiles.size > 1 },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

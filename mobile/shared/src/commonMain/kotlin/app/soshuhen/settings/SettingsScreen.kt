@@ -1,5 +1,6 @@
 package app.soshuhen.settings
 
+import app.soshuhen.api.Profile
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.soshuhen.ui.MonoLabel
 import app.soshuhen.ui.SectionHeader
+import app.soshuhen.ui.Avatar
 import app.soshuhen.ui.WebButton
 import app.soshuhen.ui.WebCard
 import app.soshuhen.ui.WebGlyph
@@ -48,7 +50,13 @@ import app.soshuhen.ui.theme.mono
  * then one section per concern, each a SectionHeader over its cards.
  */
 @Composable
-fun SettingsScreen(model: SettingsViewModel, appVersion: String) {
+fun SettingsScreen(
+    model: SettingsViewModel,
+    appVersion: String,
+    // Who is reading, and how to change it. Absent while the server has one profile.
+    profile: Profile? = null,
+    onSwitchProfile: (() -> Unit)? = null,
+) {
     val server by model.server.collectAsStateWithLifecycle()
     val volumeKeys by model.volumeKeys.collectAsStateWithLifecycle()
     val volumeInvert by model.volumeInvert.collectAsStateWithLifecycle()
@@ -88,6 +96,27 @@ fun SettingsScreen(model: SettingsViewModel, appVersion: String) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = Tokens.onSurfaceVariant,
                 )
+            }
+
+            if (profile != null && onSwitchProfile != null) {
+                Section {
+                    SectionHeader(WebIcon.Bookmark, "Profile", "Whose library, lists and reading this is")
+                    WebCard(Modifier.fillMaxWidth()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Tokens.space.md),
+                        ) {
+                            Avatar(profile.avatar, profile.name, Tokens.box.avatarSm)
+                            Text(
+                                profile.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Tokens.onSurface,
+                                modifier = Modifier.weight(1f),
+                            )
+                            WebButton("Switch profile", onSwitchProfile)
+                        }
+                    }
+                }
             }
 
             Section {
