@@ -5,6 +5,8 @@ import app.soshuhen.api.key
 
 /** Whether the app opens on the picker or straight into a profile's library. */
 sealed interface StartRoute {
+    /** Not yet known whether the phone is home, or whose data the session reads: show nothing. */
+    data object Deciding : StartRoute
     data object Picker : StartRoute
     data class Open(val key: Long) : StartRoute
 }

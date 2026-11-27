@@ -9,11 +9,13 @@ import app.soshuhen.api.key
 import app.soshuhen.core.LocalStore
 import app.soshuhen.core.ServerStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -28,10 +30,21 @@ data class ProfilesState(
     val busy: Boolean = false,
 )
 
+/**
+ * How long a cold start waits for the location check before treating the
+ * phone as away. A scan of a strange network can take far longer, and a
+ * reader on a train should not stare at a blank screen for it.
+ */
+const val DECIDE_TIMEOUT_MS = 3_000L
+
 /** The picker, the PIN pad, and which profile the app opens as. */
 class ProfilesViewModel(
     private val api: StateFlow<SoshuhenApi?>,
     private val atHome: StateFlow<Boolean>,
+    // True once the session has answered "home or away" for the first time.
+    private val located: StateFlow<Boolean>,
+    // The key the session's API and the device store actually read with.
+    private val sessionKey: StateFlow<Long>,
     private val store: ServerStore,
     private val local: LocalStore,
 ) : ViewModel() {
@@ -42,13 +55,31 @@ class ProfilesViewModel(
     private val chosen = MutableStateFlow(false)
     private val switching = MutableStateFlow(false)
 
+    private val timedOut = MutableStateFlow(false)
+
+    // Until both are known, nothing opens: a shell drawn before the location
+    // check answered showed the last person's library to whoever picked the
+    // tablet up, and one drawn before the session read the saved key read
+    // everything as the manager.
+    private val decided = combine(located, timedOut) { known, late -> known || late }
+
     val route: StateFlow<StartRoute> = combine(
-        _state, store.profileKey, chosen, switching,
-    ) { state, saved, chosen, switching ->
-        startRoute(state.profiles.takeIf { state.loaded }, state.atHome, saved, chosen, switching)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, StartRoute.Open(0))
+        combine(_state, store.profileKey, chosen, switching) { state, saved, chosen, switching ->
+            Triple(state, saved, chosen to switching)
+        },
+        decided,
+        sessionKey,
+    ) { (state, saved, flags), decided, session ->
+        if (!decided) return@combine StartRoute.Deciding
+        val route = startRoute(state.profiles.takeIf { state.loaded }, state.atHome, saved, flags.first, flags.second)
+        if (route is StartRoute.Open && route.key != session) StartRoute.Deciding else route
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, StartRoute.Deciding)
 
     init {
+        viewModelScope.launch {
+            delay(DECIDE_TIMEOUT_MS)
+            timedOut.value = true
+        }
         viewModelScope.launch {
             atHome.combine(api) { home, client -> home to client }
                 .distinctUntilChanged()
@@ -59,7 +90,9 @@ class ProfilesViewModel(
     private suspend fun load(home: Boolean, client: SoshuhenApi?) {
         val fromServer = if (home && client != null) {
             try {
-                val json = client.profilesJson()
+                // Asked as nobody: a saved profile the server deleted would
+                // have this refused, and the list is how the app recovers.
+                val json = client.forProfile(0).profilesJson()
                 local.putProfiles(json)
                 SoshuhenJson.decodeFromString<List<Profile>>(json)
             } catch (e: CancellationException) {
@@ -69,6 +102,12 @@ class ProfilesViewModel(
             }
         } else {
             null
+        }
+        // A saved profile the server no longer lists was deleted: forget it, so
+        // the session stops naming it and the picker (or the manager) takes over.
+        if (fromServer != null) {
+            val saved = store.profileKey.first()
+            if (saved != null && fromServer.none { it.key() == saved }) store.selectProfile(null)
         }
         val profiles = fromServer ?: local.profilesSnapshot()
         _state.update {
@@ -93,10 +132,12 @@ class ProfilesViewModel(
     fun submitPin(pin: String) {
         val profile = _state.value.pinFor ?: return
         val client = api.value ?: return
-        _state.update { it.copy(busy = true) }
+        // The error clears as the check starts, so a second wrong PIN is a new
+        // error the pad reacts to, not the same one it already showed.
+        _state.update { it.copy(busy = true, pinError = false) }
         viewModelScope.launch {
             val ok = try {
-                client.unlock(profile.id, pin)
+                client.forProfile(0).unlock(profile.id, pin)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {

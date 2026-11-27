@@ -6,6 +6,7 @@ import app.soshuhen.core.BookKind
 import app.soshuhen.core.LocalStore
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.datetime.LocalDate
@@ -34,7 +35,11 @@ class UpdatesViewModel(
     private val clock: () -> Instant = { Clock.System.now() },
     private val zone: TimeZone = TimeZone.currentSystemDefault(),
 ) : ViewModel() {
-    val rows: StateFlow<List<UpdateGroup>> = store.importLog()
+    // The log covers the device. A series someone else marked and this
+    // profile did not is their news; one nobody marks (an older install's) stays.
+    val rows: StateFlow<List<UpdateGroup>> = combine(store.importLog(), store.markedIds(), store.anyoneMarkedIds()) {
+        log, mine, anyone -> log.filter { it.seriesId in mine || it.seriesId !in anyone }
+    }
         .map { log ->
             val today = clock().toLocalDateTime(zone).date
             // The log arrives newest first and groupBy keeps first appearances in

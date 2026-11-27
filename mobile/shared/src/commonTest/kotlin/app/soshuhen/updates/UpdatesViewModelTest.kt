@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -78,5 +79,21 @@ class UpdatesViewModelTest {
         val vm = UpdatesViewModel(store, { now }, TimeZone.UTC)
         advanceUntilIdle()
         assertEquals(emptyList(), vm.rows.value)
+    }
+
+    // The import log covers the device; a series only someone else on it has
+    // marked is their news, not this profile's.
+    @Test fun updatesLeaveOutSeriesOnlyAnotherProfileMarked() = runTest(dispatcher) {
+        var key = 7L
+        store.currentProfile = { key }
+        store.mark(5, "hers")
+        key = 0
+        store.mark(6, "mine")
+        log(1, "Hers", 1.0, "2026-10-22T08:00:00Z", series = 5)
+        log(2, "Mine", 1.0, "2026-10-22T09:00:00Z", series = 6)
+        val vm = UpdatesViewModel(store, { now }, TimeZone.UTC)
+        backgroundScope.launch { vm.rows.collect {} }
+        advanceUntilIdle()
+        assertEquals(listOf("Mine"), vm.rows.value.map { it.seriesTitle })
     }
 }

@@ -81,11 +81,19 @@ fun App(
                             step != null -> SetupScreen(setup)
                             else -> {
                                 val profiles = viewModel {
-                                    ProfilesViewModel(graph.session.api, graph.session.atHome, graph.store, graph.local)
+                                    ProfilesViewModel(
+                                        graph.session.api,
+                                        graph.session.atHome,
+                                        graph.session.located,
+                                        graph.session.profileKey,
+                                        graph.store,
+                                        graph.local,
+                                    )
                                 }
                                 val route by profiles.route.collectAsState()
                                 val people by profiles.state.collectAsState()
                                 when (val r = route) {
+                                    StartRoute.Deciding -> Unit
                                     StartRoute.Picker -> ProfilePickerScreen(profiles)
                                     is StartRoute.Open -> {
                                         // Keyed by profile, so every screen's state starts over as the new person.

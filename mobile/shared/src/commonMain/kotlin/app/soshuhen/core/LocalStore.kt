@@ -182,9 +182,17 @@ open class LocalStore(
 
     suspend fun value(key: String): String? = db.snapshots().get(key)?.json
 
+    // The same, for a value that belongs to whoever is reading (a place in a book).
+    suspend fun putOwnValue(key: String, json: String) = save(own(key), json)
+
+    suspend fun ownValue(key: String): String? = db.snapshots().get(own(key))?.json
+
     fun isMarked(seriesId: Long): Flow<Boolean> = db.marked().isMarked(currentProfile(), seriesId)
 
     fun markedIds(): Flow<Set<Long>> = db.marked().ids(currentProfile()).map { it.toSet() }
+
+    /** Every series anyone on this device has marked. */
+    fun anyoneMarkedIds(): Flow<Set<Long>> = db.marked().allIds().map { it.toSet() }
 
     /** Whether someone else on this device has the series marked: its files are theirs too. */
     suspend fun markedByOthers(seriesId: Long): Boolean = db.marked().markedByOthers(currentProfile(), seriesId)
