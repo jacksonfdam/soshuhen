@@ -529,7 +529,8 @@ home network, and never to a source site or a list provider: covers come from th
   what they read goes to their own lists. Away from home the app opens the last profile used, since
   a PIN cannot be checked there; "Switch profile" in Settings still lists everyone, with PIN profiles
   shown but shut until the server is back. On a shared tablet two people keep their marks apart,
-  and a chapter one of them has marked is never deleted by the other's cleanup. Only the managing
+  the hourly copy keeps everyone's marked series current whichever profile was left open, and a
+  chapter one of them has marked is never deleted by the other's cleanup. Only the managing
   profile is asked whether to delete the server's copies after a sync, because those files are
   everyone's. The PIN keeps someone out of the wrong profile by a wrong tap; it is not a lock.
 - **The library.** The same layout as the web: Continue reading, the list-status tabs, and the

@@ -35,6 +35,9 @@ interface MarkedDao {
     @Query("SELECT DISTINCT series_id FROM marked")
     fun allIds(): Flow<List<Long>>
 
+    @Query("SELECT * FROM marked")
+    suspend fun all(): List<MarkedEntity>
+
     @Query("SELECT EXISTS(SELECT 1 FROM marked WHERE profile_key <> :profileKey AND series_id = :seriesId)")
     suspend fun markedByOthers(profileKey: Long, seriesId: Long): Boolean
 

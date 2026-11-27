@@ -69,6 +69,8 @@ class ImportRunnerTest {
     private var declaredLength: Long? = null
     private var onArchive: (Long) -> Unit = {}
     private var home = true
+    // Which profile each series' detail was asked as.
+    private val detailAsked = mutableMapOf<Long, String?>()
 
     // Bytes whose text starts with BAD are what a truncated archive looks like to the check.
     private val check = ArchiveCheck { source ->
@@ -120,6 +122,7 @@ class ImportRunnerTest {
                         path == "/api/series" -> respond(SoshuhenJson.encodeToString(series.toList()), HttpStatusCode.OK, json)
                         path.startsWith("/api/series/") -> {
                             val id = path.removePrefix("/api/series/").toLong()
+                            detailAsked[id] = request.headers["X-Soshuhen-Profile"]
                             val s = series.first { it.id == id }
                             val detail = SeriesDetail(s, chapters.getValue(id), volumes = volumes[id].orEmpty())
                             respond(SoshuhenJson.encodeToString(detail), HttpStatusCode.OK, json)
@@ -735,5 +738,42 @@ class ImportRunnerTest {
         val report = runner().run()
         assertEquals(message, report.problem)
         assertEquals(message, store.problem().first())
+    }
+
+    // A shared tablet left on one profile still keeps everyone's series current:
+    // the files are shared, and the background copy runs as nobody in particular.
+    @Test fun copiesWhatAnyProfileOnTheDeviceMarked() = runTest {
+        addSeries(1, "mine", downloaded(10, 1.0))
+        addSeries(2, "hers", downloaded(20, 1.0))
+        serve(10); serve(20)
+        var key = 0L
+        store.currentProfile = { key }
+        store.mark(1, "mine")
+        key = 7
+        store.mark(2, "hers")
+        key = 0
+        runner().run()
+        assertEquals(
+            setOf("GET /api/chapters/10/archive", "GET /api/chapters/20/archive"),
+            archiveRequests().toSet(),
+        )
+        // Her series is read as her, and its snapshot is hers, not the manager's.
+        assertEquals(mapOf(1L to null, 2L to "7"), detailAsked.toMap())
+        assertNull(store.detailSnapshot(2))
+        key = 7
+        assertTrue(store.detailSnapshot(2) != null)
+    }
+
+    @Test fun onlyNarrowsToTheGivenSeriesWhoeverMarkedThem() = runTest {
+        addSeries(1, "mine", downloaded(10, 1.0))
+        addSeries(2, "hers", downloaded(20, 1.0))
+        serve(10); serve(20)
+        var key = 7L
+        store.currentProfile = { key }
+        store.mark(2, "hers")
+        key = 0
+        store.mark(1, "mine")
+        runner().run(only = setOf(1L))
+        assertEquals(listOf("GET /api/chapters/10/archive"), archiveRequests())
     }
 }

@@ -83,13 +83,18 @@ open class LocalStore(
     // Key 0 keeps the names an install wrote before profiles existed, so an
     // upgraded phone's snapshots are still the manager's. Anyone else's carry
     // their key, and never collide with the manager's or each other's.
-    private fun own(key: String): String = currentProfile().let { if (it == 0L) key else "p$it/$key" }
+    private fun own(key: String): String = ownedBy(currentProfile(), key)
+
+    private fun ownedBy(profile: Long, key: String): String = if (profile == 0L) key else "p$profile/$key"
 
     open suspend fun saveSeries(json: String) = save(own(SERIES_KEY), json)
 
     suspend fun seriesSnapshot(): List<Series>? = read(own(SERIES_KEY))
 
     open suspend fun saveDetail(id: Long, json: String) = save(own(detailKey(id)), json)
+
+    /** A series' detail as [profile] sees it, saved where that profile reads it. */
+    suspend fun saveDetailFor(profile: Long, id: Long, json: String) = save(ownedBy(profile, detailKey(id)), json)
 
     suspend fun detailSnapshot(id: Long): SeriesDetail? = read(own(detailKey(id)))
 
@@ -190,6 +195,17 @@ open class LocalStore(
     fun isMarked(seriesId: Long): Flow<Boolean> = db.marked().isMarked(currentProfile(), seriesId)
 
     fun markedIds(): Flow<Set<Long>> = db.marked().ids(currentProfile()).map { it.toSet() }
+
+    /**
+     * Every series anyone on this device has marked, with a profile that marked
+     * it: the current one where it did, so a series it shares is read as it.
+     */
+    suspend fun markOwners(): Map<Long, Long> {
+        val current = currentProfile()
+        return db.marked().all().groupBy { it.seriesId }.mapValues { (_, marks) ->
+            (marks.firstOrNull { it.profileKey == current } ?: marks.first()).profileKey
+        }
+    }
 
     /** Every series anyone on this device has marked. */
     fun anyoneMarkedIds(): Flow<Set<Long>> = db.marked().allIds().map { it.toSet() }
