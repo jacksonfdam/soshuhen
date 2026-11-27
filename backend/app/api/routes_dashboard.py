@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import routes_health
-from app.api.deps import db_session
+from app.api.deps import CurrentProfile, db_session
 from app.api.library_content import HOLDS_FILES
 from app.api.reading_recency import LAST_READ_AT
 from app.api.routes_jobs import JOB_COLUMNS, job_row
@@ -73,7 +73,9 @@ select s.id,
        -- before the click rather than after the job fails.
        coalesce(bool_or(e.provider = any(cast(:writable as text[]))), false) as writable
   from series s
-  join list_entry e on e.series_id = s.id
+  -- Inner join on the requester's own entries: what someone is reading is
+  -- what their lists say, and nobody else's.
+  join list_entry e on e.series_id = s.id and e.profile_id = :profile_id
  group by s.id
 having (array_agg(e.status order by
            (e.provider = any(cast(:writable as text[]))) desc,
@@ -236,6 +238,7 @@ def _highlight_row(row: Any) -> dict[str, Any]:
 @router.get("/dashboard")
 async def dashboard(
     session: Session,
+    profile: CurrentProfile,
     continue_limit: Annotated[int, Query(ge=1, le=24)] = CONTINUE_READING_LIMIT,
     suggestion_limit: Annotated[int, Query(ge=1, le=12)] = SUGGESTION_LIMIT,
 ) -> dict[str, Any]:
@@ -245,7 +248,11 @@ async def dashboard(
     items = strip["integrations"]
 
     writable = writable_providers()
-    active = (await session.execute(text(ACTIVE_READING_SQL), {"writable": writable})).one()
+    active = (
+        await session.execute(
+            text(ACTIVE_READING_SQL), {"writable": writable, "profile_id": profile.id}
+        )
+    ).one()
     downloads = (await session.execute(text(DOWNLOADS_SQL))).one()
     mappings = (await session.execute(text(MAPPINGS_SQL))).one()
     discovery = (await session.execute(text(DISCOVERY_SQL))).one()
@@ -253,9 +260,14 @@ async def dashboard(
 
     counts = await repo.counts_by_state(session)
     reading = await session.execute(
-        text(CONTINUE_READING_SQL), {"limit": continue_limit, "writable": writable}
+        text(CONTINUE_READING_SQL),
+        {"limit": continue_limit, "writable": writable, "profile_id": profile.id},
     )
-    highlights = await session.execute(text(HIGHLIGHTS_SQL), {"limit": suggestion_limit})
+    # Suggestions come from the manager's anime. Shown to anyone else they are
+    # someone else's reading, which a profile's screens never show.
+    highlights = await session.execute(
+        text(HIGHLIGHTS_SQL), {"limit": suggestion_limit if profile.is_manager else 0}
+    )
     running = await session.execute(text(RUNNING_JOBS_SQL), {"limit": RUNNING_LIMIT})
     recent = await session.execute(text(RECENT_JOBS_SQL), {"limit": RECENT_LIMIT})
 

@@ -13,6 +13,24 @@ That separation is what makes one mapping, one folder and one download serve how
 title appears on. Almost every subtlety in `list_sync` exists to decide, correctly, which `series` a
 `list_entry` belongs to.
 
+## Profiles
+
+### `profile`
+A person in the household using this installation. `id`, `name`, `avatar` (a key such as
+`avatar-01`), `pin_hash` (nullable), `is_manager`, `position` (order on the picker), `created_at`.
+
+- **Exactly one manager**, enforced by the partial unique index `uq_profile_manager`. Migration
+  `0033` created it from the installation as it stood, named `Me`; it cannot be deleted.
+- **`pin_hash`** is `scrypt$<salt>$<hash>` for a PIN of 4 to 6 digits. The API answers `has_pin` and
+  never the hash. The PIN stops a wrong tap on the picker; it is not access control.
+- **Per-person tables carry `profile_id`**: `provider_token`, `list_entry`, `reading_position`,
+  `series_reader_pref`, `progress_event`, `removed_entry`, `chapter_bookmark` and
+  `notification_read`. Each defaults to `manager_profile_id()`, a SQL function returning the
+  manager, which is the same rule the API applies to a request that names no profile. Everything
+  else - series, mappings, chapters, volumes, files, the queue, settings - is shared.
+- **Deleting a profile** cascades its rows, then removes the series only it held
+  (`app/series_removal.py::delete_profile`).
+
 ## Reading and downloading
 
 ### `series`
@@ -43,15 +61,20 @@ The canonical work.
   locked kind.
 
 ### `list_entry`
-One row per provider per work. Unique on `(provider, provider_media_id)`.
+One row per profile per provider per work. Unique on `(profile_id, provider, provider_media_id)`.
 
-`id`, `provider`, `provider_media_id`, `series_id`, `title_romaji`, `title_english`, `synonyms`,
+`id`, `profile_id`, `provider`, `provider_media_id`, `series_id`, `title_romaji`, `title_english`, `synonyms`,
 `status`, `user_progress_chapter`, `total_chapters`, `user_progress_volume`, `total_volumes`,
 `cover_url`, `raw` (jsonb), `updated_at`
 
 `user_progress_volume` and `total_volumes` are the list's own volume counts, filled by list sync.
 Both are nullable: null means the list never said. MyAnimeList reports an unknown total as `0`, which
 is stored as null so it can never cap volume progress at zero.
+
+Two profiles holding the same work on the same provider are two rows pointing at one `series`:
+`list_sync` resolves an entry to a series by looking at every profile's entries, which is what keeps
+one mapping, one folder and one download per work. A profile's library is the series its own entries
+hold; the manager's also takes in series no list holds (`app/api/library_scope.py`).
 
 `raw` keeps the provider's own payload. Metadata for `ComicInfo.xml` is read out of it at use time
 rather than denormalised into columns — a column is another thing to keep in sync, and these are
@@ -132,10 +155,11 @@ A chapter imported from a PDF has no `source_url` and is born `downloaded` with 
 nothing ever queues it for download.
 
 `id`, `series_id`, `number` (`Numeric`), `title`, `source_url`, `state`, `file_path`,
-`komga_book_id`, `discovered_at`, `available_until`, `bookmarked`
+`komga_book_id`, `discovered_at`, `available_until`
 
-`bookmarked` is the one mark a chapter keeps that no list knows: read is derived from list progress
-and never stored here.
+A bookmark is the one mark a chapter has that no list knows; read is derived from list progress
+and never stored here. It is per person, so it lives in `chapter_bookmark (profile_id,
+chapter_id)`, not on this row (moved there by `0033`).
 
 `discovered_at` is also what "new" means. `chapter_discover` stamps the chapters a mapping's first
 run inserts and that mapping's `discovered_at` in one transaction, so the two are equal for exactly
@@ -168,7 +192,8 @@ its archive. A chapter left half read for a week returns to `known`.
 ## Reading
 
 ### `reading_position`
-`series_id` (key), `chapter_id`, `volume_id`, `page`, `fraction`, `updated_at`. One row per series.
+`profile_id` and `series_id` (key), `chapter_id`, `volume_id`, `page`, `fraction`, `updated_at`.
+One row per profile per series.
 
 Exactly one of `chapter_id` and `volume_id` is set: a light novel volume is a book with no chapter
 rows, so a place inside it names the volume. For prose, `page` is the EPUB's spine section and
@@ -181,7 +206,7 @@ Where reading stands inside a chapter, kept by this installation only. Apart fro
 overwrites it, and no list holds a page number. Pages are zero-based.
 
 ### `series_reader_pref`
-`series_id` (key), `mode`, `scale`, `background`.
+`profile_id` and `series_id` (key), `mode`, `scale`, `background`.
 
 Only for a series that differs from the default. With no row, the `reader_default_*` keys in
 `setting` apply.
@@ -217,24 +242,33 @@ not three. The columns:
   already known and has grown.
 - `count`, `first_number` and `last_number`: how many items, and their range.
 - `volume_number`: for `parts` only, the volume the parts belong to.
-- `created_at`, and `read_at`, which is null until the user reads it.
+- `created_at`. Whether it has been read is per person: `notification_read (profile_id,
+  notification_id, read_at)` holds a row for each profile that read it (moved there by `0033`).
+  A profile sees a notification when the series is in its library.
 
 The series' title and cover are read through `series_id` rather than copied in, so a renamed
 series reads correctly in old notifications. The rows go with their series through the cascade.
 
 Rows are written only by `chapter_discover` and `jnc_library_sync`, through
 `app/notifications.py`. Neither writes one on the first discovery of a mapping or the first sync
-of a series, which would announce a whole backlog as new. Read rows older than 30 days are deleted whenever a new row is written.
-Unread rows stay until they are read.
+of a series, which would announce a whole backlog as new. A notification is deleted, whenever a
+new row is written, once every profile whose library holds the series has read it and the last of
+them did so over 30 days ago. Until then it stays.
 
 ## Accounts and configuration
 
 ### `provider_token`
-One row per provider, keyed by `provider`. `access_token`, `refresh_token`, `expires_at`,
+One row per profile per provider, keyed by `(profile_id, provider)`. `access_token`, `refresh_token`, `expires_at`,
 `account_name`.
 
-Only OAuth providers appear here. A provider authenticating with a configured key has nothing stored
-— `static_credential()` answers before this table is consulted.
+A provider authenticating with a configured key has nothing stored for the manager —
+`static_credential()` answers first, and only for the manager. Another profile's key for such a
+provider is stored here as its `access_token`.
+
+### `removed_entry`
+A tombstone: `(profile_id, provider, provider_media_id)`, `removed_at`. Written when a profile
+removes a series, and read by `list_sync` so the removal sticks for that profile only. Another
+profile still holding the work keeps it, and the `series` row goes only when no list holds it.
 
 ### `setting`
 Key/value strings for what the interface may change: concurrency, batch size, cron expressions.
@@ -262,7 +296,7 @@ is the work the feature exists to remove.
 ## History
 
 ### `progress_event`
-`series_id`, `chapter`, `delta`, `source`, `created_at`.
+`profile_id`, `series_id`, `chapter`, `delta`, `source`, `created_at`.
 
 Written by `progress_push`, by the manual increment path and by the reader finishing a chapter;
 `source` says which (`komga`, `manual`, `reader`). It exists because

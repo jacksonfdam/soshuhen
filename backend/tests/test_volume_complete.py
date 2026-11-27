@@ -10,6 +10,7 @@ from app.enums import JobType, Lane, types_for
 from app.handlers import komga_read_progress, progress_push
 from app.handlers.base import JobContext
 from app.queue import repo
+from tests.profiles_fixture import manager_id
 from tests.test_volume_progress_push import FakeKomgaClient, RecordingProvider, _book
 
 EVERY_TYPE = [*types_for(Lane.FETCH), *types_for(Lane.DOWNLOAD)]
@@ -154,7 +155,7 @@ async def test_rereading_an_earlier_volume_lowers_no_list(monkeypatch):
     monkeypatch.setattr(progress_push, "from_settings", lambda: FakeKomgaClient([_book("V3")]))
     monkeypatch.setattr(progress_push, "get_source", lambda p: provider)
 
-    async def token(session, p):
+    async def token(session, profile, p):
         return "t"
 
     monkeypatch.setattr(progress_push, "access_token_for", token)
@@ -181,6 +182,8 @@ async def test_a_prose_chapter_finishes_like_a_comic_one(client):
     ).scalar_one()
     response = await client.post(f"/api/reader/chapters/{chapter_id}/complete")
     assert response.json() == {"progress_queued": True, "komga_queued": True}
+    async with get_sessionmaker()() as session:
+        owner = await manager_id(session)
     assert await _payloads(JobType.PROGRESS_WRITE) == [
-        {"series_id": series_id, "chapter": 5, "source": "reader"}
+        {"series_id": series_id, "chapter": 5, "source": "reader", "profile_id": owner}
     ]

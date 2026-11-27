@@ -60,7 +60,28 @@ async def record(
         )
     ).scalar_one()
     await session.execute(
-        text("delete from notification where read_at < now() - make_interval(days => :days)"),
+        # Gone once everyone it was news to has read it, and the last of them
+        # did so long enough ago. Someone who has yet to read it keeps it.
+        text(
+            """
+            delete from notification n
+             where exists (select 1 from notification_read r where r.notification_id = n.id)
+               and not exists (
+                   select 1 from notification_read r
+                    where r.notification_id = n.id
+                      and r.read_at >= now() - make_interval(days => :days))
+               and not exists (
+                   select 1 from profile p
+                    where (exists (select 1 from list_entry le
+                                    where le.series_id = n.series_id and le.profile_id = p.id)
+                           or (p.is_manager
+                               and not exists (select 1 from list_entry le
+                                                where le.series_id = n.series_id)))
+                      and not exists (select 1 from notification_read r
+                                       where r.notification_id = n.id
+                                         and r.profile_id = p.id))
+            """
+        ),
         {"days": RETENTION.days},
     )
     # A nudge, not the content: the browser re-reads the list, so the API stays

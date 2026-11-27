@@ -136,6 +136,22 @@ is searched only when asked.
 
 **Do not remove a stop to make something more automatic.** They are the product, not friction in it.
 
+## Profiles
+
+A request names its profile with `X-Soshuhen-Profile`; `app/api/deps.py::current_profile` resolves
+it once per request (no header is the manager, an unknown id is a 400). Routes and
+`reader_service.py` pass the profile id down to every query on a per-person table.
+
+Jobs carry it the same way: `list_sync`, `progress_write`, `status_write` and `notes_write` take
+`profile_id` in their payload and in their dedupe key (`progress_write:{profile}:{series}`), and
+`app/profiles.py::of_job` reads it back. A payload from before profiles names none and is the
+manager's.
+
+Some work is the manager's alone, because the account behind it is: `progress_push` and the read
+marks `komga_scan` applies (Komga is one account), `anime_list_sync`, `suggest_build`, `media_enrich`
+and discovery searches. The cron enqueues `list_sync` once per profile with a connected provider.
+`match_search`, `chapter_discover`, downloads and the rest act on series and are shared.
+
 ## Comics and prose
 
 `series.kind` routes a series to one kind of source. `match_search` asks the registry only for

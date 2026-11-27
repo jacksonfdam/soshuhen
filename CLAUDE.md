@@ -130,6 +130,14 @@ titles overlap join the same series, so the same manga on both providers shares 
 folder and one download. `chapter.state` is the record of what is missing locally, reconciled
 against Komga's own view of the library rather than against the filesystem.
 
+Profiles split the person from the library. `provider_token`, `list_entry`, `reading_position`,
+`series_reader_pref`, `progress_event`, `removed_entry`, `chapter_bookmark` and `notification_read`
+carry `profile_id`; everything else is shared. A request names its profile with
+`X-Soshuhen-Profile` and a job with `profile_id` in its payload; naming none means the manager, and
+the columns default to `manager_profile_id()` for the same reason. `list_sync` resolves an entry to
+a series across every profile's entries on purpose: that is what keeps one download per work when
+two people read it. Komga, anime discovery and J-Novel Club are the manager's alone.
+
 ### Queue
 
 `app/queue/repo.py`. Postgres only, leased with `FOR UPDATE SKIP LOCKED` plus an expiry, so a dead

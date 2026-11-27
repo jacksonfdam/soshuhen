@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import db_session
+from app.api.deps import CurrentProfile, db_session
 from app.enums import JobType, Provider, lane_of
 from app.queue import repo
 
@@ -175,13 +175,15 @@ async def retry_job(job_id: int, session: Session) -> dict[str, Any]:
 
 
 @router.post("/sync/{provider}")
-async def trigger_sync(provider: Provider, session: Session) -> dict[str, Any]:
+async def trigger_sync(
+    provider: Provider, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     job_id = await repo.enqueue(
         session,
         JobType.LIST_SYNC,
-        {"provider": str(provider)},
+        {"provider": str(provider), "profile_id": profile.id},
         priority=0,
-        dedupe_key=f"list_sync:{provider}",
+        dedupe_key=f"list_sync:{profile.id}:{provider}",
     )
     await session.commit()
     return {"ok": True, "job_id": job_id}

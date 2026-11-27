@@ -13,6 +13,7 @@ from datetime import datetime
 
 from sqlalchemy import text
 
+from app import profiles
 from app.enums import JobType, ProgressSource, Provider
 from app.handlers import progress_events
 from app.handlers.base import JobContext, PermanentError, register
@@ -31,7 +32,9 @@ def read_at(payload: dict) -> datetime | None:
     return datetime.fromisoformat(raw) if raw else None
 
 
-async def newest_requested(ctx: JobContext, series_id: int) -> tuple[int, datetime | None] | None:
+async def newest_requested(
+    ctx: JobContext, series_id: int, profile_id: int
+) -> tuple[int, datetime | None] | None:
     """The highest chapter any queued write for this series is carrying, and
     when it was read.
 
@@ -57,11 +60,12 @@ async def newest_requested(ctx: JobContext, series_id: int) -> tuple[int, dateti
               from job
              where type = :type and series_id = :series_id
                and state in ('pending', 'leased')
+               and coalesce(cast(payload->>'profile_id' as bigint), manager_profile_id()) = :profile_id
              order by (payload->>'chapter')::int desc
              limit 1
             """
         ),
-        {"type": str(JobType.PROGRESS_WRITE), "series_id": series_id},
+        {"type": str(JobType.PROGRESS_WRITE), "series_id": series_id, "profile_id": profile_id},
     )
     row = result.first()
     if row is None:
@@ -74,7 +78,8 @@ async def handle(ctx: JobContext) -> None:
     series_id = int(ctx.payload["series_id"])
     chapter = int(ctx.payload["chapter"])
     at = read_at(ctx.payload)
-    newest = await newest_requested(ctx, series_id)
+    profile = await profiles.of_job(ctx.session, ctx.payload)
+    newest = await newest_requested(ctx, series_id, profile.id)
     if newest is not None and newest[0] >= chapter:
         chapter, at = newest
 
@@ -88,17 +93,18 @@ async def handle(ctx: JobContext) -> None:
                    (t.provider is not null
                     or e.provider = any(cast(:keyed as text[]))) as connected
               from list_entry e
-              left join provider_token t on t.provider = e.provider
-             where e.series_id = :series_id
+              left join provider_token t on t.provider = e.provider and t.profile_id = e.profile_id
+             where e.series_id = :series_id and e.profile_id = :profile_id
+             order by e.id
             """
         ),
-        {"series_id": series_id, "keyed": keyed_providers()},
+        {"series_id": series_id, "profile_id": profile.id, "keyed": keyed_providers(profile)},
     )
     entries = result.all()
     if not any(entry.connected for entry in entries):
         raise PermanentError(f"series {series_id} has no connected list entry")
 
-    before = await progress_events.furthest_read(ctx.session, series_id)
+    before = await progress_events.furthest_read(ctx.session, series_id, profile_id=profile.id)
     pushed = 0
     for entry in entries:
         if not entry.connected:
@@ -109,7 +115,7 @@ async def handle(ctx: JobContext) -> None:
             await ctx.log(f"{entry.provider}: already at chapter {entry.user_progress_chapter}")
             continue
         provider = Provider(entry.provider)
-        token = await access_token_for(ctx.session, provider)
+        token = await access_token_for(ctx.session, profile, provider)
         await get_source(provider).push_progress(token, entry.provider_media_id, target)
         await ctx.session.execute(
             text("update list_entry set user_progress_chapter = :n where id = :id"),
@@ -124,6 +130,7 @@ async def handle(ctx: JobContext) -> None:
         await progress_events.record(
             ctx.session,
             series_id,
+            profile_id=profile.id,
             before=before,
             chapter=chapter,
             # Payloads queued before the reader existed carry no source, and

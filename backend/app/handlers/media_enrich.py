@@ -16,6 +16,7 @@ from typing import Any
 
 from sqlalchemy import text
 
+from app import profiles
 from app.enums import JobType, Provider
 from app.handlers.base import JobContext, PermanentError, register
 from app.providers import get_source
@@ -62,7 +63,9 @@ async def handle(ctx: JobContext) -> None:
         raise PermanentError(f"series {series_id} has no AniList entry to enrich")
 
     try:
-        token = await access_token_for(ctx.session, Provider.ANILIST)
+        token = await access_token_for(
+            ctx.session, await profiles.manager(ctx.session), Provider.ANILIST
+        )
     except NotConnected as failure:
         raise PermanentError(str(failure)) from failure
 

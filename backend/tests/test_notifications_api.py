@@ -61,12 +61,14 @@ async def _notification(
         nid = (
             await session.execute(
                 text(
-                    "insert into notification"
-                    " (series_id, kind, count, first_number, last_number, created_at, read_at)"
+                    "with n as (insert into notification"
+                    " (series_id, kind, count, first_number, last_number, created_at)"
                     " values (:s, 'chapters', :count, cast(:first as numeric),"
-                    "         cast(:last as numeric), now() - make_interval(mins => :age),"
-                    "         case when :read then now() - interval '1 day' end)"
-                    " returning id"
+                    "         cast(:last as numeric), now() - make_interval(mins => :age))"
+                    " returning id),"
+                    " r as (insert into notification_read (notification_id, read_at)"
+                    "       select id, now() - interval '1 day' from n where :read)"
+                    " select id from n"
                 ),
                 {
                     "s": series_id,

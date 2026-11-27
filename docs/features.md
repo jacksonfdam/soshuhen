@@ -13,6 +13,14 @@ your lists  ──>  one canonical series  ──>  you confirm the source  ─�
 Everything runs as background jobs. Nothing blocks the interface, and every step reports what it
 is doing while it does it.
 
+### One library, several people
+
+A household shares one server. Each person has a profile with an avatar, an optional PIN, their
+own MyAnimeList, AniList and MangaBaka accounts, and a library made of what their own lists hold.
+Reading moves only the reader's lists, and a series two people follow is still mapped and
+downloaded once. The PIN keeps a wrong tap out of someone else's profile; it is not a lock. See
+[Profiles](configuration.md#profiles).
+
 ### One series, however many lists
 
 The same manga on MyAnimeList and on AniList is one thing, not two. Soshuhen merges them into a

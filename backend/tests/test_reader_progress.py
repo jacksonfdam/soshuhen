@@ -13,6 +13,7 @@ from app.enums import JobType, Lane, types_for
 from app.handlers import komga_read_progress, progress_write
 from app.handlers.base import JobContext
 from app.queue import repo
+from tests.profiles_fixture import manager_id
 
 EVERY_TYPE = [*types_for(Lane.FETCH), *types_for(Lane.DOWNLOAD)]
 
@@ -83,8 +84,10 @@ async def test_completing_a_chapter_queues_a_reader_progress_write(client):
     chapter_id = await _chapter(series_id, "5")
     body = (await client.post(f"/api/reader/chapters/{chapter_id}/complete")).json()
     assert body == {"progress_queued": True, "komga_queued": False}
+    async with get_sessionmaker()() as session:
+        owner = await manager_id(session)
     assert await _jobs(JobType.PROGRESS_WRITE) == [
-        {"series_id": series_id, "chapter": 5, "source": "reader"}
+        {"series_id": series_id, "chapter": 5, "source": "reader", "profile_id": owner}
     ]
 
 

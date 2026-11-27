@@ -41,6 +41,33 @@ def _now() -> Mapped[datetime]:
     return mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+def _owner(*, primary_key: bool = False) -> Mapped[int]:
+    """The profile a per-person row belongs to; the database defaults it to the manager."""
+    return mapped_column(
+        ForeignKey("profile.id", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=primary_key,
+        server_default=text("manager_profile_id()"),
+    )
+
+
+class Profile(Base):
+    """One person using this installation. Exactly one manages it."""
+
+    __tablename__ = "profile"
+    __table_args__ = (
+        Index("uq_profile_manager", "is_manager", unique=True, postgresql_where=text("is_manager")),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(40), nullable=False)
+    avatar: Mapped[str] = mapped_column(String(20), nullable=False)
+    pin_hash: Mapped[str | None] = mapped_column(Text)
+    is_manager: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = _now()
+
+
 class Series(Base):
     """Canonical series. One per manga, shared by every list entry pointing at it."""
 
@@ -77,10 +104,16 @@ class ListEntry(Base):
 
     __tablename__ = "list_entry"
     __table_args__ = (
-        UniqueConstraint("provider", "provider_media_id", name="uq_list_entry_provider_media"),
+        UniqueConstraint(
+            "profile_id",
+            "provider",
+            "provider_media_id",
+            name="uq_list_entry_profile_provider_media",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = _owner()
     provider: Mapped[Provider] = mapped_column(String(20), nullable=False)
     provider_media_id: Mapped[str] = mapped_column(String(50), nullable=False)
     series_id: Mapped[int | None] = mapped_column(ForeignKey("series.id", ondelete="SET NULL"))
@@ -165,9 +198,6 @@ class Chapter(Base):
     discovered_at: Mapped[datetime] = _now()
     # When the source stops serving this chapter; null means never.
     available_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    bookmarked: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false"
-    )
 
     series: Mapped[Series] = relationship(back_populates="chapters")
 
@@ -264,7 +294,6 @@ class Notification(Base):
     __tablename__ = "notification"
     __table_args__ = (
         Index("ix_notification_created", desc("created_at")),
-        Index("ix_notification_unread", "created_at", postgresql_where=text("read_at is null")),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -277,12 +306,35 @@ class Notification(Base):
     last_number: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     volume_number: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
     created_at: Mapped[datetime] = _now()
-    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class NotificationRead(Base):
+    """A notification one profile has read. Unread is the absence of a row."""
+
+    __tablename__ = "notification_read"
+
+    profile_id: Mapped[int] = _owner(primary_key=True)
+    notification_id: Mapped[int] = mapped_column(
+        ForeignKey("notification.id", ondelete="CASCADE"), primary_key=True
+    )
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ChapterBookmark(Base):
+    """A chapter one profile bookmarked: the one mark a chapter keeps that no list knows."""
+
+    __tablename__ = "chapter_bookmark"
+
+    profile_id: Mapped[int] = _owner(primary_key=True)
+    chapter_id: Mapped[int] = mapped_column(
+        ForeignKey("chapter.id", ondelete="CASCADE"), primary_key=True
+    )
 
 
 class ProviderToken(Base):
     __tablename__ = "provider_token"
 
+    profile_id: Mapped[int] = _owner(primary_key=True)
     provider: Mapped[Provider] = mapped_column(String(20), primary_key=True)
     access_token: Mapped[str] = mapped_column(Text, nullable=False)
     refresh_token: Mapped[str | None] = mapped_column(Text)
@@ -378,6 +430,7 @@ class ProgressEvent(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = _owner()
     series_id: Mapped[int] = mapped_column(
         ForeignKey("series.id", ondelete="CASCADE"), nullable=False
     )
@@ -399,6 +452,7 @@ class ReadingPosition(Base):
 
     __tablename__ = "reading_position"
 
+    profile_id: Mapped[int] = _owner(primary_key=True)
     series_id: Mapped[int] = mapped_column(
         ForeignKey("series.id", ondelete="CASCADE"), primary_key=True
     )
@@ -426,6 +480,7 @@ class SeriesReaderPref(Base):
 
     __tablename__ = "series_reader_pref"
 
+    profile_id: Mapped[int] = _owner(primary_key=True)
     series_id: Mapped[int] = mapped_column(
         ForeignKey("series.id", ondelete="CASCADE"), primary_key=True
     )

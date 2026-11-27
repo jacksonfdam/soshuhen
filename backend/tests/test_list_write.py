@@ -118,7 +118,7 @@ async def test_a_disconnected_first_target_does_not_block_the_others(monkeypatch
         async def set_reading_status(self, media_id, status):
             written.append(("mangadex", media_id))
 
-    async def only_mal_is_connected(session, provider):
+    async def only_mal_is_connected(session, profile, provider):
         if str(provider) == "mal":
             return "token"
         raise NotConnected("anilist is not connected")
@@ -152,7 +152,7 @@ async def test_earlier_successes_survive_a_later_targets_aggregate_failure(monke
     target's already-recorded success, since the handler still raises afterwards."""
     calls = []
 
-    async def fake_access_token_for(session, provider):
+    async def fake_access_token_for(session, profile, provider):
         return "token"
 
     class FakeProviderSource:
@@ -224,7 +224,7 @@ async def test_an_unconfigured_mangadex_is_an_absence_not_a_failure(monkeypatch)
     """
     written = []
 
-    async def fake_access_token_for(session, provider):
+    async def fake_access_token_for(session, profile, provider):
         return "token"
 
     class FakeProviderSource:

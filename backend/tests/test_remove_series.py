@@ -91,7 +91,7 @@ async def test_removing_a_series_takes_its_chapters_with_it():
         removed = await remove_series(db, [series_id])
         await db.commit()
 
-    assert removed == 1
+    assert removed.removed == 1
 
     async with get_sessionmaker()() as db:
         assert (
@@ -141,7 +141,7 @@ async def test_removing_several_at_once_is_one_call():
         removed = await remove_series(db, [first, second])
         await db.commit()
 
-    assert removed == 2
+    assert removed.removed == 2
 
     async with get_sessionmaker()() as db:
         assert (
@@ -151,5 +151,5 @@ async def test_removing_several_at_once_is_one_call():
 
 async def test_removing_nothing_is_not_an_error():
     async with get_sessionmaker()() as db:
-        assert await remove_series(db, []) == 0
+        assert (await remove_series(db, [])).removed == 0
         await db.commit()

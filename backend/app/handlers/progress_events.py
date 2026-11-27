@@ -14,7 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.enums import ProgressSource
 
 
-async def furthest_read(session: AsyncSession, series_id: int) -> int:
+async def furthest_read(
+    session: AsyncSession, series_id: int, *, profile_id: int | None = None
+) -> int:
     """The series' recorded progress across every list it appears on.
 
     Read before the entries are updated, because the delta is the distance the
@@ -28,10 +30,12 @@ async def furthest_read(session: AsyncSession, series_id: int) -> int:
         text(
             """
             select coalesce(max(user_progress_chapter), 0)
-              from list_entry where series_id = :series_id
+              from list_entry
+             where series_id = :series_id
+               and profile_id = coalesce(cast(:profile_id as bigint), manager_profile_id())
             """
         ),
-        {"series_id": series_id},
+        {"series_id": series_id, "profile_id": profile_id},
     )
     return int(result.scalar_one())
 
@@ -44,6 +48,7 @@ async def record(
     chapter: int,
     source: ProgressSource,
     at: datetime | None = None,
+    profile_id: int | None = None,
 ) -> bool:
     """Write one event for a forward movement. Returns whether one was written.
 
@@ -56,12 +61,15 @@ async def record(
     await session.execute(
         text(
             """
-            insert into progress_event (series_id, chapter, delta, source, created_at)
-            values (:series_id, :chapter, :delta, :source,
+            insert into progress_event (profile_id, series_id, chapter, delta, source,
+                                        created_at)
+            values (coalesce(cast(:profile_id as bigint), manager_profile_id()),
+                    :series_id, :chapter, :delta, :source,
                     least(coalesce(cast(:at as timestamptz), now()), now()))
             """
         ),
         {
+            "profile_id": profile_id,
             "series_id": series_id,
             "chapter": chapter,
             "delta": chapter - before,

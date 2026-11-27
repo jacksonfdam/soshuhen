@@ -10,6 +10,7 @@ from decimal import Decimal
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import profiles
 from app.enums import JobType, ProgressSource, Provider
 from app.handlers import progress_events
 from app.handlers.base import JobContext, PermanentError, register
@@ -93,19 +94,28 @@ async def entries_of(session: AsyncSession, series_id: int) -> list:
     job reported the lists it did push and never mentioned the one it had not
     looked at.
     """
+    manager = await profiles.manager(session)
     result = await session.execute(
         text(
             """
             select e.id, e.provider, e.provider_media_id, e.user_progress_chapter,
                    e.total_chapters, e.user_progress_volume, e.total_volumes
               from list_entry e
-              left join provider_token t on t.provider = e.provider
+              left join provider_token t
+                on t.provider = e.provider and t.profile_id = e.profile_id
              where e.series_id = :series_id
+               -- Komga is the manager's account, so what it reports read is
+               -- the manager's reading and moves only the manager's lists.
+               and e.profile_id = :profile_id
                and (t.provider is not null
                     or e.provider = any(cast(:keyed as text[])))
             """
         ),
-        {"series_id": series_id, "keyed": keyed_providers()},
+        {
+            "series_id": series_id,
+            "profile_id": manager.id,
+            "keyed": keyed_providers(manager),
+        },
     )
     return result.all()
 
@@ -162,7 +172,7 @@ async def handle(ctx: JobContext) -> None:
             volume = None
         if chapter_sent is None and volume is None:
             continue
-        token = await access_token_for(ctx.session, provider)
+        token = await access_token_for(ctx.session, await profiles.manager(ctx.session), provider)
         try:
             await source.push_progress(token, entry.provider_media_id, chapter_sent, volume)
         except WriteRefused:

@@ -3,7 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from sse_starlette.sse import EventSourceResponse
 
 from app.api import (
@@ -19,6 +19,7 @@ from app.api import (
     routes_jobs,
     routes_notifications,
     routes_offload,
+    routes_profiles,
     routes_reader,
     routes_series,
     routes_settings,
@@ -27,6 +28,7 @@ from app.api import (
     routes_updates,
     routes_volumes,
 )
+from app.api.deps import current_profile
 from app.api.events import broker, event_stream
 from app.db import get_sessionmaker
 from app.sources import reload as reload_sources
@@ -50,7 +52,10 @@ async def lifespan(app: FastAPI):
     await close_site_clients()
 
 
-app = FastAPI(title="Soshuhen", lifespan=lifespan)
+# Every request resolves its profile once, here, so a header naming a profile
+# that no longer exists is refused even by routes that never ask whose it is.
+app = FastAPI(title="Soshuhen", lifespan=lifespan, dependencies=[Depends(current_profile)])
+app.include_router(routes_profiles.router)
 app.include_router(routes_series.router)
 app.include_router(routes_import.router)
 app.include_router(routes_discovery.router)

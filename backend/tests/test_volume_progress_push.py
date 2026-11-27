@@ -89,7 +89,7 @@ async def _run(session, monkeypatch, series_id, books, provider):
     monkeypatch.setattr(progress_push, "from_settings", lambda: FakeKomgaClient(books))
     monkeypatch.setattr(progress_push, "get_source", lambda p: provider)
 
-    async def token(session, p):
+    async def token(session, profile, p):
         return "t"
 
     monkeypatch.setattr(progress_push, "access_token_for", token)

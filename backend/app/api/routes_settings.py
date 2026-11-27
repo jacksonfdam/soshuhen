@@ -106,7 +106,12 @@ def _provider_status(
 @router.get("")
 async def read_settings(session: Session) -> dict[str, Any]:
     result = await session.execute(
-        text("select provider, account_name, expires_at from provider_token")
+        # The settings screen is the manager's console; other profiles' accounts
+        # are shown per profile, under /api/profiles/{id}/connections.
+        text(
+            "select provider, account_name, expires_at from provider_token"
+            " where profile_id = manager_profile_id()"
+        )
     )
     connected = {
         row.provider: {

@@ -38,7 +38,7 @@ def chapter_ceiling(total_chapters: int | None, known: int | None) -> int | None
     return max(candidates) if candidates else None
 
 
-async def progress_bounds(session: AsyncSession, series_id: int) -> Bounds:
+async def progress_bounds(session: AsyncSession, series_id: int, profile_id: int) -> Bounds:
     """Where a series' lists stand, and how far a write may take them.
 
     An aggregate with no group-by always returns one row, coalesced to 0, even
@@ -59,10 +59,10 @@ async def progress_bounds(session: AsyncSession, series_id: int) -> Bounds:
                    count(e.id) as entries,
                    (select count(*) from chapter where series_id = :id) as known
               from list_entry e
-             where e.series_id = :id
+             where e.series_id = :id and e.profile_id = :profile_id
             """
         ),
-        {"id": series_id},
+        {"id": series_id, "profile_id": profile_id},
     )
     row = result.one()
     return Bounds(
@@ -77,10 +77,16 @@ async def queue_progress_write(
     series_id: int,
     chapter: int,
     *,
+    profile_id: int,
     source: ProgressSource,
     read_at: datetime | None = None,
 ) -> None:
-    payload: dict[str, object] = {"series_id": series_id, "chapter": chapter, "source": str(source)}
+    payload: dict[str, object] = {
+        "series_id": series_id,
+        "chapter": chapter,
+        "source": str(source),
+        "profile_id": profile_id,
+    }
     if read_at is not None:
         # When the chapter was really read, for a client replaying offline
         # reading. Without it the event would be dated by the replay.
@@ -92,7 +98,7 @@ async def queue_progress_write(
         payload,
         priority=0,
         series_id=series_id,
-        dedupe_key=f"progress_write:{series_id}",
+        dedupe_key=f"progress_write:{profile_id}:{series_id}",
     )
     if queued is None:
         # Two of these for one series is how a backwards write reaches someone
@@ -120,12 +126,15 @@ async def queue_progress_write(
                        end
                  where type = :type and series_id = :series_id
                    and state in ('pending', 'leased')
+                   and coalesce(cast(payload->>'profile_id' as bigint), manager_profile_id())
+                       = :profile_id
                    and (payload->>'chapter')::int < cast(:chapter as integer)
                 """
             ),
             {
                 "type": str(JobType.PROGRESS_WRITE),
                 "series_id": series_id,
+                "profile_id": profile_id,
                 "chapter": chapter,
                 "read_at": stamp,
             },

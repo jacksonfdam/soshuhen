@@ -57,7 +57,9 @@ class JobContext:
         )
 
 
-async def latest_payload(ctx: JobContext, job_type: JobType, series_id: int) -> dict[str, Any] | None:
+async def latest_payload(
+    ctx: JobContext, job_type: JobType, series_id: int, profile_id: int
+) -> dict[str, Any] | None:
     """The payload of the most recently created pending-or-leased job of this
     type for this series, or None when nothing is queued.
 
@@ -77,11 +79,12 @@ async def latest_payload(ctx: JobContext, job_type: JobType, series_id: int) -> 
               from job
              where type = :type and series_id = :series_id
                and state in ('pending', 'leased')
+               and coalesce(cast(payload->>'profile_id' as bigint), manager_profile_id()) = :profile_id
              order by id desc
              limit 1
             """
         ),
-        {"type": str(job_type), "series_id": series_id},
+        {"type": str(job_type), "series_id": series_id, "profile_id": profile_id},
     )
     return result.scalar_one_or_none()
 

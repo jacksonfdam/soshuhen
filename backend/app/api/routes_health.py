@@ -32,7 +32,10 @@ async def _token_health(session: AsyncSession) -> dict[str, bool]:
     alone would report that row "ok" right up until a sync fails on it.
     """
     result = await session.execute(
-        text("select provider, refresh_token, expires_at from provider_token")
+        text(
+            "select provider, refresh_token, expires_at from provider_token"
+            " where profile_id = manager_profile_id()"
+        )
     )
     return {
         row.provider: not is_expiring(row.expires_at) or bool(row.refresh_token)

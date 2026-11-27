@@ -11,9 +11,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import rhythm, settings_store
-from app.api import reader_service
-from app.api.deps import db_session
+from app.api import library_scope, reader_service
+from app.api.deps import CurrentProfile, db_session
 from app.api.library_content import HOLDS_FILES
+from app.api.library_scope import IN_LIBRARY
 from app.api.list_raw import display_fields, metadata_of
 from app.api.progress_queue import progress_bounds, queue_progress_write
 from app.api.reading_frequency import reading_frequency
@@ -113,10 +114,15 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        coalesce(max(e.user_progress_chapter), 0) as progress,
        max(e.updated_at) as updated_at,
        {LAST_READ_AT} as last_read_at,
-       (array_agg(e.raw order by e.updated_at desc))[1] as raw
+       (array_agg(e.raw order by e.updated_at desc))[1] as raw,
+       -- Who holds the series on a list, for the console that sees them all.
+       array(select distinct h.profile_id from list_entry h
+              where h.series_id = s.id order by h.profile_id) as held_by
   from series s
   left join source_mapping m on m.series_id = s.id and m.active
-  left join list_entry e on e.series_id = s.id
+  -- The requester's own entries: progress and status are a person's, and a
+  -- series another profile holds shows this one's view of it, or none.
+  left join list_entry e on e.series_id = s.id and e.profile_id = :profile_id
   left join (
       -- Chapter stats grouped on their own, one row per series, so joining
       -- them alongside list_entry (also one-to-many on series) never lets the
@@ -140,6 +146,7 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
         from chapter
        group by series_id
   ) ch on ch.series_id = s.id
+ where cast(:scope_all as boolean) or {IN_LIBRARY}
  group by s.id, m.source_site, m.source_url
  order by s.canonical_title
 """
@@ -179,10 +186,15 @@ select s.id, s.canonical_title, s.slug, s.needs_review, s.meta, s.komga_series_i
        coalesce(max(e.user_progress_chapter), 0) as progress,
        max(e.updated_at) as updated_at,
        {LAST_READ_AT} as last_read_at,
-       (array_agg(e.raw order by e.updated_at desc))[1] as raw
+       (array_agg(e.raw order by e.updated_at desc))[1] as raw,
+       -- Who holds the series on a list, for the console that sees them all.
+       array(select distinct h.profile_id from list_entry h
+              where h.series_id = s.id order by h.profile_id) as held_by
   from series s
   left join source_mapping m on m.series_id = s.id and m.active
-  left join list_entry e on e.series_id = s.id
+  -- The requester's own entries: progress and status are a person's, and a
+  -- series another profile holds shows this one's view of it, or none.
+  left join list_entry e on e.series_id = s.id and e.profile_id = :profile_id
   left join (
       -- The same per-series chapter stats as LIST_SQL, for the same reason:
       -- joined straight to series beside list_entry, a series on two
@@ -295,6 +307,8 @@ def _row_to_series(row: Any) -> dict[str, Any]:
         # Absent from rows built by queries other than LIST_SQL, which never
         # order by reading.
         "last_read_at": _iso_or_none(row._mapping.get("last_read_at")),
+        # Likewise only LIST_SQL knows who holds the series.
+        "held_by": list(row._mapping.get("held_by") or []),
         # The reader lives in Komga, not here, so the screen needs Komga's own
         # id to link to it. Null until a scan has matched the series there.
         "komga_series_id": row.komga_series_id,
@@ -358,9 +372,23 @@ def _state_of(row: Any) -> str:
 @router.get("")
 async def list_series(
     session: Session,
+    profile: CurrentProfile,
     state: Annotated[str | None, Query()] = None,
+    scope: Annotated[Literal["own", "all"], Query()] = "own",
 ) -> list[dict[str, Any]]:
-    result = await session.execute(text(LIST_SQL), {"writable": writable_providers()})
+    """The requester's library, or with `scope=all` every series on the server.
+
+    `all` is the web console's view: removing, bulk status and download ranges
+    live there, and a series only another profile reads still needs them.
+    """
+    result = await session.execute(
+        text(LIST_SQL),
+        {
+            "writable": writable_providers(),
+            "scope_all": scope == "all",
+            **library_scope.params(profile),
+        },
+    )
     series = []
     for row in result.all():
         item = _row_to_series(row)
@@ -456,9 +484,12 @@ async def cover(series_id: int, request: Request, session: Session) -> Response:
 
 
 @router.get("/{series_id}")
-async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
+async def series_detail(
+    series_id: int, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     result = await session.execute(
-        text(LIST_SQL_ONE), {"id": series_id, "writable": writable_providers()}
+        text(LIST_SQL_ONE),
+        {"id": series_id, "writable": writable_providers(), "profile_id": profile.id},
     )
     row = result.first()
     if row is None:
@@ -467,12 +498,15 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
     chapters = await session.execute(
         text(
             """
-            select id, number, title, state, file_path, komga_book_id, available_until,
-                   bookmarked
-              from chapter where series_id = :id order by number
+            select c.id, c.number, c.title, c.state, c.file_path, c.komga_book_id,
+                   c.available_until,
+                   exists (select 1 from chapter_bookmark b
+                            where b.chapter_id = c.id
+                              and b.profile_id = :profile_id) as bookmarked
+              from chapter c where c.series_id = :id order by c.number
             """
         ),
-        {"id": series_id},
+        {"id": series_id, "profile_id": profile.id},
     )
     volumes = await session.execute(
         text(
@@ -489,21 +523,27 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
     entries = await session.execute(
         text(
             """
-            select e.provider, e.provider_media_id, e.status, e.user_progress_chapter,
-                   e.user_progress_volume, e.updated_at, e.raw,
+            select e.profile_id, e.provider, e.provider_media_id, e.status,
+                   e.user_progress_chapter, e.user_progress_volume, e.updated_at, e.raw,
+                   -- Enrichment runs on the manager's AniList account, whoever asks.
                    exists (
-                       select 1 from provider_token t where t.provider = 'anilist'
+                       select 1 from provider_token t
+                        where t.provider = 'anilist' and t.profile_id = manager_profile_id()
                    ) as anilist_connected
               from list_entry e
              where e.series_id = :id
-             order by e.updated_at desc nulls last, e.provider
+             order by (e.profile_id = :profile_id) desc, e.updated_at desc nulls last,
+                      e.provider
             """
         ),
-        {"id": series_id},
+        {"id": series_id, "profile_id": profile.id},
     )
-    # Newest first, because metadata_of resolves a field both providers report
-    # in favour of the first raw that answers.
+    # The requester's own first, then newest first, because metadata_of
+    # resolves a field both providers report in favour of the first raw that
+    # answers. Every profile's entries describe the same work, so all of them
+    # feed the metadata; only the requester's are listed as theirs.
     entry_rows = entries.all()
+    own_rows = [e for e in entry_rows if e.profile_id == profile.id]
     enrichment = (row.meta or {}).get("enrichment")
 
     days = await rhythm.release_days(session, [series_id])
@@ -512,7 +552,11 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
         # Observed, not stated: how often chapters have turned up here. None
         # until enough have, which is most series for their first month.
         "rhythm_days": rhythm.rhythm_days(days.get(series_id, [])),
-        "metadata": metadata_of([entry.raw for entry in entry_rows], enrichment),
+        "metadata": metadata_of(
+            [entry.raw for entry in entry_rows],
+            enrichment,
+            own_raws=[entry.raw for entry in own_rows],
+        ),
         "mapping": {"source_site": row.source_site, "source_url": row.source_url}
         if row.source_url
         else None,
@@ -562,7 +606,7 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
                 "user_progress_volume": e.user_progress_volume,
                 "updated_at": e.updated_at.isoformat() if e.updated_at else None,
             }
-            for e in entry_rows
+            for e in own_rows
         ],
         # The detail screen derives "chapters left, about Nh" from this. Served
         # here rather than fetched from /api/settings, which would cost the
@@ -578,7 +622,7 @@ async def series_detail(series_id: int, session: Session) -> dict[str, Any]:
         "komga_public_url": (
             await settings_store.get(session, settings_store.KOMGA_PUBLIC_URL)
         ).rstrip("/"),
-        "reading_frequency": await reading_frequency(session, series_id),
+        "reading_frequency": await reading_frequency(session, series_id, profile.id),
     }
 
     await _resolve_similar(session, result["metadata"])
@@ -911,26 +955,36 @@ class BookmarkIn(BaseModel):
 
 @router.put("/{series_id}/chapters/{chapter_id}/bookmark")
 async def set_bookmark(
-    series_id: int, chapter_id: int, body: BookmarkIn, session: Session
+    series_id: int, chapter_id: int, body: BookmarkIn, session: Session, profile: CurrentProfile
 ) -> dict[str, Any]:
     """Mark a chapter to come back to, or clear the mark.
 
     Read is derived from the lists and never stored here; a bookmark is the one
     thing about a chapter only this installation knows, so it is the one mark
-    the chapter row keeps.
+    kept beside the chapter.
     """
-    result = await session.execute(
-        text(
-            """
-            update chapter set bookmarked = :bookmarked
-             where id = :chapter_id and series_id = :series_id
-            returning id
-            """
-        ),
-        {"bookmarked": body.bookmarked, "chapter_id": chapter_id, "series_id": series_id},
+    found = await session.execute(
+        text("select id from chapter where id = :chapter_id and series_id = :series_id"),
+        {"chapter_id": chapter_id, "series_id": series_id},
     )
-    if result.scalar_one_or_none() is None:
+    if found.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="chapter not found in this series")
+    if body.bookmarked:
+        await session.execute(
+            text(
+                "insert into chapter_bookmark (profile_id, chapter_id)"
+                " values (:profile_id, :chapter_id) on conflict do nothing"
+            ),
+            {"chapter_id": chapter_id, "profile_id": profile.id},
+        )
+    else:
+        await session.execute(
+            text(
+                "delete from chapter_bookmark"
+                " where chapter_id = :chapter_id and profile_id = :profile_id"
+            ),
+            {"chapter_id": chapter_id, "profile_id": profile.id},
+        )
     await session.commit()
     return {"ok": True, "bookmarked": body.bookmarked}
 
@@ -954,15 +1008,22 @@ class RemoveIn(BaseModel):
 
 
 @router.delete("")
-async def remove_series_endpoint(body: RemoveIn, session: Session) -> dict[str, Any]:
+async def remove_series_endpoint(
+    body: RemoveIn, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """Remove one or many series, and remember that they were removed.
 
     A selection is one decision, so the body takes a list and the single case
     is a list of one rather than a second endpoint that drifts from this one.
     """
-    removed = await remove_series(session, body.ids)
+    result = await remove_series(session, body.ids, profile_id=profile.id)
     await session.commit()
-    return {"ok": True, "removed": removed}
+    return {
+        "ok": True,
+        "removed": result.removed,
+        "deleted": result.deleted,
+        "skipped": result.skipped,
+    }
 
 
 @router.post("/{series_id}/queue/top")
@@ -986,7 +1047,9 @@ async def cancel_queue(series_id: int, session: Session) -> dict[str, Any]:
 
 
 @router.post("/{series_id}/track-local")
-async def track_local(series_id: int, session: Session) -> dict[str, Any]:
+async def track_local(
+    series_id: int, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """Give a series nothing else will take a chapter for somewhere to keep one.
 
     Every remote provider here is writable, so this is reachable only while a
@@ -1011,12 +1074,18 @@ async def track_local(series_id: int, session: Session) -> dict[str, Any]:
             """
             select provider from list_entry
              where series_id = :id
+               and profile_id = :profile_id
                and provider <> :local
                and provider = any(cast(:writable as text[]))
              limit 1
             """
         ),
-        {"id": series_id, "local": str(Provider.LOCAL), "writable": writable_providers()},
+        {
+            "id": series_id,
+            "profile_id": profile.id,
+            "local": str(Provider.LOCAL),
+            "writable": writable_providers(),
+        },
     )
     existing = held.scalar_one_or_none()
     if existing is not None:
@@ -1031,14 +1100,16 @@ async def track_local(series_id: int, session: Session) -> dict[str, Any]:
     await session.execute(
         text(
             """
-            insert into list_entry (series_id, provider, provider_media_id, status,
+            insert into list_entry (profile_id, series_id, provider, provider_media_id, status,
                                     user_progress_chapter, title_english, synonyms, raw)
-            values (:id, :local, :media_id, :status, 0, :title, '[]'::jsonb, '{}'::jsonb)
-            on conflict (provider, provider_media_id) do nothing
+            values (:profile_id, :id, :local, :media_id, :status, 0, :title,
+                    '[]'::jsonb, '{}'::jsonb)
+            on conflict (profile_id, provider, provider_media_id) do nothing
             """
         ),
         {
             "id": series_id,
+            "profile_id": profile.id,
             "local": str(Provider.LOCAL),
             "media_id": str(series_id),
             # Tracking a series by hand is something a reader does because they
@@ -1052,7 +1123,9 @@ async def track_local(series_id: int, session: Session) -> dict[str, Any]:
 
 
 @router.post("/{series_id}/progress")
-async def set_progress(series_id: int, body: ProgressIn, session: Session) -> dict[str, Any]:
+async def set_progress(
+    series_id: int, body: ProgressIn, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """The forward-only guard is enforced here too, not only in the handler.
 
     Rejecting a backward chapter before it is even queued means the library
@@ -1066,7 +1139,7 @@ async def set_progress(series_id: int, body: ProgressIn, session: Session) -> di
         raise HTTPException(status_code=404, detail="series not found")
 
     # min(), not max(), lives in progress_bounds: see the comment there.
-    bounds = await progress_bounds(session, series_id)
+    bounds = await progress_bounds(session, series_id, profile.id)
     if forward_only(bounds.current, body.chapter) is None:
         raise HTTPException(status_code=409, detail="progress cannot move backwards")
 
@@ -1076,12 +1149,16 @@ async def set_progress(series_id: int, body: ProgressIn, session: Session) -> di
             detail=f"this series is only known to have {bounds.ceiling} chapters",
         )
 
-    await queue_progress_write(session, series_id, body.chapter, source=ProgressSource.MANUAL)
+    await queue_progress_write(
+        session, series_id, body.chapter, profile_id=profile.id, source=ProgressSource.MANUAL
+    )
     await session.commit()
     return {"progress": body.chapter, "queued": True}
 
 
-async def queue_status_write(session: AsyncSession, series_id: int, status: ListStatus) -> None:
+async def queue_status_write(
+    session: AsyncSession, series_id: int, status: ListStatus, profile_id: int
+) -> None:
     """Queue one status write, carrying the status last asked for.
 
     A second click while the first is queued raises that job rather than adding
@@ -1095,10 +1172,10 @@ async def queue_status_write(session: AsyncSession, series_id: int, status: List
     await repo.enqueue(
         session,
         JobType.STATUS_WRITE,
-        {"series_id": series_id, "status": str(status)},
+        {"series_id": series_id, "status": str(status), "profile_id": profile_id},
         priority=0,
         series_id=series_id,
-        dedupe_key=f"status_write:{series_id}",
+        dedupe_key=f"status_write:{profile_id}:{series_id}",
     )
     await session.execute(
         text(
@@ -1107,9 +1184,16 @@ async def queue_status_write(session: AsyncSession, series_id: int, status: List
                set payload = jsonb_set(payload, '{status}', to_jsonb(cast(:status as text)))
              where type = :type and series_id = :series_id
                and state in ('pending', 'leased')
+               and coalesce(cast(payload->>'profile_id' as bigint), manager_profile_id())
+                   = :profile_id
             """
         ),
-        {"status": str(status), "type": str(JobType.STATUS_WRITE), "series_id": series_id},
+        {
+            "status": str(status),
+            "type": str(JobType.STATUS_WRITE),
+            "series_id": series_id,
+            "profile_id": profile_id,
+        },
     )
 
 
@@ -1143,7 +1227,9 @@ def status_write_destinations() -> list[str]:
 
 
 @router.post("/{series_id}/status")
-async def set_list_status(series_id: int, body: StatusIn, session: Session) -> dict[str, Any]:
+async def set_list_status(
+    series_id: int, body: StatusIn, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """Validated here as well as in the handler, so the screen learns of a
     refusal on the click rather than from a job that failed minutes later."""
     exists = await session.execute(
@@ -1153,14 +1239,15 @@ async def set_list_status(series_id: int, body: StatusIn, session: Session) -> d
         raise HTTPException(status_code=404, detail="series not found")
 
     entries = await session.execute(
-        text("select count(*) from list_entry where series_id = :id"), {"id": series_id}
+        text("select count(*) from list_entry where series_id = :id and profile_id = :profile"),
+        {"id": series_id, "profile": profile.id},
     )
     if entries.scalar_one() == 0:
         raise HTTPException(
             status_code=409, detail="this series is not on any reading list"
         )
 
-    await queue_status_write(session, series_id, body.status)
+    await queue_status_write(session, series_id, body.status, profile.id)
     await session.commit()
     return {"ok": True, "status": str(body.status), "queued": True}
 
@@ -1173,7 +1260,9 @@ async def list_status_destinations() -> dict[str, Any]:
 
 
 @router.post("/status")
-async def set_list_status_batch(body: BatchStatusIn, session: Session) -> dict[str, Any]:
+async def set_list_status_batch(
+    body: BatchStatusIn, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """Apply one status to many series.
 
     One job per series rather than one job for the batch: a provider failing for
@@ -1209,12 +1298,12 @@ async def set_list_status_batch(body: BatchStatusIn, session: Session) -> dict[s
             select s.id,
                    count(e.id) as entries
               from series s
-              left join list_entry e on e.series_id = s.id
+              left join list_entry e on e.series_id = s.id and e.profile_id = :profile
              where s.id = any(cast(:ids as bigint[]))
              group by s.id
             """
         ),
-        {"ids": ids},
+        {"ids": ids, "profile": profile.id},
     )
     listed = {row.id: row.entries for row in rows.all()}
 
@@ -1222,7 +1311,7 @@ async def set_list_status_batch(body: BatchStatusIn, session: Session) -> dict[s
     skipped: list[int] = []
     for series_id in ids:
         if listed.get(series_id):
-            await queue_status_write(session, series_id, body.status)
+            await queue_status_write(session, series_id, body.status, profile.id)
             queued.append(series_id)
         else:
             skipped.append(series_id)
@@ -1238,7 +1327,9 @@ async def set_list_status_batch(body: BatchStatusIn, session: Session) -> dict[s
 
 
 @router.post("/{series_id}/notes")
-async def save_notes(series_id: int, body: NotesIn, session: Session) -> dict[str, Any]:
+async def save_notes(
+    series_id: int, body: NotesIn, session: Session, profile: CurrentProfile
+) -> dict[str, Any]:
     """Validated here as well as in the handler, so the screen learns of a
     refusal on the click rather than from a job that failed minutes later."""
     exists = await session.execute(
@@ -1248,7 +1339,8 @@ async def save_notes(series_id: int, body: NotesIn, session: Session) -> dict[st
         raise HTTPException(status_code=404, detail="series not found")
 
     entries = await session.execute(
-        text("select count(*) from list_entry where series_id = :id"), {"id": series_id}
+        text("select count(*) from list_entry where series_id = :id and profile_id = :profile"),
+        {"id": series_id, "profile": profile.id},
     )
     if entries.scalar_one() == 0:
         raise HTTPException(
@@ -1258,10 +1350,15 @@ async def save_notes(series_id: int, body: NotesIn, session: Session) -> dict[st
     await repo.enqueue(
         session,
         JobType.NOTES_WRITE,
-        {"series_id": series_id, "notes": body.notes, "tags": body.tags},
+        {
+            "series_id": series_id,
+            "notes": body.notes,
+            "tags": body.tags,
+            "profile_id": profile.id,
+        },
         priority=0,
         series_id=series_id,
-        dedupe_key=f"notes_write:{series_id}",
+        dedupe_key=f"notes_write:{profile.id}:{series_id}",
     )
     # One job per series, carrying the note last asked for. A second save
     # while the first is queued raises that job rather than adding one, or the
@@ -1278,14 +1375,22 @@ async def save_notes(series_id: int, body: NotesIn, session: Session) -> dict[st
                set payload = cast(:payload as jsonb)
              where type = :type and series_id = :series_id
                and state in ('pending', 'leased')
+               and coalesce(cast(payload->>'profile_id' as bigint), manager_profile_id())
+                   = :profile_id
             """
         ),
         {
             "payload": json.dumps(
-                {"series_id": series_id, "notes": body.notes, "tags": body.tags}
+                {
+                    "series_id": series_id,
+                    "notes": body.notes,
+                    "tags": body.tags,
+                    "profile_id": profile.id,
+                }
             ),
             "type": str(JobType.NOTES_WRITE),
             "series_id": series_id,
+            "profile_id": profile.id,
         },
     )
     await session.commit()

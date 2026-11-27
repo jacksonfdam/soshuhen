@@ -69,6 +69,22 @@ FIELDS = (
 )
 
 
+# What a list says about the person keeping it rather than about the work. With
+# profiles these must come from the requester's own entries only: merged across
+# everyone's, one person's score and private note showed on another's screen,
+# and the notes editor sent them back to the wrong account.
+PERSONAL_FIELDS = (
+    "user_score",
+    "volumes_read",
+    "reread_count",
+    "started_at",
+    "completed_at",
+    "list_updated_at",
+    "notes",
+    "user_tags",
+)
+
+
 def display_fields(raw: dict[str, Any] | None) -> dict[str, Any]:
     """Score, genres and format, normalised across the two providers."""
     raw = raw or {}
@@ -135,8 +151,19 @@ def publication_year(raw: dict[str, Any] | None) -> int | None:
 def metadata_of(
     raws: list[dict[str, Any] | None],
     enrichment: dict[str, Any] | None = None,
+    own_raws: list[dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
-    """Every raw the series has, newest first. The first to answer wins."""
+    """Every raw the series has, newest first. The first to answer wins.
+
+    `own_raws`, when given, are the requester's entries alone: the personal
+    fields are read from those and nothing else.
+    """
+    if own_raws is not None:
+        merged = metadata_of(raws, enrichment)
+        own = metadata_of(own_raws)
+        for personal in PERSONAL_FIELDS:
+            merged[personal] = own[personal]
+        return merged
     blocks = [_block_of(raw) for raw in raws if raw]
     merged: dict[str, Any] = {field: None for field in FIELDS}
     for field in FIELDS:
