@@ -4,6 +4,8 @@ import { Button, ErrorState, Icon, NoticeBar, Skeleton, Toggle, type IconName } 
 import { ProviderCard } from './ProviderCard'
 import { MihonBackupCard } from './MihonBackupCard'
 import { PipelineFields } from './PipelineFields'
+import { ProfileAccounts } from './ProfileAccounts'
+import { ProfilesPanel } from './ProfilesPanel'
 import { SourcesPanel } from './SourcesPanel'
 import { JNovelClubCard } from './JNovelClubCard'
 import { SourceCard } from './SourceCard'
@@ -103,6 +105,15 @@ export function SettingsPage() {
           </p>
         </div>
       </div>
+
+      <section className="flex flex-col gap-space-md">
+        <SectionHeader
+          icon="lock"
+          title="Profiles"
+          subtitle="Who reads on this server. A PIN keeps someone from opening the wrong profile by accident; it is not a password."
+        />
+        <ProfilesPanel renderAccounts={(profile) => <ProfileAccounts profile={profile} />} />
+      </section>
 
       <section className="flex flex-col gap-space-md">
         <SectionHeader

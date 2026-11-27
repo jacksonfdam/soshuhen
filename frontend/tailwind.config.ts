@@ -123,6 +123,10 @@ export default {
         'space-md': '1rem',
         'space-lg': '1.5rem',
         'space-xl': '2.5rem',
+        // A profile's face: the picker's row, the editor's grid, a library chip.
+        'avatar-sm': '2rem',
+        'avatar-md': '3rem',
+        'avatar-lg': '5rem',
       },
       // prose-column: about seventy characters a line, the measure books use.
       maxWidth: { canvas: '1440px', 'prose-column': '40rem' },

@@ -1,8 +1,12 @@
 import { Chip, ConfirmDialog, EmptyState, ErrorState, Icon, NoticeBar, Pager, SearchField, SegmentedControl, SelectField, Skeleton } from '../../ui'
 import { STATUS_LABEL } from '../../lib/format'
 import type { ListStatus } from '../../lib/format'
-import { api } from '../../lib/api'
-import { useEffect, useState } from 'react'
+import { api, type Series } from '../../lib/api'
+import { useAsyncData } from '../../lib/useAsyncData'
+import { useCallback, useEffect, useState } from 'react'
+import { holdersOf } from './holders'
+import { removalNotice } from './removalNotice'
+import { removeConsequences } from './removeConsequences'
 import { ContinueReading } from './ContinueReading'
 import { BatchActionBar } from './BatchActionBar'
 import { SeriesGrid } from './SeriesGrid'
@@ -42,6 +46,11 @@ const SORT_OPTIONS: { value: LibrarySort; label: string }[] = [
 ]
 
 export function LibraryPage() {
+  // Only for the holder chips. A failure here draws no chips rather than an
+  // error: the library itself does not depend on it.
+  const loadProfiles = useCallback(() => api.profiles(), [])
+  const profiles = useAsyncData(loadProfiles).data
+  const holdersFor = (series: Series) => holdersOf(series, profiles)
   const {
     series, matching, all, loaded, error, status, setStatus, view, setView, query, setQuery,
     format, setFormat, formats, sort, setSort, page, setPage, pages, per, setPer,
@@ -87,10 +96,7 @@ export function LibraryPage() {
     setRemoving(true)
     try {
       const result = await api.removeSeries(selection.ids)
-      setBatchNotice(
-        `Removed ${result.removed} ${result.removed === 1 ? 'series' : 'series'}. ` +
-          'A list sync will not bring them back.',
-      )
+      setBatchNotice(removalNotice(result))
       selection.clear()
       setConfirmingRemove(false)
       await reload()
@@ -254,6 +260,7 @@ export function LibraryPage() {
             onIncrement={increment}
             selected={selection.selected}
             onToggleSelect={selection.toggle}
+            holdersOf={holdersFor}
           />
         ) : (
           <SeriesTable
@@ -262,6 +269,7 @@ export function LibraryPage() {
             onIncrement={increment}
             selected={selection.selected}
             onToggleSelect={selection.toggle}
+            holdersOf={holdersFor}
           />
         )}
         {matching > 0 && <Pager page={page} pages={pages} total={matching} per={per} onPage={setPage} />}
@@ -270,12 +278,10 @@ export function LibraryPage() {
       {confirmingRemove && (
         <ConfirmDialog
           title={`Remove ${selection.count} ${selection.count === 1 ? 'series' : 'series'}?`}
-          consequences={[
-            'Anything queued for them is cancelled.',
-            'Chapters already downloaded stay on disk and in Komga.',
-            'A list sync will not bring them back.',
-            'Your MyAnimeList and AniList entries are left as they are.',
-          ]}
+          consequences={removeConsequences(
+            all.filter((row) => selection.selected.has(row.id)),
+            profiles?.find((profile) => profile.is_manager)?.id ?? null,
+          )}
           confirmLabel={removing ? 'Removing…' : 'Remove'}
           busy={removing}
           onConfirm={() => void removeSelected()}

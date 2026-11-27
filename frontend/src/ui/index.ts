@@ -1,4 +1,5 @@
 export { AddToList } from './AddToList'
+export { Avatar } from './Avatar'
 export { Badge } from './Badge'
 export { Button, buttonClass } from './Button'
 export { CandidateList, type SourceChoice } from './CandidateList'

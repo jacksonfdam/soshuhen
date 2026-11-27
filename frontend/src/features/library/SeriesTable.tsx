@@ -1,9 +1,10 @@
 import { Link, useLocation } from 'react-router-dom'
 
 import { Icon, NO_WRITE_TARGET, useIncrementFlash, type FlashState } from '../../ui'
-import type { Series, SeriesState } from '../../lib/api'
+import type { Profile, Series, SeriesState } from '../../lib/api'
 import { originState } from '../../lib/backTo'
 import { PROVIDER_LABEL, formatChapter, formatSeriesFormat } from '../../lib/format'
+import { HolderChip } from './HolderChip'
 import { totalChapters } from './useLibrary'
 
 // The stepper's own flash colours — small and flat, unlike QuickIncrement's
@@ -51,6 +52,7 @@ function SeriesRow({
   onIncrement,
   selected = false,
   onToggleSelect,
+  holdersOf,
 }: {
   row: Series
   index: number
@@ -60,8 +62,11 @@ function SeriesRow({
   /** Marked for a bulk action: the row tints and the index becomes a checkbox. */
   selected?: boolean
   onToggleSelect?: (id: number) => void
+  /** Who follows a series that is not the manager's; null for none to show. */
+  holdersOf?: (series: Series) => Profile[] | null
 }) {
   const total = totalChapters(row)
+  const holders = holdersOf?.(row) ?? null
   const pct = total ? Math.min(100, Math.round((row.progress / total) * 100)) : 0
   const format = formatSeriesFormat(row.format)
   const { flash, busy, trigger } = useIncrementFlash((next) => onIncrement(row.id, next))
@@ -113,6 +118,7 @@ function SeriesRow({
             <span className="truncate font-mono text-label-sm text-outline">
               {[format, row.genres[0]].filter(Boolean).join(' • ') || '—'}
             </span>
+            {holders && <HolderChip holders={holders} />}
           </div>
         </Link>
       </td>
@@ -208,6 +214,7 @@ export function SeriesTable({
   onIncrement,
   selected,
   onToggleSelect,
+  holdersOf,
 }: {
   series: Series[]
   /** Series whose last +1 is queued and not yet written. */
@@ -216,6 +223,8 @@ export function SeriesTable({
   /** Marked for a bulk action. Empty when nothing is selected. */
   selected?: ReadonlySet<number>
   onToggleSelect?: (id: number) => void
+  /** Who follows a series that is not the manager's; null for none to show. */
+  holdersOf?: (series: Series) => Profile[] | null
 }) {
   return (
     <div className="w-full overflow-x-auto rounded-xl bg-surface-container-low shadow-card">
@@ -238,6 +247,7 @@ export function SeriesTable({
               index={index}
               pending={pending.has(row.id)}
               onIncrement={onIncrement}
+              holdersOf={holdersOf}
               selected={selected?.has(row.id) ?? false}
               onToggleSelect={onToggleSelect}
             />

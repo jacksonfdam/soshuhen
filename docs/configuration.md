@@ -270,12 +270,16 @@ notifications it has read. Files, mappings, downloads and settings are shared, s
 people read is downloaded once.
 
 - **The managing profile** is the one the upgrade created, named `Me`. The web interface acts as it
-  and sees every series with `?scope=all`; it confirms mappings, chooses downloads and owns Komga,
-  anime suggestions and the J-Novel Club sign-in. The `MANGABAKA_TOKEN` in `.env` is its key.
-- **Other profiles** are created under `/api/profiles`. Connect their MyAnimeList or AniList account
-  with `GET /api/auth/{provider}/start?profile_id=<id>`; store a MangaBaka key with
-  `PUT /api/profiles/<id>/credentials/mangabaka`. The redirect URL registered with each service does
-  not change.
+  and its library shows every series on the server (`GET /api/series?scope=all`), each one only
+  someone else follows marked with their avatar. It confirms mappings, chooses downloads and owns
+  Komga, anime suggestions and the J-Novel Club sign-in. The `MANGABAKA_TOKEN` in `.env` is its key.
+- **Other profiles** are managed in Settings, under Profiles: add one with a name, an avatar and an
+  optional PIN, rename it, change or remove its PIN, reorder the list, or delete it. Its
+  **Accounts** button connects its MyAnimeList or AniList account — the sign-in happens in your
+  browser, so sign in as that person — stores its MangaBaka key, and queues a sync. The redirect URL
+  registered with each service does not change. Scripts can do the same through `/api/profiles`,
+  `GET /api/auth/{provider}/start?profile_id=<id>` and
+  `PUT /api/profiles/<id>/credentials/mangabaka`.
 - **A client names its profile** with the header `X-Soshuhen-Profile: <id>`. No header means the
   managing profile, which is why the web interface and the MCP server work unchanged. An id that
   names no profile is refused with 400.
