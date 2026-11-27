@@ -14,7 +14,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okio.Buffer
@@ -224,16 +223,21 @@ class ImportRunner(
 
         val problem = try {
             store.saveSeries(api.seriesJson())
-            val marked = store.markedIds().first().let { ids -> if (only == null) ids else ids intersect only }
-            for ((read, id) in marked.withIndex()) {
-                onStep(SyncProgress.Reading(read, marked.size))
+            // Every profile's marks, not only the one the device is on: the
+            // files are shared, and a tablet left on one person must still keep
+            // the other's series current. Each is read as someone who marked
+            // it, so its snapshot holds their progress and lands where they read.
+            val owners = store.markOwners().filterKeys { only == null || it in only }
+            for ((read, entry) in owners.entries.withIndex()) {
+                val (id, owner) = entry
+                onStep(SyncProgress.Reading(read, owners.size))
                 val json = try {
-                    api.seriesDetailJson(id)
+                    api.forProfile(owner).seriesDetailJson(id)
                 } catch (e: ApiException) {
                     // Removed from the server: nothing to copy, and the rest still is.
                     if (e.status == 404) continue else throw e
                 }
-                store.saveDetail(id, json)
+                store.saveDetailFor(owner, id, json)
                 val detail = SoshuhenJson.decodeFromString<SeriesDetail>(json)
                 detail.chapters
                     .filter { it.state == "downloaded" && it.filePath != null }

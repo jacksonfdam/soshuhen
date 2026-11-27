@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -34,9 +35,19 @@ class Session(
      */
     val atHome: StateFlow<Boolean> = _atHome
 
-    val api: StateFlow<SoshuhenApi?> = store.saved
-        .map { saved -> saved?.let { SoshuhenApi(it.address.baseUrl, client) } }
-        .stateIn(scope, SharingStarted.Eagerly, null)
+    private val _located = MutableStateFlow(false)
+
+    /** True once [atHome] has been answered at least once since the app started. */
+    val located: StateFlow<Boolean> = _located
+
+    /** Whose requests these are: 0 (the manager) until a profile is chosen. */
+    val profileKey: StateFlow<Long> = store.profileKey
+        .map { it ?: 0L }
+        .stateIn(scope, SharingStarted.Eagerly, 0L)
+
+    val api: StateFlow<SoshuhenApi?> = combine(store.saved, profileKey) { saved, key ->
+        saved?.let { SoshuhenApi(it.address.baseUrl, client, key) }
+    }.stateIn(scope, SharingStarted.Eagerly, null)
 
     init {
         // Keyed on whether a server is saved at all, so choosing one in
@@ -48,7 +59,10 @@ class Session(
                 // left must not hold up the check on the one it is on now. Nothing
                 // is written until a scan finishes, so cancelling it is safe.
                 if (hasServer) network.changes.collectLatest { refreshLocation() }
-                else _atHome.value = false
+                else {
+                    _atHome.value = false
+                    _located.value = true
+                }
             }
         }
     }
@@ -62,11 +76,13 @@ class Session(
         val saved = store.saved.first()
         if (saved == null) {
             _atHome.value = false
+            _located.value = true
             return
         }
         val hosts = network.wifiAddress()?.let { (ip, prefix) -> subnetHosts(ip, prefix) }
         val found = locator.locate(saved, hosts)
         _atHome.value = found != null
+        _located.value = true
         if (found == null) return
         if (found != saved.address) store.save(saved.copy(address = found))
     }

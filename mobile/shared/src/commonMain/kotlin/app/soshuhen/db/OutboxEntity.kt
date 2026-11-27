@@ -21,6 +21,8 @@ data class OutboxEntity(
     val page: Int?,
     @ColumnInfo(name = "read_at") val readAt: String?,
     val body: String?,
+    // Who recorded it: sent as that profile even after the device switches.
+    @ColumnInfo(name = "profile_key", defaultValue = "0") val profileKey: Long = 0,
 )
 
 @Dao
@@ -33,8 +35,8 @@ interface OutboxDao {
     @Query("DELETE FROM outbox WHERE id = :id")
     suspend fun delete(id: Long)
 
-    @Query("DELETE FROM outbox WHERE series_id = :seriesId AND kind = :kind")
-    suspend fun deleteKind(seriesId: Long, kind: String)
+    @Query("DELETE FROM outbox WHERE series_id = :seriesId AND kind = :kind AND profile_key = :profileKey")
+    suspend fun deleteKind(seriesId: Long, kind: String, profileKey: Long)
 
     @Query("DELETE FROM outbox")
     suspend fun clear()

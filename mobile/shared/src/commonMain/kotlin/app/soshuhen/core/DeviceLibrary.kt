@@ -15,7 +15,9 @@ class DeviceLibrary(private val store: LocalStore, private val folder: ChapterFo
     suspend fun unmark(seriesId: Long, deleteFiles: Boolean) {
         // Files first: if the folder is unavailable the series stays marked and
         // indexed, so the user sees the failure instead of orphaned files.
-        if (deleteFiles) {
+        // Someone else on this device still has it marked: the files are theirs
+        // too, and only this profile's mark goes.
+        if (deleteFiles && !store.markedByOthers(seriesId)) {
             store.deviceChapters(seriesId).first().forEach { remove(it) }
             store.deviceVolumes(seriesId).first().forEach { remove(it) }
         }
@@ -32,6 +34,8 @@ class DeviceLibrary(private val store: LocalStore, private val folder: ChapterFo
 
     /** Chapters count whole, as everywhere: 2.5 is read once chapter 2 is. Volumes likewise. */
     suspend fun deleteRead(detail: SeriesDetail) {
+        // What this profile has read, someone else on the device may not have.
+        if (store.markedByOthers(detail.series.id)) return
         store.deviceChapters(detail.series.id).first()
             .filter { floor(it.number) <= detail.series.progress }
             .forEach { remove(it) }

@@ -3,6 +3,7 @@ package app.soshuhen.api
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeoutConfig
+import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -38,8 +39,43 @@ private data class PrefsBody(val mode: String, val scale: String, val background
 
 class ApiException(val status: Int) : Exception("server answered $status")
 
-/** The Soshuhen server, and nothing else: every URL here is built on [baseUrl]. */
-class SoshuhenApi(val baseUrl: String, private val client: HttpClient) {
+@Serializable
+private data class UnlockBody(val pin: String)
+
+@Serializable
+private data class UnlockAnswer(val ok: Boolean)
+
+/** The header the server reads to know whose request this is. */
+internal const val PROFILE_HEADER = "X-Soshuhen-Profile"
+
+/**
+ * The Soshuhen server, and nothing else: every URL here is built on [baseUrl].
+ *
+ * [profileKey] is whose requests these are. 0 is the managing profile and sends
+ * no header, which is how the server reads a request that names nobody.
+ */
+class SoshuhenApi(val baseUrl: String, private val base: HttpClient, val profileKey: Long = 0) {
+
+    // Set once on the client rather than at each call: a request that forgot
+    // the header would act for the manager, and write to the manager's lists.
+    private val client: HttpClient =
+        if (profileKey == 0L) base else base.config { defaultRequest { header(PROFILE_HEADER, profileKey.toString()) } }
+
+    /** The same server, as another profile. A queued event is sent as whoever recorded it. */
+    fun forProfile(key: Long): SoshuhenApi = if (key == profileKey) this else SoshuhenApi(baseUrl, base, key)
+
+    suspend fun profilesJson(): String = checked(client.get("$baseUrl/api/profiles")).bodyAsText()
+
+    suspend fun profiles(): List<Profile> = SoshuhenJson.decodeFromString(profilesJson())
+
+    /** Whether [pin] opens the profile. The server checks it; nothing here stores it. */
+    suspend fun unlock(profileId: Long, pin: String): Boolean =
+        checked(
+            client.post("$baseUrl/api/profiles/$profileId/unlock") {
+                contentType(ContentType.Application.Json)
+                setBody(UnlockBody(pin))
+            },
+        ).body<UnlockAnswer>().ok
 
     suspend fun identity(): Identity = checked(client.get("$baseUrl/api/identity")).body()
 

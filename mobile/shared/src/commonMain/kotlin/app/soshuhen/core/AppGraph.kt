@@ -39,6 +39,11 @@ class AppGraph(
     val scanner = ServerScanner(probe)
     val library = DeviceLibrary(local, folder)
     val session = Session(store, ServerLocator(probe, scanner), network, client, scope)
+
+    init {
+        // The device's per-person data follows whichever profile the session is on.
+        local.currentProfile = { session.profileKey.value }
+    }
     val outbox = Outbox(local) { Clock.System.now() }
     val importer = ImportRunner(session, local, folder, outbox, archiveCheck, epubCheck) { Clock.System.now() }
     val sync = Sync(
@@ -46,6 +51,8 @@ class AppGraph(
         store = local,
         folder = folder,
         atHome = { session.atHome.value },
+        // The server's copies are every profile's files; only the manager is asked.
+        canOffload = { session.profileKey.value == 0L },
         offload = { request ->
             val api = session.api.value ?: throw IllegalStateException("no server configured")
             api.offload(request)

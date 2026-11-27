@@ -103,4 +103,18 @@ class ServerSwitchTest {
         assertFalse(store.isMarked(1).first())
         assertNull(store.deviceChapter(11))
     }
+
+    @Test fun switchingServerForgetsTheProfile() = runTest {
+        val guard = InstanceGuard(FakeServerStore(server("first")), store)
+        guard.selectProfile(7)
+        guard.save(server("second"))
+        assertNull(guard.profileKey.first())
+    }
+
+    @Test fun theSameServerAtANewAddressKeepsTheProfile() = runTest {
+        val guard = InstanceGuard(FakeServerStore(server("first")), store)
+        guard.selectProfile(7)
+        guard.save(server("first", host = "10.0.0.9"))
+        assertEquals(7L, guard.profileKey.first())
+    }
 }

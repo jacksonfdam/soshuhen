@@ -66,7 +66,7 @@ at most `per_source_concurrency + 1`.
 ## Endpoints the Android client uses
 
 The Android client reads on the home network and offline, and talks to nothing but this server.
-Five routes exist for it (design: `docs/superpowers/specs/2026-10-20-android-client-design.md`, and
+Seven routes exist for it (design: `docs/superpowers/specs/2026-10-20-android-client-design.md`, and
 `2026-10-24-android-prose-reader-design.md` for novels):
 
 - `GET /api/identity` names the app and a stable `instance_id`. `/api/health` answers `ok` like any
@@ -80,6 +80,11 @@ Five routes exist for it (design: `docs/superpowers/specs/2026-10-20-android-cli
 - `GET /api/series/{id}/cover` serves the cover from `reader-cache/covers/`, fetched from the list
   provider once, so nothing on the phone reaches the internet. A failed fetch stores nothing and the
   next request tries again.
+- `GET /api/profiles` lists the people on the server for the picker, and
+  `POST /api/profiles/{id}/unlock` checks a PIN; the phone never stores one. Every other request
+  carries `X-Soshuhen-Profile` for the chosen profile, except the managing profile's, which sends
+  none — the same request the server read before profiles existed. A queued offline event is sent as
+  the profile that recorded it, even after the phone has switched.
 - `PUT /api/reader/series/{id}/position` and `POST /api/reader/chapters/{id}/complete` accept an
   optional `read_at`. Reading done offline is replayed later, and without it a morning's position
   would overwrite an evening's and a week of reading would be dated by one replay. A position with

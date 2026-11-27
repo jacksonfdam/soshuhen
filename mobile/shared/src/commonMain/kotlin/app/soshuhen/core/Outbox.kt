@@ -92,7 +92,10 @@ class Outbox(private val store: LocalStore, private val clock: () -> Instant) {
 
     private fun isPermanent(status: Int) = status in 400..499 && status != 408 && status != 429
 
-    private suspend fun send(api: SoshuhenApi, e: OutboxEntity) {
+    private suspend fun send(server: SoshuhenApi, e: OutboxEntity) {
+        // Every profile's events drain together, in the order they happened,
+        // each as the person who read it.
+        val api = server.forProfile(e.profileKey)
         when (e.kind) {
             POSITION -> api.putPosition(e.seriesId, e.chapterId!!, e.page!!, Instant.parse(e.readAt!!))
             COMPLETE -> api.complete(e.chapterId!!, Instant.parse(e.readAt!!))

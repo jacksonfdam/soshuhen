@@ -39,6 +39,26 @@ Android refuses that as a downgrade: install with `adb install -r -d`.
 - `shared/src/commonMain/kotlin/app/soshuhen/ui/theme/Tokens.kt` is the only
   place a colour or size lives, copied from `frontend/tailwind.config.ts`.
 
+## Profiles
+
+The app reads as one profile at a time, kept beside the saved server as a single number: `0` is the
+managing profile and sends no `X-Soshuhen-Profile` header, any other number is that profile's id and
+is sent as the header on every request (set once on the client in `SoshuhenApi`, so no call can
+forget it). Switching to another server forgets it.
+
+- **Device data.** Marks, the outbox and the per-person snapshots (`series`, `series/{id}`,
+  `prefs/{id}`, `resume/{id}`) are keyed by that number. Database version 4 added `profile_key` to
+  `marked` and `outbox`; everything written before it became the manager's (`0`). The manager's
+  snapshots keep their old names; another profile's are prefixed `p{id}/`. Chapter and volume files
+  stay shared, and `DeviceLibrary` never deletes one another profile on the device has marked. The
+  background copy covers every profile's marks, whichever profile the device is on: each series is
+  read as a profile that marked it, and its snapshot is saved where that profile reads it.
+- **Offline.** The PIN is checked only by the server. Away from home the app opens the last profile
+  used, and the picker shows profiles with a PIN as shut.
+- **Avatars.** `shared/src/commonMain/composeResources/drawable/avatar_NN.png` are rasterised at
+  192×192 from `frontend/public/avatars/avatar-NN.svg`, which is the source; regenerate them from
+  it with any SVG-to-PNG tool when the art changes.
+
 ## Signing
 
 Keep one keystore for every build you install. Android refuses to install an

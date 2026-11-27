@@ -23,21 +23,23 @@ const val DEFAULT_PROSE_MODE = "paged_ltr"
  * could store.
  */
 class ProseStore(private val local: LocalStore) {
-    suspend fun position(ref: BookRef): ProsePosition? = read("prose/${ref.kind.key}/${ref.id}", ProsePosition.serializer())
+    // A place in a book and a series' mode are the reader's own; the style is the device's.
+    suspend fun position(ref: BookRef): ProsePosition? =
+        local.ownValue("prose/${ref.kind.key}/${ref.id}")?.let { decode(it, ProsePosition.serializer()) }
 
     suspend fun savePosition(ref: BookRef, p: ProsePosition) =
-        local.putValue("prose/${ref.kind.key}/${ref.id}", SoshuhenJson.encodeToString(ProsePosition.serializer(), p))
+        local.putOwnValue("prose/${ref.kind.key}/${ref.id}", SoshuhenJson.encodeToString(ProsePosition.serializer(), p))
 
     suspend fun style(): ProseStyle = read(STYLE, ProseStyle.serializer()) ?: ProseStyle()
 
     suspend fun saveStyle(style: ProseStyle) = local.putValue(STYLE, SoshuhenJson.encodeToString(ProseStyle.serializer(), style))
 
-    suspend fun mode(seriesId: Long): String? = local.value("prose-mode/$seriesId")?.let {
+    suspend fun mode(seriesId: Long): String? = local.ownValue("prose-mode/$seriesId")?.let {
         decode(it, String.serializer())
     }
 
     suspend fun saveMode(seriesId: Long, mode: String) =
-        local.putValue("prose-mode/$seriesId", SoshuhenJson.encodeToString(String.serializer(), mode))
+        local.putOwnValue("prose-mode/$seriesId", SoshuhenJson.encodeToString(String.serializer(), mode))
 
     private suspend fun <T> read(key: String, serializer: KSerializer<T>): T? =
         local.value(key)?.let { decode(it, serializer) }

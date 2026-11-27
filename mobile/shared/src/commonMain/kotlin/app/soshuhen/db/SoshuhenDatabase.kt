@@ -17,8 +17,14 @@ import androidx.room.RoomDatabaseConstructor
         ImportPartEntity::class,
         DeviceVolumeEntity::class,
     ],
-    version = 3,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    version = 4,
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2),
+        AutoMigration(from = 2, to = 3),
+        // 4: marks and the outbox gain a profile key. Room rebuilds `marked`
+        // for its new primary key and copies the rows across with key 0.
+        AutoMigration(from = 3, to = 4),
+    ],
 )
 @ConstructedBy(SoshuhenDatabaseConstructor::class)
 abstract class SoshuhenDatabase : RoomDatabase() {

@@ -21,6 +21,8 @@ class FakeServerStore(initial: SavedServer? = null) : ServerStore {
     override suspend fun setVolumeInvert(on: Boolean) { volumeInvert.value = on }
     override val setupOffered = MutableStateFlow<Set<String>>(emptySet())
     override suspend fun markSetupOffered(step: String) { setupOffered.value += step }
+    override val profileKey = MutableStateFlow<Long?>(null)
+    override suspend fun selectProfile(key: Long?) { profileKey.value = key }
 }
 
 class FakeNetworkInfo(var wifi: Pair<String, Int>?) : NetworkInfo {
